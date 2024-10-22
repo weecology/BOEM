@@ -1,5 +1,5 @@
 import pytest
-from data_processing import DataProcessing
+from src.data_processing import DataProcessing
 
 def test_process_data():
     processing = DataProcessing()

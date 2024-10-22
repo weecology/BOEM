@@ -1,5 +1,5 @@
 import pytest
-from model_deployment import ModelDeployment
+from src.model_deployment import ModelDeployment
 
 def test_deploy_model():
     deployment = ModelDeployment()

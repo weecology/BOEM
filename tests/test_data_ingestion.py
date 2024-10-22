@@ -1,5 +1,5 @@
 import pytest
-from data_ingestion import DataIngestion
+from src.data_ingestion import DataIngestion
 
 def test_ingest_data():
     ingestion = DataIngestion()

@@ -1,5 +1,5 @@
 import pytest
-from model_evaluation import ModelEvaluation
+from src.model_evaluation import ModelEvaluation
 
 def test_evaluate_model():
     evaluation = ModelEvaluation()

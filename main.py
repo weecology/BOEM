@@ -1,12 +1,12 @@
 import hydra
 from omegaconf import DictConfig
-from data_ingestion import DataIngestion
-from data_processing import DataProcessing
-from model_training import ModelTraining
-from model_evaluation import ModelEvaluation
-from model_deployment import ModelDeployment
-from monitoring import Monitoring
-from annotation.pipeline import iterate as annotation_pipeline
+from src.data_ingestion import DataIngestion
+from src.data_processing import DataProcessing
+from src.model_training import ModelTraining
+from src.model_evaluation import ModelEvaluation
+from src.model_deployment import ModelDeployment
+from src.monitoring import Monitoring
+from src.annotation.pipeline import iterate as annotation_pipeline
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig):

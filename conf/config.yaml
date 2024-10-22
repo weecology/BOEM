@@ -1,0 +1,5 @@
+defaults:
+  - _self_
+
+model:
+  performance_threshold: 0.8

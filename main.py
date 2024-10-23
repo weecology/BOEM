@@ -29,8 +29,6 @@ def main(cfg: DictConfig):
         data_processing = DataProcessing()
         images_to_annotate = data_processing.process_data(raw_data)
         
-
-        # Use the PreAnnotationPrediction class
         pre_annotation = PreAnnotationPrediction(existing_model)
         images_for_human_review, auto_annotated_images = pre_annotation.predict_and_divide(images_to_annotate)
 

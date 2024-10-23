@@ -17,17 +17,11 @@ python main.py
 
 ## Running Tests
 
-To run the tests for the ML Workflow Manager:
+To run the tests, make sure you have pytest installed and then run:
 
-1. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. Run the tests using pytest:
-   ```bash
-   pytest tests/
-   ```
+```bash
+pytest
+```
 
 This will run all the tests in the `tests/` directory and display the results.
 
@@ -43,3 +37,21 @@ config_pipeline(your_config)
 ```
 
 For more details on how to use the annotation module, please refer to the AirborneFieldGuide documentation.
+
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Pipeline Components
+
+- Data Ingestion
+- Data Processing
+- Model Training
+- Pipeline Evaluation
+- Model Deployment
+- Monitoring
+- Reporting

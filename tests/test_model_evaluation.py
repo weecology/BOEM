@@ -1,8 +1,13 @@
 import pytest
-from src.model_evaluation import ModelEvaluation
+from src.pipeline_evaluation import ModelEvaluation
+from src.monitoring import Monitoring
 
-def test_evaluate_model():
-    evaluation = ModelEvaluation()
+@pytest.fixture
+def model_evaluation():
+    return ModelEvaluation()
+
+def test_evaluate_model(model_evaluation):
+    evaluation = model_evaluation
     model = "Sample model"  # Replace with appropriate test model
     data = "Sample data"  # Replace with appropriate test data
     results = evaluation.evaluate_model(model, data)

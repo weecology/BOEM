@@ -1,5 +1,12 @@
 import pytest
-from monitoring import Monitoring
+from src.monitoring import Monitoring
+
+@pytest.fixture
+def monitoring():
+    return Monitoring()
+
+def test_log_metric(monitoring):
+    # ... test code ...
 
 def test_start_monitoring():
     monitoring = Monitoring()

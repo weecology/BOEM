@@ -3,3 +3,6 @@ defaults:
 
 model:
   performance_threshold: 0.8
+
+pipeline_evaluation:
+  # ... configuration for pipeline evaluation ...

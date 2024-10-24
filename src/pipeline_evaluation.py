@@ -1,8 +1,6 @@
-from src.monitoring import Monitoring
 
 class PipelineEvaluation:
     def __init__(self, prediction_directory):
-        self.monitoring = Monitoring()
         self.prediction_directory = prediction_directory
         self.check_predictions()
         

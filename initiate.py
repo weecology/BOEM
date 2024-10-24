@@ -24,6 +24,9 @@ def initiate(cfg: DictConfig):
     # Save predictions
     output_path = cfg.output.predictions_path
     torch.save(predictions, output_path)
+
+    #Upload predictions to Label Studio
+    
     
     print(f"Predictions generated and saved to {output_path}")
 

@@ -6,3 +6,20 @@ model:
 
 pipeline_evaluation:
   # ... configuration for pipeline evaluation ...
+
+choose_images:
+  images_to_annotate_dir: '/path/to/images'
+  strategy: 'some_strategy'
+  n_images: 100
+  m: 10
+  patch_size: 256
+  patch_overlap: 0.5
+  min_score: 0.5
+  model_checkpoint: '/path/to/model'
+  target_labels:
+    - 'label1'
+    - 'label2'
+  # Optional parameters:
+  evaluation: null
+  dask_client: null
+  pool_limit: null

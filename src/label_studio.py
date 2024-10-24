@@ -7,6 +7,68 @@ import glob
 import shutil
 from PIL import Image
 
+def upload_to_label_studio(images, sftp_client, label_studio_project, images_to_annotate_dir, folder_name, preannotations):
+    """
+    Upload images to Label Studio and import image tasks.
+
+    Args:
+        images (list): List of image paths to upload.
+        sftp_client (paramiko.SFTPClient): The SFTP client for uploading images.
+        label_studio_project (label_studio_sdk.Project): The Label Studio project instance.
+        images_to_annotate_dir (str): The path to the directory of images to annotate.
+        folder_name (str): The name of the folder to upload images to.
+        preannotations (list): List of preannotations for the images.
+
+    Returns:
+        None
+    """
+    upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
+    import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
+
+def check_for_new_annotations(user, host, key_filename, label_studio_url, label_studio_project_name, train_csv_folder, images_to_annotate_dir, annotated_images_dir, folder_name, filter_labels=None):
+    """
+    Check for new annotations from Label Studio, move annotated images, and gather new images to annotate.
+
+    Args:
+        user (str): The username for the SFTP connection.
+        host (str): The host URL for the SFTP connection.
+        key_filename (str): The path to the SSH key file for the SFTP connection.
+        label_studio_url (str): The URL of the Label Studio server.
+        label_studio_project_name (str): The name of the Label Studio project.
+        train_csv_folder (str): The path to the folder containing training CSV files.
+        images_to_annotate_dir (str): The path to the directory of images to annotate.
+        annotated_images_dir (str): The path to the directory of annotated images.
+        folder_name (str): The name of the folder to upload images to.
+        filter_labels (list, optional): A list of labels to filter images by. Defaults to None.
+
+    Returns:
+        DataFrame: A DataFrame containing the gathered annotations.
+    """
+    
+    sftp_client = create_client(user=user, host=host, key_filename=key_filename)
+    label_studio_project = connect_to_label_studio(url=label_studio_url, project_name=label_studio_project_name)
+    new_annotations = download_completed_tasks(label_studio_project=label_studio_project, train_csv_folder=train_csv_folder)
+   
+   # Move annotated images out of local pool
+    if new_annotations is not None:
+        move_images(src_dir=images_to_annotate_dir, dst_dir=annotated_images_dir, annotations=new_annotations)
+        # Get any images from the server that are not in the images_to_annotate_dir
+        for image in new_annotations["image_path"].unique():
+            if not os.path.exists(os.path.join(annotated_images_dir, image)):
+                download_images(sftp_client=sftp_client, image_names=[image], folder_name=folder_name, local_image_dir=annotated_images_dir)
+        
+        delete_completed_tasks(label_studio_project=label_studio_project)
+    
+    else:
+        print("No new annotations")
+        return None
+
+    # Choose new images to annotate
+    label_studio_annotations = gather_data(train_csv_folder, labels=filter_labels)
+
+    return label_studio_annotations
+ 
+
 def label_studio_bbox_format(local_image_dir, preannotations):
     """Create a JSON string for a single image the Label Studio API.
     """

@@ -8,11 +8,11 @@ def model_deployment():
     return ModelDeployment()
 
 def test_deploy_model(model_deployment):
-    deployment = model_deployment
-    model = "Sample model"  # Replace with appropriate test model
-    deployed_model = deployment.deploy_model(model)
-    assert deployed_model is not None
-    # Add more specific assertions based on your expected deployed model structure
+    # Example test for model deployment
+    model = "model"
+    deployment_result = model_deployment.deploy_model(model)
+    assert deployment_result is not None
+    # Add more assertions based on expected deployment results
 
 def test_model_deployment():
     # ... (other test setup code)

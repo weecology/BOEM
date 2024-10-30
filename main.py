@@ -9,21 +9,20 @@ from src.pre_annotation_prediction import PreAnnotationPrediction
 from src.label_studio import check_for_new_annotations, upload_to_label_studio
 from src.model import Model
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
+@hydra.main(version_base=None, config_path="conf", config_name="config", check_annotations=True)
 def main(cfg: DictConfig):
-    
-    # Check for new annotations
-    new_annotations = check_for_new_annotations(**cfg.label_studio)
-    if new_annotations is None:
-        print("No new annotations, exiting")
-        return None
+    # Check for new annotations if the check_annotations flag is set
+    if cfg.check_annotations:
+        new_annotations = check_for_new_annotations(**cfg.label_studio)
+        if new_annotations is None:
+            print("No new annotations, exiting")
+            return None
     
     model_training = Model()
     trained_model = model_training.train_model(annotations)
 
     # Update the model path
     cfg.model.path = trained_model
-
     existing_model = cfg.model.path
 
     pipeline_monitor = PipelineEvaluation(trained_model)

@@ -1,14 +1,13 @@
 import pytest
 from src.model_training import ModelTraining
-from src.monitoring import Monitoring
 
 @pytest.fixture
 def model_training():
     return ModelTraining()
 
 def test_train_model(model_training):
-    training = model_training
-    processed_data = "Sample processed data"  # Replace with appropriate test data
-    trained_model = training.train_model(processed_data)
-    assert trained_model is not None
-    # Add more specific assertions based on your expected model structure
+    # Example test for model training
+    training_data = "training data"
+    model = model_training.train_model(training_data)
+    assert model is not None
+    # Add more assertions based on expected model properties

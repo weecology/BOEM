@@ -44,7 +44,6 @@ def check_for_new_annotations(user, host, key_filename, label_studio_url, label_
     Returns:
         DataFrame: A DataFrame containing the gathered annotations.
     """
-    
     sftp_client = create_client(user=user, host=host, key_filename=key_filename)
     label_studio_project = connect_to_label_studio(url=label_studio_url, project_name=label_studio_project_name)
     new_annotations = download_completed_tasks(label_studio_project=label_studio_project, train_csv_folder=train_csv_folder)
@@ -184,11 +183,11 @@ def gather_data(train_dir, labels=None):
     return df
 
 
-def connect_to_label_studio(url, project_name):
+def connect_to_label_studio(url, project_name, label_config=None):
     """Connect to the Label Studio server.
     Args:
-        port (int, optional): The port of the Label Studio server. Defaults to 8080.
-        host (str, optional): The host of the Label Studio server. Defaults to "localhost". 
+        project_name (str): The name of the project to connect to.
+        label_config (str, optional): The label configuration for the project. Defaults to None.
     Returns:
         str: The URL of the Label Studio server.
     """
@@ -199,7 +198,18 @@ def connect_to_label_studio(url, project_name):
     projects = ls.list_projects()
     project = [x for x in projects if x.get_params()["title"] == project_name][0]
 
+    if project is None:
+        # Create a project with the specified title and labeling configuration
+
+        project = ls.create_project(
+            title=project_name,
+            label_config=label_config
+        )
+
     return project
+
+def create_project(ls, project_name):
+    ls.create_project(title=project_name)
 
 def create_client(user, host, key_filename):
     # Download annotations from Label Studio

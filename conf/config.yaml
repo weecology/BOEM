@@ -1,12 +1,29 @@
-defaults:
-  - _self_
-
 model:
-  performance_threshold: 0.8
+  path:
+
+check_annotations: false
+label_studio:
+  project_name: "BOEM"
+  url: "https://labelstudio.naturecast.org/"
+  api_key: "${oc.env:LABEL_STUDIO_API_KEY}"
+
+pipeline:
+  confidence_threshold: 0.5
+  patch_size: 450
+  patch_overlap: 0
+  limit_empty_frac: 0.1
+
+train:
+  train_csv_folder:
+  train_image_dir:
+  under_sample_ratio: 0.5
+  labels:
+    - "Bird"
 
 pipeline_evaluation:
-  # ... configuration for pipeline evaluation ...
-
+  true_positive_threshold: 0.8
+  false_positive_threshold: 0.5
+  
 choose_images:
   images_to_annotate_dir: '/path/to/images'
   strategy: 'some_strategy'

@@ -166,4 +166,3 @@ See `requirements.txt` for a complete list.
 4. Update `main.py` to integrate the new component
 5. Create a branch and push your changes to the remote repository
 6. Create a pull request to merge your changes into the main branch
-

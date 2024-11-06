@@ -1,18 +1,16 @@
 import numpy as np
-from src.monitoring import Monitoring
 
 class PreAnnotationPrediction:
-    def __init__(self, confidence_threshold=0.8):
-        self.monitoring = Monitoring()
+    def __init__(self, label_studio_client=None):
+        self.label_studio_client = label_studio_client
         self.model = None
-        self.confidence_threshold = confidence_threshold
+        self.confidence_threshold = 0.5
 
     def load_model(self, model_path):
         """
         Load a pre-trained model.
         This is a placeholder - replace with actual model loading code.
         """
-        self.monitoring.log_metric("model_loaded", 1)
         print(f"Model loaded from {model_path}")
         # self.model = load_model(model_path)  # Uncomment and implement this when you have a specific model to load
 
@@ -30,7 +28,6 @@ class PreAnnotationPrediction:
         predictions = np.random.randint(0, 2, size=num_images)
         confidence_scores = np.random.rand(num_images)
         
-        self.monitoring.log_metric("predictions_made", num_images)
         return predictions, confidence_scores
 
     def divide_images(self, images, predictions, confidence_scores):
@@ -46,12 +43,9 @@ class PreAnnotationPrediction:
             else:
                 no_review_needed.append((img, pred, conf))
 
-        self.monitoring.log_metric("images_needing_review", len(needs_review))
-        self.monitoring.log_metric("images_not_needing_review", len(no_review_needed))
-
         return needs_review, no_review_needed
 
-    def run_pre_annotation_pipeline(self, images, model_path):
+    def run_pre_annotation_pipeline(self, images, model_path, confidence_threshold=0.5):
         """
         Run the entire pre-annotation prediction pipeline.
         """

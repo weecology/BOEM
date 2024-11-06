@@ -1,30 +1,30 @@
 import os
-from src.monitoring import Monitoring
-from src.pipeline_evaluation import PipelineEvaluation
-from huggingface_hub import HfApi, HfFolder
+from huggingface_hub import HfApi
 
 class ModelDeployment:
     def __init__(self):
-        self.monitoring = Monitoring()
-        self.pipeline_evaluation = PipelineEvaluation()
-        self.hf_api = HfApi()
-        self.hf_token = HfFolder.get_token()
+        """Initialize model deployment"""
+        self.api = HfApi()
+        self.repo_id = "weecology/boem-aerial-wildlife-detector"
 
-    def upload_to_huggingface(self, model_path, repo_id):
-        """
-        Upload the successful checkpoint to Hugging Face.
-
+    def deploy_model(self, model_path):
+        """Deploy a model to the weecology Hugging Face space
+        
         Args:
-            model_path (str): The path to the model checkpoint.
-            repo_id (str): The repository ID on Hugging Face.
-
-        Returns:
-            None
+            model_path (str): Path to the model file to deploy
+            
+        Raises:
+            FileNotFoundError: If model file does not exist
         """
-        self.hf_api.upload_file(
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model not found at {model_path}")
+
+        # Upload model to Hugging Face
+        self.api.upload_file(
             path_or_fileobj=model_path,
             path_in_repo=os.path.basename(model_path),
-            repo_id=repo_id,
-            token=self.hf_token
+            repo_id=self.repo_id,
+            repo_type="model"
         )
-
+        
+        print(f"Model deployed to {self.repo_id}")

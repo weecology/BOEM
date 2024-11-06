@@ -1,24 +1,14 @@
-
 class PipelineEvaluation:
-    def __init__(self, prediction_directory):
-        self.prediction_directory = prediction_directory
-        self.check_predictions()
-        
-    def check_predictions(self, prediction_directory):
-        import os
-
-        if not os.path.exists(prediction_directory):
-            raise FileNotFoundError(f"Prediction directory '{prediction_directory}' does not exist.")
-        
-        prediction_files = [f for f in os.listdir(prediction_directory) if f.endswith('.pt') or f.endswith('.pth')]
-        
-        if not prediction_files:
-            raise FileNotFoundError(f"No prediction files found in '{prediction_directory}'. Please run initiate.py to generate predictions.")
-        
-        return True
-
-    def evaluate_pipeline(self, pipeline):
-        # Implementation for pipeline evaluation
+    def __init__(self):
+        """Initialize pipeline evaluation"""
         pass
 
-    # ... other methods ...
+    def evaluate_pipeline(self, predictions, ground_truth):
+        """Evaluate pipeline performance"""
+        # Add your pipeline evaluation logic here
+        results = {
+            'accuracy': 0.0,
+            'precision': 0.0,
+            'recall': 0.0
+        }
+        return results

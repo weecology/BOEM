@@ -7,17 +7,22 @@ streamlit
 streamlit-leaflet
 plotly
 
+
 # New requirement for testing
 pytest
+label-studio-converter
+label-studio-sdk
 
 # Additional requirements from AirborneFieldGuide
 dask
+dask_jobqueue
 
 # Additional requirements from AirborneFieldGuide src files
-# Note: These are placeholder requirements. You may need to adjust based on the actual content of the files
 torch
 torchvision
 label-studio-sdk
+paramiko    
+deepforest
 
 # Add other dependencies here
 omegaconf

@@ -5,6 +5,8 @@ import os
 from hydra import initialize, compose
 import pandas as pd
 
+IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+
 def get_api_key():
     """Get Label Studio API key from .comet.config file"""
     config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.comet.config')
@@ -22,7 +24,7 @@ def config(tmpdir_factory):
     with initialize(version_base=None, config_path="../conf"):
         cfg = compose(config_name="config")
     
-    cfg["train"]["train_csv_folder"] = tmpdir_factory.mktemp("data").strpath
+    cfg.train.train_csv_folder = tmpdir_factory.mktemp("data").strpath
 
     # Create sample bounding box annotations
     data = {
@@ -44,6 +46,7 @@ def config(tmpdir_factory):
 
     return cfg
     
+@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
 @pytest.fixture(scope="session")
 def label_studio_client(config):
     """Initialize Label Studio client with API key from .comet.config"""
@@ -69,16 +72,23 @@ def label_studio_client(config):
             label_config=label_config
         )
 
-        # Only try to upload images if we have a valid client
-        if os.path.exists("tests/data"):
-            images = ["tests/data/" + f for f in os.listdir("tests/data/")]
-            label_studio.upload_to_label_studio(images, ls, "test_BOEM", "tests/data")
+        sftp_client = label_studio.create_sftp_client(user=config.server.user, host=config.server.host, key_filename=config.server.key_filename)
+        images = ["tests/data/" + f for f in os.listdir("tests/data/")]
+        label_studio.upload_to_label_studio(
+            images=images,
+            sftp_client=sftp_client,
+            label_studio_project=ls,
+            images_to_annotate_dir="tests/data",
+            folder_name=config.label_studio.folder_name,
+            preannotations=None
+        )
 
         return ls
     except Exception as e:
         print(f"Warning: Failed to initialize Label Studio client: {str(e)}")
         return None
 
+@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_label_studio(label_studio_client, request) -> Generator:
     """
@@ -88,21 +98,6 @@ def cleanup_label_studio(label_studio_client, request) -> Generator:
     # Setup: yield to allow tests to run
     yield
 
-    # Teardown: Clean up Label Studio projects only if we have a valid client
     def cleanup() -> None:
-        if label_studio_client is None:
-            return
-            
-        try:
-            # Get all test projects
-            projects = label_studio_client.get_projects()
-
-            # Delete test projects
-            for project in projects:
-                if project.title.startswith('test_'):
-                    label_studio_client.delete_project(project.id)
-                    print(f"Cleaned up test project: {project.title}")
-        except Exception as e:
-            print(f"Warning: Failed to cleanup Label Studio projects: {str(e)}")
-
+        label_studio.delete_all_tasks()
     request.addfinalizer(cleanup)

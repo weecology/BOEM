@@ -1,11 +1,10 @@
-import hydra
 from omegaconf import DictConfig
 from src.data_ingestion import DataIngestion
 from src.pipeline_evaluation import PipelineEvaluation
 from src.active_learning import choose_images
 from src.reporting import Reporting
 from src.pre_annotation_prediction import PreAnnotationPrediction
-from src.label_studio import check_for_new_annotations, upload_to_label_studio
+from src.label_studio import check_for_new_annotations, upload_to_label_studio, create_sftp_client, connect_to_label_studio
 from src.model import preprocess_and_train
 from src.data_processing import preprocess_images
 
@@ -13,8 +12,8 @@ class Pipeline:
     def __init__(self, cfg: DictConfig):
         """Initialize the pipeline with optional configuration"""
         self.config = cfg
-        self.label_studio_client = None
-        self.pre_annotation_predictor = None
+        self.label_studio_project = connect_to_label_studio(url=self.config.label_studio.url, project_name=self.config.label_studio.project_name)
+        self.sftp_client = create_sftp_client(**self.config.server) 
 
     def run(self):
         # Check for new annotations if the check_annotations flag is set
@@ -53,5 +52,5 @@ class Pipeline:
             print(f"Images auto-annotated: {len(auto_annotated_images)}")
 
             # Run the annotation pipeline
-            annotations = upload_to_label_studio(images_for_human_review, **self.config)
+            annotations = upload_to_label_studio(self.sftp_client, images_for_human_review, **self.config)
             reporting.generate_reports(trained_model)

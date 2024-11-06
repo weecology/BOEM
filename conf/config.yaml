@@ -1,11 +1,15 @@
+defaults:
+  - server: serenity
+
 model:
   path:
 
 check_annotations: false
 label_studio:
-  project_name: "BOEM"
+  project_name: "Bureau of Ocean Energy Management"
   url: "https://labelstudio.naturecast.org/"
   api_key: "${oc.env:LABEL_STUDIO_API_KEY}"
+  folder_name: "/pgsql/retrieverdash/everglades-label-studio/everglades-data"
 
 pipeline:
   confidence_threshold: 0.5

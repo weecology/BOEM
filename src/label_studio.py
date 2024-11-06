@@ -196,22 +196,24 @@ def connect_to_label_studio(url, project_name, label_config=None):
 
     # Look up existing name
     projects = ls.list_projects()
-    project = [x for x in projects if x.get_params()["title"] == project_name][0]
+    project = [x for x in projects if x.get_params()["title"] == project_name]
 
-    if project is None:
+    if len(project) == 0:
         # Create a project with the specified title and labeling configuration
 
         project = ls.create_project(
             title=project_name,
             label_config=label_config
         )
+    else:
+        project = project[0]
 
     return project
 
 def create_project(ls, project_name):
     ls.create_project(title=project_name)
 
-def create_client(user, host, key_filename):
+def create_sftp_client(user, host, key_filename):
     # Download annotations from Label Studio
     # SSH connection with a user prompt for password
     ssh = paramiko.SSHClient()

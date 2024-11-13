@@ -4,21 +4,28 @@ from torchmetrics.classification import Accuracy
 from torchmetrics.functional import confusion_matrix
 
 class PipelineEvaluation:
-    def __init__(self, model, detection_annotation_dir=None, classification_annotation_dir=None, iou_threshold=0.4, target_classes=None):
+    def __init__(self, model, detection_annotations_dir=None, classification_annotations_dir=None, detection_true_positive_threshold=0.8, detection_false_positive_threshold=0.5, classification_avg_score=0.5, target_labels=None):
         """Initialize pipeline evaluation"""
-        self.iou_threshold = iou_threshold 
-        self.detection_annotations_df = gather_data(detection_annotation_dir)
-        self.classification_annotations_df = gather_data(classification_annotation_dir)
+        self.detection_true_positive_threshold = detection_true_positive_threshold 
+        self.detection_false_positive_threshold = detection_false_positive_threshold
+        self.classification_avg_score = classification_avg_score
+
+        self.detection_annotations_df = gather_data(detection_annotations_dir)
+        self.classification_annotations_df = gather_data(classification_annotations_dir)
 
         self.model = model
 
         # Metrics
-        self.mAP = MeanAveragePrecision(box_format="xyxy",extended_summary=True)
-        self.classification_accuracy = Accuracy()
+        self.mAP = MeanAveragePrecision(box_format="xyxy",extended_summary=True, iou_threshold=detection_true_positive_threshold)
+        self.classification_accuracy = Accuracy(average="micro", num_classes=len(target_labels))
 
     def _format_targets(self, annotations_df):
-        return {"boxes": annotations_df["bbox"].tolist(),
-                "labels": annotations_df["label"].tolist()}
+        targets = {}
+        targets["boxes"] = annotations_df[["xmin", "ymin", "xmax",
+                                                  "ymax"]].values.astype("float32")
+        targets["labels"] = [self.model.label_dict[x] for x in annotations_df["label"].tolist()]
+
+        return targets
 
     def evaluate_detection(self):
         preds = self.model.predict(self.detection_annotations_df)

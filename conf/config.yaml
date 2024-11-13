@@ -35,13 +35,11 @@ train:
 pipeline_evaluation:
   detection_annotations_dir:
   classification_annotations_dir:
-  detection:
-    true_positive_threshold: 0.8
-    false_positive_threshold: 0.5
-  classification:
-    avg_score: 0.5
-    target_labels:
-      - "Bird"
+  detection_true_positive_threshold: 0.8
+  detection_false_positive_threshold: 0.5
+  classification_avg_score: 0.5
+  target_labels:
+    - "Bird"
 
 choose_images:
   images_to_annotate_dir: '/path/to/images'

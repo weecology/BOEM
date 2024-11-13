@@ -14,10 +14,13 @@ label_studio:
   api_key: "${oc.env:LABEL_STUDIO_API_KEY}"
   folder_name: "/pgsql/retrieverdash/everglades-label-studio/everglades-data"
 
-pipeline:
-  confidence_threshold: 0.5
+predict:
   patch_size: 450
   patch_overlap: 0
+  min_score: 0.5
+
+pipeline:
+  confidence_threshold: 0.5
   limit_empty_frac: 0.1
 
 train:
@@ -33,8 +36,9 @@ train:
     - "Bird"
 
 pipeline_evaluation:
-  detection_annotations_dir:
-  classification_annotations_dir:
+  detect_ground_truth_dir:
+  classify_confident_ground_truth_dir:
+  classify_uncertain_ground_truth_dir:
   detection_true_positive_threshold: 0.8
   detection_false_positive_threshold: 0.5
   classification_avg_score: 0.5

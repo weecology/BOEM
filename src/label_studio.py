@@ -157,18 +157,18 @@ def move_images(annotations, src_dir, dst_dir):
         except FileNotFoundError:
             continue
 
-def gather_data(train_dir, labels=None):
+def gather_data(annotation_dir, labels=[None]):
     """Gather data from a directory of CSV files.
     Args:
-        train_dir (str): The directory containing the CSV files.
+        annotation_dir (str): The directory containing the CSV files.
         labels (list): A list of labels to filter by.
     
     Returns:
         pd.DataFrame: A DataFrame containing the data.
     """ 
-    train_csvs = glob.glob(os.path.join(train_dir,"*.csv"))
+    csvs = glob.glob(os.path.join(annotation_dir,"*.csv"))
     df = []
-    for x in train_csvs:
+    for x in csvs:
         df.append(pd.read_csv(x))
     df = pd.concat(df)
     df.drop_duplicates(inplace=True)

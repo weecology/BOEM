@@ -62,12 +62,19 @@ def config(tmpdir_factory):
     cfg.train.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
 
     # Create detection annotations
-    cfg.pipeline_evaluation.detection_annotations_dir = tmpdir_factory.mktemp("detection_annotations").strpath
-    csv_path = os.path.join(cfg.pipeline_evaluation.detection_annotations_dir, 'detection_annotations.csv')
+    cfg.pipeline_evaluation.detect_ground_truth_dir = tmpdir_factory.mktemp("detection_annotations").strpath
+    csv_path = os.path.join(cfg.pipeline_evaluation.detect_ground_truth_dir, 'detection_annotations.csv')
     df.to_csv(csv_path, index=False)
 
     # Create classification annotations
-    cfg.pipeline_evaluation.classification_annotations_dir = tmpdir_factory.mktemp("classification_annotations").strpath
+    cfg.pipeline_evaluation.classify_confident_ground_truth_dir = tmpdir_factory.mktemp("confident_classification_annotations").strpath
+    csv_path = os.path.join(cfg.pipeline_evaluation.classify_confident_ground_truth_dir, 'confident_classification_annotations.csv')
+    df.to_csv(csv_path, index=False)
+
+    cfg.pipeline_evaluation.classify_uncertain_ground_truth_dir = tmpdir_factory.mktemp("uncertain_classification_annotations").strpath
+    csv_path = os.path.join(cfg.pipeline_evaluation.classify_uncertain_ground_truth_dir, 'uncertain_classification_annotations.csv')
+    df.to_csv(csv_path, index=False)
+    
     return cfg
     
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")

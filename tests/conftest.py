@@ -1,15 +1,21 @@
-import pytest
-from src import label_studio
-from typing import Generator
+# Standard library imports
 import os
-from hydra import initialize, compose
+import shutil
+from typing import Generator
+
+# Third party imports
 import pandas as pd
+import pytest
+from hydra import initialize, compose
+
+# Local imports
+from src import label_studio
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 
 def get_api_key():
-    """Get Label Studio API key from .comet.config file"""
-    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.comet.config')
+    """Get Label Studio API key from config file"""
+    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.label_studio.config')
     if not os.path.exists(config_path):
         return None
         
@@ -24,16 +30,23 @@ def config(tmpdir_factory):
     with initialize(version_base=None, config_path="../conf"):
         cfg = compose(config_name="config")
     
-    cfg.train.train_csv_folder = tmpdir_factory.mktemp("data").strpath
+    cfg.train.train_csv_folder = tmpdir_factory.mktemp("csvs").strpath
+    cfg.train.train_image_dir = tmpdir_factory.mktemp("images").strpath
+    cfg.train.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
+    
+    # Put images from tests/data into the image directory
+    for f in os.listdir("tests/data/"):
+        if f != '.DS_Store':
+            shutil.copy("tests/data/" + f, cfg.train.train_image_dir)
 
     # Create sample bounding box annotations
     data = {
-        'image_path': ['sample_image_1.jpg', 'sample_image_1.jpg', 'sample_image_2.jpg'],
-        'xmin': [100, 200, 150],
-        'ymin': [100, 300, 250], 
-        'xmax': [200, 300, 250],
-        'ymax': [200, 400, 350],
-        'label': ['Bird', 'Bird', 'Bird'],
+        'image_path': ['empty.jpg', 'birds.jpg', 'birds_val.jpg'],
+        'xmin': [None, 200, 150],
+        'ymin': [None, 300, 250], 
+        'xmax': [None, 300, 250],
+        'ymax': [None, 400, 350],
+        'label': ['None', 'Bird', 'Bird'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
 
@@ -44,6 +57,17 @@ def config(tmpdir_factory):
     csv_path = os.path.join(cfg.train.train_csv_folder, 'training_data.csv')
     df.to_csv(csv_path, index=False)
 
+    cfg.train.fast_dev_run = True
+    cfg.checkpoint = "bird"
+    cfg.train.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
+
+    # Create detection annotations
+    cfg.pipeline_evaluation.detection_annotations_dir = tmpdir_factory.mktemp("detection_annotations").strpath
+    csv_path = os.path.join(cfg.pipeline_evaluation.detection_annotations_dir, 'detection_annotations.csv')
+    df.to_csv(csv_path, index=False)
+
+    # Create classification annotations
+    cfg.pipeline_evaluation.classification_annotations_dir = tmpdir_factory.mktemp("classification_annotations").strpath
     return cfg
     
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
@@ -74,6 +98,9 @@ def label_studio_client(config):
 
         sftp_client = label_studio.create_sftp_client(user=config.server.user, host=config.server.host, key_filename=config.server.key_filename)
         images = ["tests/data/" + f for f in os.listdir("tests/data/")]
+        # Filter for only jpg files
+        images = [img for img in images if img.lower().endswith('.jpg')]
+
         label_studio.upload_to_label_studio(
             images=images,
             sftp_client=sftp_client,
@@ -97,7 +124,3 @@ def cleanup_label_studio(label_studio_client, request) -> Generator:
     """
     # Setup: yield to allow tests to run
     yield
-
-    def cleanup() -> None:
-        label_studio.delete_all_tasks()
-    request.addfinalizer(cleanup)

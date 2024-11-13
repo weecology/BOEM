@@ -27,3 +27,4 @@ deepforest
 # Add other dependencies here
 omegaconf
 matplotlib
+torchmetrics    

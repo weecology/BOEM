@@ -5,6 +5,8 @@ import random
 import tempfile
 import warnings
 from logging import warn
+import math
+from datetime import datetime
 
 # Third party imports
 import dask.array as da
@@ -14,8 +16,9 @@ from deepforest.utilities import read_file
 from pytorch_lightning.loggers import CometLogger
 
 # Local imports
-from src.data_processing import preprocess_images
+from src import data_processing
 from src.label_studio import gather_data
+from omegaconf import OmegaConf
 
 
 def evaluate(model, test_csv, image_root_dir):
@@ -74,42 +77,51 @@ def extract_backbone(snapshot, annotations):
 
     return m
   
-def create_train_test(annotations, train_test_split = 0.1, under_sample_ratio=0.4):
+def create_train_test(annotations, train_test_split = 0.1):
+    """Create a train and test set from annotations.
+    
+    Args:
+        annotations (pd.DataFrame): A DataFrame containing annotations.
+        train_test_split (float): The fraction of the data to use for validation.
+    Returns:
+        pd.DataFrame: A DataFrame containing training annotations.
+        pd.DataFrame: A DataFrame containing validation annotations.
+    """
     tmpdir = tempfile.gettempdir()
     # split train images into 90% train and 10% validation for each class as much as possible
     test_images = []
     validation_df = None
-    for label in annotations.label.value_counts().sort_values().index.values:
-        # is the current count already higher than 10% of the total count?
-        if validation_df is not None:
-            if label in validation_df.label.value_counts().index:
-                if validation_df.label.value_counts()[label] > annotations.label.value_counts()[label] * train_test_split:
-                    continue
-        images = list(annotations[annotations["label"] == label]["image_path"].unique())
-        label_test_images = random.sample(images, int(len(images)*train_test_split))
-        test_images.extend(label_test_images)
-        validation_df = annotations[annotations["image_path"].isin(test_images)]
 
-    validation_df.to_csv(os.path.join(tmpdir, f"random_validation_{label}.csv"), index=False)
+    if annotations.label.value_counts().shape[0] > 1:
+        for label in annotations.label.value_counts().sort_values().index.values:
+            # is the current count already higher than 10% of the total count?
+            if validation_df is not None:
+                if label in validation_df.label.value_counts().index:
+                    if validation_df.label.value_counts()[label] > annotations.label.value_counts()[label] * train_test_split:
+                        continue
+            images = list(annotations[annotations["label"] == label]["image_path"].unique())
+            label_test_images = random.sample(images, int(len(images)*train_test_split))
+            test_images.extend(label_test_images)
+            validation_df = annotations[annotations["image_path"].isin(test_images)]
+    else:
+        sample_size = math.ceil(len(annotations)*train_test_split)
+        test_images = random.sample(list(annotations.image_path.unique()),sample_size)
+        validation_df = annotations[annotations["image_path"].isin(test_images)]
 
     # Save validation csv
     train_df = annotations[~annotations["image_path"].isin(test_images)]
     
-    ## Undersample top classes by selecting most diverse images
-
-    # Find images that only have top two most common classes
-    top_two_classes = annotations.label.value_counts().index[:2]
-    top_two_labels = train_df[train_df["label"].isin(top_two_classes)]
-    
-    # remove images that have any other classes
-    top_two_images= train_df[train_df.image_path.isin(top_two_labels.image_path.unique())]
-    with_additional_species = top_two_images[~top_two_images["label"].isin(top_two_classes)].image_path.unique()
-    images_to_remove = [x for x in top_two_images.image_path.unique() if x not in with_additional_species][:int(len(with_additional_species)*under_sample_ratio)]
-    train_df = train_df[~train_df["image_path"].isin(images_to_remove)]
-    
     return train_df, validation_df
 
-def train(model, train_annotations, test_annotations, train_image_dir, comet_project=None, comet_workspace=None):
+def limit_empty_frames(crop_annotations, limit_empty_frac):
+    crop_annotation_empty = crop_annotations.loc[crop_annotations.xmin==0]
+    crop_annotation_non_empty = crop_annotations.loc[crop_annotations.xmin!=0]
+    crop_annotation_empty = crop_annotation_empty.sample(frac=limit_empty_frac)
+    crop_annotations = pd.concat([crop_annotation_empty, crop_annotation_non_empty])
+
+    return crop_annotations
+
+def train(model, train_annotations, test_annotations, train_image_dir, comet_project=None, comet_workspace=None, config_args=None):
     """Train a model on labeled images.
     Args:
         image_paths (list): A list of image paths.
@@ -117,6 +129,8 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
         test_annotations (pd.DataFrame): A DataFrame containing annotations.
         train_image_dir (str): The directory containing the training images.
         comet_project (str): The comet project name for logging. Defaults to None.
+        comet_workspace (str): The comet workspace for logging. Defaults to None.
+        config_args (dict): A dictionary of configuration arguments to update the model.config. Defaults to None.
     
     Returns:
         main.deepforest: A trained deepforest model.
@@ -124,8 +138,20 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     tmpdir = tempfile.gettempdir()
 
     train_annotations.to_csv(os.path.join(tmpdir,"train.csv"), index=False)
+
+    # Set config
     model.config["train"]["csv_file"] = os.path.join(tmpdir,"train.csv")
     model.config["train"]["root_dir"] = train_image_dir
+    
+    # Loop through all keys in model.config and set them to the value of the key in model.config
+    config_args = OmegaConf.to_container(config_args)
+    if config_args:
+        for key, value in config_args.items():
+            if isinstance(value, dict):
+                for subkey, subvalue in value.items():
+                    model.config[key][subkey] = subvalue
+            else:
+                model.config[key] = value
 
     if comet_project:
         comet_logger = CometLogger(project_name=comet_project, workspace=comet_workspace)
@@ -139,7 +165,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     
     with comet_logger.experiment.context_manager("train_images"):
         non_empty_train_annotations = train_annotations[train_annotations.xmin!=0]
-        sample_train_annotations = non_empty_train_annotations[non_empty_train_annotations.image_path.isin(non_empty_train_annotations.image_path.sample(5))]
+        sample_train_annotations = non_empty_train_annotations[non_empty_train_annotations.image_path.isin(non_empty_train_annotations.image_path.head(5))]
         sample_train_annotations = read_file(sample_train_annotations, root_dir=train_image_dir)
         sample_train_annotations["label"] = sample_train_annotations.apply(lambda x: model.label_dict[x["label"]], axis=1)
         filenames = visualize.plot_prediction_dataframe(sample_train_annotations, savedir=tmpdir, root_dir=train_image_dir)
@@ -148,7 +174,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
 
     with comet_logger.experiment.context_manager("test_images"):
         non_empty_test_annotations = test_annotations[test_annotations.xmin!=0]
-        sample_test_annotations = non_empty_test_annotations[non_empty_test_annotations.image_path.isin(non_empty_test_annotations.image_path.sample(5))]
+        sample_test_annotations = non_empty_test_annotations[non_empty_test_annotations.image_path.isin(non_empty_test_annotations.image_path.head(5))]
         sample_test_annotations = read_file(sample_test_annotations, root_dir=train_image_dir)
         sample_test_annotations["label"] = sample_test_annotations.apply(lambda x: model.label_dict[x["label"]], axis=1)
         filenames = visualize.plot_prediction_dataframe(sample_test_annotations, savedir=tmpdir, root_dir=train_image_dir)
@@ -172,35 +198,61 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
                 continue
             visualize.plot_results(prediction, savedir=tmpdir)
             comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
-
+    
     return model
 
-def preprocess_and_train(config):
+def preprocess_and_train(config, validation_df=None):
     """Preprocess data and train model.
     
     Args:
         config: Configuration object containing training parameters
+        validation_df (pd.DataFrame): A DataFrame containing validation annotations.
         
     Returns:
         trained_model: Trained model object
     """
     # Get and split annotations
     annotations = gather_data(config.train.train_csv_folder, labels=config.train.labels)
-    train_df, validation_df = create_train_test(annotations, under_sample_ratio=config.train.under_sample_ratio)
+
+    if validation_df is None:
+        train_df, validation_df = create_train_test(annotations)
+    else:
+        train_df = annotations[~annotations["image_path"].isin(validation_df["image_path"])]
 
     # Preprocess train and validation data
-    train_df = preprocess_images(train_df, 
+    train_df = data_processing.preprocess_images(train_df, 
                                root_dir=config.train.train_image_dir,
-                               save_dir=config.train.train_image_dir)
+                               save_dir=config.train.crop_image_dir)
     
-    validation_df = preprocess_images(validation_df,
+    validation_df = data_processing.preprocess_images(validation_df,
                                     root_dir=config.train.train_image_dir, 
-                                    save_dir=config.train.train_image_dir)
+                                    save_dir=config.train.crop_image_dir)
+
+    # Undersample top classes
+    if config.train.under_sample_ratio > 0:
+        train_df = data_processing.undersample(train_df, config.train.under_sample_ratio)
+
+    # Limit empty frames
+    if config.train.limit_empty_frac > 0:
+        train_df = limit_empty_frames(train_df, config.train.limit_empty_frac)
+        validation_df = limit_empty_frames(validation_df, config.train.limit_empty_frac)
 
     # Train model
-    trained_model = train(train_df, 
-                         train_image_dir=config.train.train_image_dir,
-                         model_path=config.model.path)
+    # Load existing model
+    if config.checkpoint:
+            loaded_model = load(config.checkpoint, annotations=train_df)
+    elif os.path.exists(config.checkpoint_dir):
+        loaded_model = get_latest_checkpoint(config.checkpoint_dir, train_df)
+    else:
+        raise ValueError("No checkpoint or checkpoint directory found.")
+
+    trained_model = train(train_annotations=train_df, 
+                            test_annotations=validation_df,
+                            train_image_dir=config.train.crop_image_dir,
+                            model=loaded_model,
+                            comet_project=config.comet.project,
+                            comet_workspace=config.comet.workspace,
+                            config_args=config.deepforest)
     
     return trained_model
 

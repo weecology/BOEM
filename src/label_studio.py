@@ -44,7 +44,7 @@ def check_for_new_annotations(user, host, key_filename, label_studio_url, label_
     Returns:
         DataFrame: A DataFrame containing the gathered annotations.
     """
-    sftp_client = create_client(user=user, host=host, key_filename=key_filename)
+    sftp_client = create_sftp_client(user=user, host=host, key_filename=key_filename)
     label_studio_project = connect_to_label_studio(url=label_studio_url, project_name=label_studio_project_name)
     new_annotations = download_completed_tasks(label_studio_project=label_studio_project, train_csv_folder=train_csv_folder)
    

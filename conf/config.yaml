@@ -1,8 +1,11 @@
 defaults:
   - server: serenity
 
-model:
-  path:
+checkpoint: bird
+
+comet:
+  project: BOEM
+  workspace: bw4sz
 
 check_annotations: false
 label_studio:
@@ -18,16 +21,28 @@ pipeline:
   limit_empty_frac: 0.1
 
 train:
+  validation_csv_path:
   train_csv_folder:
   train_image_dir:
-  under_sample_ratio: 0.5
+  crop_image_dir:
+  under_sample_ratio: 0
+  limit_empty_frac: 0
+  fast_dev_run: false
+  checkpoint_dir:
   labels:
     - "Bird"
 
 pipeline_evaluation:
-  true_positive_threshold: 0.8
-  false_positive_threshold: 0.5
-  
+  detection_annotations_dir:
+  classification_annotations_dir:
+  detection:
+    true_positive_threshold: 0.8
+    false_positive_threshold: 0.5
+  classification:
+    avg_score: 0.5
+    target_labels:
+      - "Bird"
+
 choose_images:
   images_to_annotate_dir: '/path/to/images'
   strategy: 'some_strategy'
@@ -44,3 +59,7 @@ choose_images:
   evaluation: null
   dask_client: null
   pool_limit: null
+
+deepforest:
+  train:
+    fast_dev_run: True

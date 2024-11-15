@@ -2,6 +2,7 @@ from src.label_studio import gather_data
 from torchmetrics.detection import MeanAveragePrecision
 from torchmetrics.classification import Accuracy
 from torchmetrics.functional import confusion_matrix
+from src.model import predict
 import pandas as pd
 
 class PipelineEvaluation:
@@ -55,8 +56,9 @@ class PipelineEvaluation:
         return targets
 
     def evaluate_detection(self):
-        preds = self.model.predict(
-            self.detection_annotations_df.image_path.tolist(), 
+        preds = predict(
+            model=self.model,
+            image_paths=self.detection_annotations_df.image_path.tolist(), 
             patch_size=self.patch_size, 
             patch_overlap=self.patch_overlap, 
             min_score=self.min_score
@@ -93,6 +95,14 @@ class PipelineEvaluation:
         self.detection_results = self.evaluate_detection()
         self.confident_classification_results = self.confident_classification_accuracy()
         self.uncertain_classification_results = self.uncertain_classification_accuracy()
+    
+    def check_success(self):
+        """Check if pipeline performance is satisfactory"""
+        # For each metric, check if it is above the threshold
+        if self.detection_results['detection']["true_positive_rate"] > self.detection_true_positive_threshold:
+            return True
+        else:
+            return False
     
     def report(self):
         """Generate a report of the pipeline evaluation"""

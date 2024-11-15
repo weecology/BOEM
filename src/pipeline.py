@@ -50,7 +50,7 @@ class Pipeline:
         reporting = Reporting()
         reporting.generate_reports(pipeline_monitor)
 
-        if performance.success:
+        if pipeline_monitor.check_success():
             print("Pipeline performance is satisfactory, exiting")
             return None
         else:

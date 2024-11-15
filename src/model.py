@@ -172,7 +172,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
             for filename in sample_train_annotations.image_path:
                 sample_train_annotations_for_image = sample_train_annotations[sample_train_annotations.image_path == filename]
                 sample_train_annotations_for_image.root_dir = train_image_dir
-                visualize.plot_results(sample_train_annotations_for_image)
+                visualize.plot_results(sample_train_annotations_for_image, savedir=tmpdir)
                 comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
 
     model.trainer.fit(model)

@@ -1,22 +1,23 @@
-from omegaconf import DictConfig
-from src.data_ingestion import DataIngestion
-from src.pipeline_evaluation import PipelineEvaluation
-from src.active_learning import choose_images
-from src.reporting import Reporting
-from src.pre_annotation_prediction import PreAnnotationPrediction
-from src.label_studio import check_for_new_annotations, upload_to_label_studio, create_sftp_client, connect_to_label_studio
-from src.model import preprocess_and_train
-from src.data_processing import preprocess_images
-import pandas as pd
 from datetime import datetime
 import os
+
+import pandas as pd
+from omegaconf import DictConfig
+
+from src.active_learning import choose_train_images, choose_test_images
+from src import propagate
+from src import label_studio
+from src.model import preprocess_and_train
+from src.pipeline_evaluation import PipelineEvaluation
+from src.pre_annotation_prediction import PreAnnotationPrediction
+from src.reporting import Reporting
 
 class Pipeline:
     def __init__(self, cfg: DictConfig):
         """Initialize the pipeline with optional configuration"""
         self.config = cfg
-        self.label_studio_project = connect_to_label_studio(url=self.config.label_studio.url, project_name=self.config.label_studio.project_name)
-        self.sftp_client = create_sftp_client(**self.config.server) 
+        self.label_studio_project = label_studio.connect_to_label_studio(url=self.config.label_studio.url, project_name=self.config.label_studio.project_name)
+        self.sftp_client = label_studio.create_sftp_client(**self.config.server) 
     
     def save_model(self, model):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -26,10 +27,14 @@ class Pipeline:
     def run(self):
         # Check for new annotations if the check_annotations flag is set
         if self.config.check_annotations:
-            new_annotations = check_for_new_annotations(**self.config.label_studio)
+            new_annotations = label_studio.check_for_new_annotations(**self.config.label_studio)
             if new_annotations is None:
                 print("No new annotations, exiting")
                 return None
+            
+            # Given new annotations, propogate labels to nearby images
+            label_propagator = propagate.LabelPropagator(**self.config.propagate)
+            label_propagator.through_time(new_annotations)
             
         if self.config.train.validation_csv_path is not None:
             validation_df = pd.read_csv(self.config.validation_csv_path)
@@ -49,19 +54,17 @@ class Pipeline:
             print("Pipeline performance is satisfactory, exiting")
             return None
         else:
-            images_to_annotate = choose_images(performance, **self.config.choose_images)
+            train_images_to_annotate = choose_train_images(performance, trained_model, **self.config.active_learning)
+            test_images_to_annotate = choose_test_images(performance, **self.config.active_testing)
 
-            data_ingestion = DataIngestion(images_to_annotate)
-            raw_data = data_ingestion.ingest_data()
+            pre_annotation = PreAnnotationPrediction(train_images_to_annotate)
+            confident_annotations, uncertain_annotations = pre_annotation.predict_and_divide(train_images_to_annotate)
 
-            images_to_annotate = preprocess_images(raw_data)
-            
-            pre_annotation = PreAnnotationPrediction(trained_model)
-            images_for_human_review, auto_annotated_images = pre_annotation.predict_and_divide(images_to_annotate)
-
-            print(f"Images requiring human review: {len(images_for_human_review)}")
-            print(f"Images auto-annotated: {len(auto_annotated_images)}")
+            print(f"Images requiring human review: {len(confident_annotations)}")
+            print(f"Images auto-annotated: {len(uncertain_annotations)}")
 
             # Run the annotation pipeline
-            annotations = upload_to_label_studio(self.sftp_client, images_for_human_review, **self.config)
+            label_studio.upload_to_label_studio(self.sftp_client, uncertain_annotations, **self.config)
+            label_studio.upload_to_label_studio(self.sftp_client, test_images_to_annotate, **self.config)
+
             reporting.generate_reports(trained_model)

@@ -1,64 +1,56 @@
 import pandas as pd
-import matplotlib.pyplot as plt
+import os
 from datetime import datetime
 
 class Reporting:
     def __init__(self):
-        self.report_data = {}
+        """Initialize reporting class"""
+        self.report_file = "pipeline_reports.csv"
 
-    def add_metric(self, metric_name, value):
-        """Add a metric to the report data."""
-        if metric_name not in self.report_data:
-            self.report_data[metric_name] = []
-        self.report_data[metric_name].append(value)
-
-    def generate_text_report(self):
-        """Generate a text-based report."""
-        report = "Model Deployment Report\n"
-        report += f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-
-        for metric, values in self.report_data.items():
-            report += f"{metric}:\n"
-            report += f"  Latest: {values[-1]}\n"
-            report += f"  Average: {sum(values) / len(values):.2f}\n"
-            report += f"  Min: {min(values)}\n"
-            report += f"  Max: {max(values)}\n\n"
-
-        return report
-
-    def generate_visual_report(self, output_file='report.png'):
-        """Generate a visual report with plots."""
-        num_metrics = len(self.report_data)
-        fig, axs = plt.subplots(num_metrics, 1, figsize=(10, 5*num_metrics))
+    def generate_reports(self, pipeline_monitor):
+        """Generate reports from pipeline monitoring
         
-        for i, (metric, values) in enumerate(self.report_data.items()):
-            ax = axs[i] if num_metrics > 1 else axs
-            ax.plot(values)
-            ax.set_title(metric)
-            ax.set_xlabel('Iterations')
-            ax.set_ylabel('Value')
+        Args:
+            pipeline_monitor: PipelineEvaluation instance containing model performance metrics
+        """
+        # Get current timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Get performance metrics
+        performance = pipeline_monitor.report()
+        
+        # Extract key metrics
+        detection_map = performance['detection']['map'] if 'detection' in performance else None
+        confident_acc = performance['confident_classification'] if 'confident_classification' in performance else None 
+        uncertain_acc = performance['uncertain_classification'] if 'uncertain_classification' in performance else None
 
-        plt.tight_layout()
-        plt.savefig(output_file)
-        plt.close()
-
-    def save_report_to_file(self, filename='report.txt'):
-        """Save the text report to a file."""
-        with open(filename, 'w') as f:
-            f.write(self.generate_text_report())
-
-    def generate_csv_report(self, filename='report.csv'):
-        """Generate a CSV report."""
-        df = pd.DataFrame(self.report_data)
-        df.to_csv(filename, index=False)
-
-    def generate_report(self, pipeline_evaluation, model_deployment):
-        # Add metrics to the report
-        self.add_metric('accuracy', pipeline_evaluation.accuracy)
-        self.add_metric('loss', pipeline_evaluation.loss)
-
-        # Generate reports
-        self.generate_text_report()
-        self.generate_visual_report()
-        self.save_report_to_file('deployment_report.txt')
-        self.generate_csv_report('deployment_report.csv')
+        # Get annotation counts
+        total_annotations = len(pipeline_monitor.detection_annotations_df)
+        confident_annotations = len(pipeline_monitor.confident_classification_annotations_df)
+        uncertain_annotations = len(pipeline_monitor.uncertain_classification_annotations_df)
+        
+        # Calculate completion rate
+        completion_rate = (confident_annotations + uncertain_annotations) / total_annotations if total_annotations > 0 else 0
+        
+        # Create report row
+        report_data = {
+            'timestamp': timestamp,
+            'model_name': pipeline_monitor.model.__class__.__name__,
+            'completion_rate': completion_rate,
+            'total_annotations': total_annotations,
+            'confident_annotations': confident_annotations,
+            'uncertain_annotations': uncertain_annotations,
+            'detection_map': detection_map,
+            'confident_classification_accuracy': confident_acc,
+            'uncertain_classification_accuracy': uncertain_acc
+        }
+        
+        # Load existing or create new report file
+        if os.path.exists(self.report_file):
+            df = pd.read_csv(self.report_file)
+            df = pd.concat([df, pd.DataFrame([report_data])], ignore_index=True)
+        else:
+            df = pd.DataFrame([report_data])
+            
+        # Save updated reports
+        df.to_csv(self.report_file, index=False)

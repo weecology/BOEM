@@ -23,14 +23,29 @@ def preprocess_images(annotations, root_dir, save_dir, limit_empty_frac=0.1, pat
     crop_annotations = []
 
     for image_path in annotations.image_path.unique():
-        crop_annotation = process_image(image_path, annotation_df=annotations, root_dir=root_dir, save_dir=save_dir, patch_size=patch_size, patch_overlap=patch_overlap)
+        annotation_df = annotations[annotations.image_path == image_path]
+        annotation_df = annotation_df[~annotation_df.xmin.isnull()]
+        if annotation_df.empty:
+            allow_empty = True
+            annotation_df = None
+        else:
+            allow_empty = False
+        crop_annotation = process_image(
+            image_path, 
+            annotation_df=annotation_df, 
+            root_dir=root_dir, 
+            save_dir=save_dir, 
+            patch_size=patch_size, 
+            patch_overlap=patch_overlap, 
+            allow_empty=allow_empty
+        )
         crop_annotations.append(crop_annotation)
 
     crop_annotations = pd.concat(crop_annotations)
 
     return crop_annotations
 
-def process_image(image_path, annotation_df, root_dir, save_dir, patch_size, patch_overlap):
+def process_image(image_path, annotation_df, root_dir, save_dir, patch_size, patch_overlap, allow_empty):
     image_name = os.path.splitext(os.path.basename(image_path))[0]
     crop_csv = "{}.csv".format(os.path.join(save_dir, image_name))
     if os.path.exists(crop_csv):
@@ -45,7 +60,21 @@ def process_image(image_path, annotation_df, root_dir, save_dir, patch_size, pat
         patch_overlap=patch_overlap,
         save_dir=save_dir,
         root_dir=root_dir,
-        allow_empty=True
+        allow_empty=allow_empty
     )
-
-    return crop_annotation
+    if annotation_df is None:
+        empty_annotations = []
+        for i in range(len(crop_annotation)):
+            empty_annotation = pd.DataFrame({
+                "image_path": os.path.basename(crop_annotation[i]),
+                "xmin": [None],
+                "xmax": [None],
+                "ymin": [None],
+                "ymax": [None],
+            })
+            empty_annotations.append(empty_annotation)
+        empty_annotations = pd.concat(empty_annotations)
+        empty_annotations.root_dir = root_dir
+        return empty_annotations
+    else:   
+        return crop_annotation

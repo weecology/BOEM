@@ -25,7 +25,7 @@ def upload_to_label_studio(images, sftp_client, label_studio_project, images_to_
     upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
     import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
 
-def check_for_new_annotations(user, host, key_filename, label_studio_url, label_studio_project_name, train_csv_folder, images_to_annotate_dir, annotated_images_dir, folder_name, filter_labels=None):
+def check_for_new_annotations(user, host, key_filename, label_studio_url, label_studio_project_name, train_csv_folder, images_to_annotate_dir, annotated_images_dir, folder_name):
     """
     Check for new annotations from Label Studio, move annotated images, and gather new images to annotate.
 
@@ -63,7 +63,7 @@ def check_for_new_annotations(user, host, key_filename, label_studio_url, label_
         return None
 
     # Choose new images to annotate
-    label_studio_annotations = gather_data(train_csv_folder, labels=filter_labels)
+    label_studio_annotations = gather_data(train_csv_folder)
 
     return label_studio_annotations
  
@@ -157,11 +157,10 @@ def move_images(annotations, src_dir, dst_dir):
         except FileNotFoundError:
             continue
 
-def gather_data(annotation_dir, labels=[None]):
+def gather_data(annotation_dir):
     """Gather data from a directory of CSV files.
     Args:
         annotation_dir (str): The directory containing the CSV files.
-        labels (list): A list of labels to filter by.
     
     Returns:
         pd.DataFrame: A DataFrame containing the data.
@@ -173,12 +172,6 @@ def gather_data(annotation_dir, labels=[None]):
     df = pd.concat(df)
     df.drop_duplicates(inplace=True)
     df.reset_index(drop=True, inplace=True)
-
-    # Filter labels
-    if labels[0] == 'None':
-        labels = None
-    if labels:
-        df = df[df["label"].isin(labels)]
     
     return df
 

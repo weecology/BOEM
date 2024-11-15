@@ -23,6 +23,10 @@ pipeline:
   confidence_threshold: 0.5
   limit_empty_frac: 0.1
 
+propagate:
+  time_threshold_seconds: 5
+  distance_threshold_pixels: 50
+
 train:
   validation_csv_path:
   train_csv_folder:
@@ -43,25 +47,33 @@ pipeline_evaluation:
   detection_false_positive_threshold: 0.5
   classification_avg_score: 0.5
   target_labels:
-    - "Bird"
 
-choose_images:
-  images_to_annotate_dir: '/path/to/images'
-  strategy: 'some_strategy'
+active_learning:
+  images_to_annotate_dir:
+  strategy: 'random'
   n_images: 100
   m: 10
   patch_size: 256
   patch_overlap: 0.5
   min_score: 0.5
-  model_checkpoint: '/path/to/model'
+  model_checkpoint:
   target_labels:
-    - 'label1'
-    - 'label2'
+  
   # Optional parameters:
   evaluation: null
   dask_client: null
   pool_limit: null
 
+active_testing:
+  images_to_annotate_dir:
+  strategy: 'random'
+  n_images: 100
+  m: 10
+  patch_size: 256
+  patch_overlap: 0.5
+  min_score: 0.5
+
 deepforest:
   train:
     fast_dev_run: True
+  workers: 0

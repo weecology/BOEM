@@ -29,19 +29,27 @@ class PipelineEvaluation:
         self.min_score = min_score
 
         self.detection_annotations_df = gather_data(detect_ground_truth_dir)
-        self.classification_confident_annotations_df = gather_data(classify_confident_ground_truth_dir)
-        self.classification_uncertain_annotations_df = gather_data(classify_uncertain_ground_truth_dir)
+        self.confident_classification_annotations_df = gather_data(classify_confident_ground_truth_dir)
+        self.uncertain_classification_annotations_df = gather_data(classify_uncertain_ground_truth_dir)
+
+        # If no annotations, raise errors
+        if self.detection_annotations_df.empty:
+            raise ValueError("No detection annotations found")
+        if self.confident_classification_annotations_df.empty:
+            raise ValueError("No confident classification annotations found")
+        if self.uncertain_classification_annotations_df.empty:
+            raise ValueError("No uncertain classification annotations found")
 
         self.model = model
 
         # Metrics
-        self.mAP = MeanAveragePrecision(box_format="xyxy",extended_summary=True, iou_threshold=detection_true_positive_threshold)
-        self.classification_accuracy = Accuracy(average="micro", num_classes=len(target_labels))
+        self.mAP = MeanAveragePrecision(box_format="xyxy",extended_summary=True)
+        self.confident_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=len(self.confident_classification_annotations_df["label"].unique()))
+        self.uncertain_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=len(self.uncertain_classification_annotations_df["label"].unique()))
 
     def _format_targets(self, annotations_df):
         targets = {}
-        targets["boxes"] = annotations_df[["xmin", "ymin", "xmax",
-                                                  "ymax"]].values.astype("float32")
+        targets["boxes"] = annotations_df[["xmin", "ymin", "xmax","ymax"]].values.astype("float32")
         targets["labels"] = [self.model.label_dict[x] for x in annotations_df["label"].tolist()]
 
         return targets
@@ -71,24 +79,26 @@ class PipelineEvaluation:
         # Combine confident and uncertain classifications
         combined_annotations_df = pd.concat([self.classification_confident_annotations_df, self.classification_uncertain_annotations_df])
         if self.target_classes is not None:
-            self.classification_accuracy.update(combined_annotations_df, self.target_classes)
-            return self.classification_accuracy.compute()
+            self.confident_classification_accuracy.update(combined_annotations_df, self.target_classes)
+            self.uncertain_classification_accuracy.update(combined_annotations_df, self.target_classes)
+            return self.confident_classification_accuracy.compute(), self.uncertain_classification_accuracy.compute()
         else:
-            return None
+            return None, None
 
-    def evaluate_pipeline(self):
+    def evaluate(self):
         """
         Evaluate pipeline performance for both detection and classification
             
         """
-        detection_results = self.evaluate_detection()
-        confident_classification_results = self.confident_classification_accuracy()
-        uncertain_classification_results = self.uncertain_classification_accuracy()
-
+        self.detection_results = self.evaluate_detection()
+        self.confident_classification_results = self.confident_classification_accuracy()
+        self.uncertain_classification_results = self.uncertain_classification_accuracy()
+    
+    def report(self):
+        """Generate a report of the pipeline evaluation"""
         results = {
-            'detection': detection_results,
-            'confident_classification': confident_classification_results,
-            'uncertain_classification': uncertain_classification_results
+            'detection': self.detection_results,
+            'confident_classification': self.confident_classification_results,
+            'uncertain_classification': self.uncertain_classification_results
         }
-        
         return results

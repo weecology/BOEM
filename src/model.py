@@ -164,33 +164,19 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
         model.create_trainer()
     
     with comet_logger.experiment.context_manager("train_images"):
-        non_empty_train_annotations = train_annotations[train_annotations.xmin!=0]
-        sample_train_annotations = non_empty_train_annotations[non_empty_train_annotations.image_path.isin(non_empty_train_annotations.image_path.head(5))]
-        sample_train_annotations = read_file(sample_train_annotations, root_dir=train_image_dir)
-        sample_train_annotations["label"] = sample_train_annotations.apply(lambda x: model.label_dict[x["label"]], axis=1)
-        filenames = visualize.plot_prediction_dataframe(sample_train_annotations, savedir=tmpdir, root_dir=train_image_dir)
-        for filename in filenames:
-            comet_logger.experiment.log_image(filename)
-
-    with comet_logger.experiment.context_manager("test_images"):
-        non_empty_test_annotations = test_annotations[test_annotations.xmin!=0]
-        sample_test_annotations = non_empty_test_annotations[non_empty_test_annotations.image_path.isin(non_empty_test_annotations.image_path.head(5))]
-        sample_test_annotations = read_file(sample_test_annotations, root_dir=train_image_dir)
-        sample_test_annotations["label"] = sample_test_annotations.apply(lambda x: model.label_dict[x["label"]], axis=1)
-        filenames = visualize.plot_prediction_dataframe(sample_test_annotations, savedir=tmpdir, root_dir=train_image_dir)
-        for filename in filenames:
-            comet_logger.experiment.log_image(filename)
-
-    with comet_logger.experiment.context_manager("PRE-training prediction"):
-        for image_path in test_annotations.image_path.sample(5):
-            prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
-            print(prediction)
-            if prediction is None:
-                continue
-            visualize.plot_results(prediction, savedir=tmpdir)
-            comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
+        non_empty_train_annotations = train_annotations[train_annotations.xmax.notnull()]
+        if non_empty_train_annotations.empty:
+            pass
+        else:
+            sample_train_annotations = non_empty_train_annotations[non_empty_train_annotations.image_path.isin(non_empty_train_annotations.image_path.head(5))]
+            for filename in sample_train_annotations.image_path:
+                sample_train_annotations_for_image = sample_train_annotations[sample_train_annotations.image_path == filename]
+                sample_train_annotations_for_image.root_dir = train_image_dir
+                visualize.plot_results(sample_train_annotations_for_image)
+                comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
 
     model.trainer.fit(model)
+    
     with comet_logger.experiment.context_manager("post-training prediction"):
         for image_path in test_annotations.image_path.sample(5):
             prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
@@ -212,7 +198,7 @@ def preprocess_and_train(config, validation_df=None):
         trained_model: Trained model object
     """
     # Get and split annotations
-    annotations = gather_data(config.train.train_csv_folder, labels=config.train.labels)
+    annotations = gather_data(config.train.train_csv_folder)
 
     if validation_df is None:
         train_df, validation_df = create_train_test(annotations)

@@ -7,7 +7,7 @@ def main(cfg: DictConfig):
     """Main entry point for the application"""
     
     # Initialize and run pipeline
-    pipeline = Pipeline(config=cfg)
+    pipeline = Pipeline(cfg=cfg)
     results = pipeline.run(model_path=cfg.model.path)
     
     # Log results

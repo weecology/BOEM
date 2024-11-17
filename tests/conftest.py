@@ -40,23 +40,39 @@ def config(tmpdir_factory):
             shutil.copy("tests/data/" + f, cfg.train.train_image_dir)
 
     # Create sample bounding box annotations
-    data = {
-        'image_path': ['empty.jpg', 'birds.jpg', 'birds_val.jpg'],
+    train_data = {
+        'image_path': ['empty.jpg', 'birds.jpg',"birds.jpg"],
         'xmin': [0, 200, 150],
-        'ymin': [0, 300, 250], 
+        'ymin': [0, 300, 250],  
         'xmax': [0, 300, 250],
         'ymax': [0, 400, 350],
-        'label': ['Bird', 'Bird', 'Bird'],
+        'label': ['Bird', 'Bird1', 'Bird2'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
 
-    # Create DataFrame
-    df = pd.DataFrame(data)
+    val_data = {
+        'image_path': ['birds_val.jpg', 'birds_val.jpg'],
+        'xmin': [150, 150],
+        'ymin': [250, 250],
+        'xmax': [250, 250], 
+        'ymax': [350, 350],
+        'label': ['Bird1', 'Bird2'],
+        'annotator': ['test_user', 'test_user']
+    }
 
-    # Save to CSV in the configured training directory
-    csv_path = os.path.join(cfg.train.train_csv_folder, 'training_data.csv')
-    df.to_csv(csv_path, index=False)
+    # Create DataFrames
+    train_df = pd.DataFrame(train_data)
+    val_df = pd.DataFrame(val_data)
 
+    # Save training data to CSV
+    train_csv_path = os.path.join(cfg.train.train_csv_folder, 'training_data.csv')
+    train_df.to_csv(train_csv_path, index=False)
+
+    # Save validation data to CSV 
+    val_csv_path = os.path.join(cfg.train.train_csv_folder, 'validation.csv')
+    val_df.to_csv(val_csv_path, index=False)
+
+    cfg.train.validation_csv_path = val_csv_path
     cfg.train.fast_dev_run = True
     cfg.checkpoint = "bird"
     cfg.train.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
@@ -64,16 +80,16 @@ def config(tmpdir_factory):
     # Create detection annotations
     cfg.pipeline_evaluation.detect_ground_truth_dir = tmpdir_factory.mktemp("detection_annotations").strpath
     csv_path = os.path.join(cfg.pipeline_evaluation.detect_ground_truth_dir, 'detection_annotations.csv')
-    df.to_csv(csv_path, index=False)
+    val_df.to_csv(csv_path, index=False)
 
     # Create classification annotations
     cfg.pipeline_evaluation.classify_confident_ground_truth_dir = tmpdir_factory.mktemp("confident_classification_annotations").strpath
     csv_path = os.path.join(cfg.pipeline_evaluation.classify_confident_ground_truth_dir, 'confident_classification_annotations.csv')
-    df.to_csv(csv_path, index=False)
+    val_df.to_csv(csv_path, index=False)
 
     cfg.pipeline_evaluation.classify_uncertain_ground_truth_dir = tmpdir_factory.mktemp("uncertain_classification_annotations").strpath
     csv_path = os.path.join(cfg.pipeline_evaluation.classify_uncertain_ground_truth_dir, 'uncertain_classification_annotations.csv')
-    df.to_csv(csv_path, index=False)
+    val_df.to_csv(csv_path, index=False)
     
     return cfg
     

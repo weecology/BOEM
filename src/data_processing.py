@@ -89,7 +89,7 @@ def preprocess_images(
             allow_empty = True
         else:
             allow_empty = False
-            
+
         crop_annotation = process_image(
             image_path=image_path,
             annotation_df=annotation_df,
@@ -140,6 +140,12 @@ def process_image(
         return pd.read_csv(crop_csv)
         
     full_path = os.path.join(root_dir, image_path)
+    
+    # Check if all xmin values are 0, indicating empty annotations
+    if annotation_df is not None and all(annotation_df['xmin'] == 0):
+        allow_empty = True
+    else:
+        allow_empty = False
     
     crop_annotation = preprocess.split_raster(
         path_to_raster=full_path,

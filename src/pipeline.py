@@ -37,7 +37,7 @@ class Pipeline:
             label_propagator.through_time(new_annotations)
             
         if self.config.train.validation_csv_path is not None:
-            validation_df = pd.read_csv(self.config.validation_csv_path)
+            validation_df = pd.read_csv(self.config.train.validation_csv_path)
         else:
             validation_df = None
 

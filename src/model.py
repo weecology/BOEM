@@ -6,13 +6,11 @@ import tempfile
 import warnings
 from logging import warn
 import math
-from datetime import datetime
 
 # Third party imports
 import dask.array as da
 import pandas as pd
 from deepforest import main, visualize
-from deepforest.utilities import read_file
 from pytorch_lightning.loggers import CometLogger
 
 # Local imports
@@ -87,7 +85,6 @@ def create_train_test(annotations, train_test_split = 0.1):
         pd.DataFrame: A DataFrame containing training annotations.
         pd.DataFrame: A DataFrame containing validation annotations.
     """
-    tmpdir = tempfile.gettempdir()
     # split train images into 90% train and 10% validation for each class as much as possible
     test_images = []
     validation_df = None
@@ -164,7 +161,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
         model.create_trainer()
     
     with comet_logger.experiment.context_manager("train_images"):
-        non_empty_train_annotations = train_annotations[train_annotations.xmax.notnull()]
+        non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
         if non_empty_train_annotations.empty:
             pass
         else:
@@ -178,7 +175,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     model.trainer.fit(model)
     
     with comet_logger.experiment.context_manager("post-training prediction"):
-        for image_path in test_annotations.image_path.sample(5):
+        for image_path in test_annotations.image_path.head(5):
             prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
             if prediction is None:
                 continue

@@ -6,11 +6,12 @@ from src.model import predict
 import pandas as pd
 
 class PipelineEvaluation:
-    def __init__(self, model, detect_ground_truth_dir=None, classify_confident_ground_truth_dir=None, classify_uncertain_ground_truth_dir=None, detection_true_positive_threshold=0.8, detection_false_positive_threshold=0.5, classification_avg_score=0.5, target_labels=None, patch_size=450, patch_overlap=0, min_score=0.5):
+    def __init__(self, model, image_dir, detect_ground_truth_dir=None, classify_confident_ground_truth_dir=None, classify_uncertain_ground_truth_dir=None, detection_true_positive_threshold=0.8, detection_false_positive_threshold=0.5, classification_avg_score=0.5, target_labels=None, patch_size=450, patch_overlap=0, min_score=0.5):
         """Initialize pipeline evaluation.
         
         Args:
             model: Trained model for making predictions
+            image_dir (str): Directory containing images
             detect_ground_truth_dir (str): Directory containing detection ground truth annotation CSV files
             classify_confident_ground_truth_dir (str): Directory containing confident classification ground truth annotation CSV files
             classify_uncertain_ground_truth_dir (str): Directory containing uncertain classification ground truth annotation CSV files
@@ -28,7 +29,10 @@ class PipelineEvaluation:
         self.patch_size = patch_size
         self.patch_overlap = patch_overlap
         self.min_score = min_score
-
+        self.detection_ground_truth_dir = detect_ground_truth_dir
+        self.confident_classification_ground_truth_dir = classify_confident_ground_truth_dir
+        self.uncertain_classification_ground_truth_dir = classify_uncertain_ground_truth_dir
+        self.image_dir = image_dir
         self.detection_annotations_df = gather_data(detect_ground_truth_dir)
         self.confident_classification_annotations_df = gather_data(classify_confident_ground_truth_dir)
         self.uncertain_classification_annotations_df = gather_data(classify_uncertain_ground_truth_dir)
@@ -56,9 +60,10 @@ class PipelineEvaluation:
         return targets
 
     def evaluate_detection(self):
+        full_image_paths = [self.image_dir + "/" + image_path for image_path in self.detection_annotations_df.image_path.tolist()] 
         preds = predict(
-            model=self.model,
-            image_paths=self.detection_annotations_df.image_path.tolist(), 
+            m=self.model,
+            image_paths=full_image_paths, 
             patch_size=self.patch_size, 
             patch_overlap=self.patch_overlap, 
             min_score=self.min_score
@@ -67,15 +72,19 @@ class PipelineEvaluation:
 
         self.mAP.update(preds=preds, target=targets)
 
-        return self.mAP.compute()
+        results = {"mAP": self.mAP.compute()}
+
+        return results
 
     def confident_classification_accuracy(self):
         self.classification_accuracy.update(self.classification_confident_annotations_df)
-        return self.classification_accuracy.compute()
+        results = {"confident_classification_accuracy": self.classification_accuracy.compute()}
+        return results
 
     def uncertain_classification_accuracy(self):
         self.classification_accuracy.update(self.classification_uncertain_annotations_df)
-        return self.classification_accuracy.compute()
+        results = {"uncertain_classification_accuracy": self.classification_accuracy.compute()}
+        return results
 
     def target_classification_accuracy(self):
         # Combine confident and uncertain classifications
@@ -83,7 +92,8 @@ class PipelineEvaluation:
         if self.target_classes is not None:
             self.confident_classification_accuracy.update(combined_annotations_df, self.target_classes)
             self.uncertain_classification_accuracy.update(combined_annotations_df, self.target_classes)
-            return self.confident_classification_accuracy.compute(), self.uncertain_classification_accuracy.compute()
+            results = {"target_classification_accuracy": {"confident_classification_accuracy": self.confident_classification_accuracy.compute(), "target_uncertain_classification_accuracy": self.uncertain_classification_accuracy.compute()}}
+            return results
         else:
             return None, None
 
@@ -92,9 +102,16 @@ class PipelineEvaluation:
         Evaluate pipeline performance for both detection and classification
             
         """
-        self.detection_results = self.evaluate_detection()
-        self.confident_classification_results = self.confident_classification_accuracy()
-        self.uncertain_classification_results = self.uncertain_classification_accuracy()
+        results = {}
+        detection_results = self.evaluate_detection()
+        confident_classification_results = self.confident_classification_accuracy()
+        uncertain_classification_results = self.uncertain_classification_accuracy()
+        if self.target_classes is not None:
+            target_classification_results = self.target_classification_accuracy()
+
+        results = {"detection": detection_results, "confident_classficiation":confident_classification_results, "uncertain_classification":uncertain_classification_results, "target_classification":target_classification_results}
+        
+        return results
     
     def check_success(self):
         """Check if pipeline performance is satisfactory"""

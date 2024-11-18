@@ -30,14 +30,15 @@ def config(tmpdir_factory):
     with initialize(version_base=None, config_path="../conf"):
         cfg = compose(config_name="config")
     
-    cfg.train.train_csv_folder = tmpdir_factory.mktemp("csvs").strpath
-    cfg.train.train_image_dir = tmpdir_factory.mktemp("images").strpath
-    cfg.train.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
-    
+    cfg.detection_model.train_csv_folder = tmpdir_factory.mktemp("csvs").strpath
+    cfg.detection_model.train_image_dir = tmpdir_factory.mktemp("images").strpath
+    cfg.detection_model.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
+    cfg.pipeline_evaluation.image_dir = cfg.detection_model.train_image_dir
+
     # Put images from tests/data into the image directory
     for f in os.listdir("tests/data/"):
         if f != '.DS_Store':
-            shutil.copy("tests/data/" + f, cfg.train.train_image_dir)
+            shutil.copy("tests/data/" + f, cfg.detection_model.train_image_dir)
 
     # Create sample bounding box annotations
     train_data = {
@@ -65,17 +66,17 @@ def config(tmpdir_factory):
     val_df = pd.DataFrame(val_data)
 
     # Save training data to CSV
-    train_csv_path = os.path.join(cfg.train.train_csv_folder, 'training_data.csv')
+    train_csv_path = os.path.join(cfg.detection_model.train_csv_folder, 'training_data.csv')
     train_df.to_csv(train_csv_path, index=False)
 
     # Save validation data to CSV 
-    val_csv_path = os.path.join(cfg.train.train_csv_folder, 'validation.csv')
+    val_csv_path = os.path.join(cfg.detection_model.train_csv_folder, 'validation.csv')
     val_df.to_csv(val_csv_path, index=False)
 
-    cfg.train.validation_csv_path = val_csv_path
-    cfg.train.fast_dev_run = True
+    cfg.detection_model.validation_csv_path = val_csv_path
+    cfg.detection_model.fast_dev_run = True
     cfg.checkpoint = "bird"
-    cfg.train.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
+    cfg.detection_model.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
 
     # Create detection annotations
     cfg.pipeline_evaluation.detect_ground_truth_dir = tmpdir_factory.mktemp("detection_annotations").strpath
@@ -94,7 +95,6 @@ def config(tmpdir_factory):
     return cfg
     
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
-@pytest.fixture(scope="session")
 def label_studio_client(config):
     """Initialize Label Studio client with API key from .comet.config"""
     api_key = get_api_key()
@@ -139,7 +139,6 @@ def label_studio_client(config):
         return None
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
-@pytest.fixture(scope="session", autouse=True)
 def cleanup_label_studio(label_studio_client, request) -> Generator:
     """
     Fixture that runs after all tests are completed to clean up Label Studio projects.

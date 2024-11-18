@@ -3,12 +3,22 @@ import os
 from datetime import datetime
 
 class Reporting:
-    def __init__(self):
+    def __init__(self, report_dir, pipeline_monitor):
         """Initialize reporting class"""
-        self.report_file = "pipeline_reports.csv"
+        self.report_dir = report_dir
+        self.pipeline_monitor = pipeline_monitor
 
-    def generate_reports(self, pipeline_monitor):
-        """Generate reports from pipeline monitoring
+    def write_predictions(self, predictions):
+        """Write predictions to a csv file"""
+        all_predictions = pd.concat(self.pipeline_monitor.predictions)
+        all_predictions.to_csv(f"{self.report_dir}/predictions.csv", index=False)
+    
+    def get_coco_datasets(self):
+        """Get coco datasets"""
+        self.pipeline_monitor.mAP.get_coco_datasets()
+
+    def write_metrics(self):
+        """Write metrics to a csv file
         
         Args:
             pipeline_monitor: PipelineEvaluation instance containing model performance metrics
@@ -17,17 +27,17 @@ class Reporting:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Get performance metrics
-        performance = pipeline_monitor.report()
+        performance = self.pipeline_monitor.results
         
         # Extract key metrics
-        detection_map = performance['detection']['map'] if 'detection' in performance else None
-        confident_acc = performance['confident_classification'] if 'confident_classification' in performance else None 
-        uncertain_acc = performance['uncertain_classification'] if 'uncertain_classification' in performance else None
+        detection_map = performance['detection']['mAP']['map']
+        confident_acc = performance['confident_classification']['accuracy']
+        uncertain_acc = performance['uncertain_classification']['accuracy']
 
         # Get annotation counts
-        total_annotations = len(pipeline_monitor.detection_annotations_df)
-        confident_annotations = len(pipeline_monitor.confident_classification_annotations_df)
-        uncertain_annotations = len(pipeline_monitor.uncertain_classification_annotations_df)
+        total_annotations = len(performance['detection']['annotations'])
+        confident_annotations = len(performance['confident_classification']['annotations'])
+        uncertain_annotations = len(performance['uncertain_classification']['annotations'])
         
         # Calculate completion rate
         completion_rate = (confident_annotations + uncertain_annotations) / total_annotations if total_annotations > 0 else 0
@@ -35,7 +45,7 @@ class Reporting:
         # Create report row
         report_data = {
             'timestamp': timestamp,
-            'model_name': pipeline_monitor.model.__class__.__name__,
+            'model_name': self.pipeline_monitor.model.__class__.__name__,
             'completion_rate': completion_rate,
             'total_annotations': total_annotations,
             'confident_annotations': confident_annotations,

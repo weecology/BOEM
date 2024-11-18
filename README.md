@@ -1,6 +1,6 @@
-# ML Pipeline Project
+# Bird Detection Pipeline
 
-A modular machine learning pipeline for data processing, model training, evaluation, and deployment with pre-annotation prediction capabilities for Bureau of Ocean Energy Management (BOEM) data.
+A machine learning pipeline for detecting and annotating birds in aerial imagery.
 
 ## Project Structure
 
@@ -29,7 +29,6 @@ project_root/
 │   ├── test_model_deployment.py
 │   ├── test_monitoring.py
 │   ├── test_reporting.py
-│   └── test_pre_annotation_prediction.py
 │
 ├── conf/                    # Configuration files
 │   └── config.yaml         # Main configuration file
@@ -54,7 +53,6 @@ project_root/
 - **model_deployment.py**: Manages model deployment
 - **monitoring.py**: Provides monitoring and logging capabilities
 - **reporting.py**: Generates reports for pipeline results
-- **pre_annotation_prediction.py**: Handles pre-annotation model predictions
 - **annotation/**: Contains annotation-related functionality
   - **pipeline.py**: Implements the annotation pipeline
 

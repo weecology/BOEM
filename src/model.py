@@ -184,13 +184,13 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     
     return model
 
-def preprocess_and_train(config, validation_df=None):
+def preprocess_and_train(config, validation_df=None, model_type="detection"):
     """Preprocess data and train model.
     
     Args:
         config: Configuration object containing training parameters
         validation_df (pd.DataFrame): A DataFrame containing validation annotations.
-        
+        model_type (str): The type of model to train. Defaults to "detection".
     Returns:
         trained_model: Trained model object
     """
@@ -257,7 +257,7 @@ def get_latest_checkpoint(checkpoint_dir, annotations):
     
     return m
 
-def _predict_list_(image_paths, min_score, patch_size, patch_overlap, model_path, m=None):
+def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None):
     if model_path:
         m = load(model_path)
     else:
@@ -270,20 +270,21 @@ def _predict_list_(image_paths, min_score, patch_size, patch_overlap, model_path
     
     predictions = []
     for image_path in image_paths:
-            try:
-                prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap)
-            except ValueError:
-                continue
-            prediction = prediction[prediction.score > min_score]
-            predictions.append(prediction)
+        prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
+        if prediction is None:
+            prediction = pd.DataFrame({"image_path": image_path, "xmin": [None], "ymin": [None], "xmax": [None], "ymax": [None], "label": [None], "score": [None]})
+        predictions.append(prediction)
     
     return predictions
 
-def predict(image_paths, patch_size, patch_overlap, min_score, m=None, model_path=None,dask_client=None):
+def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, dask_client=None, crop_model=None):
     """Predict bounding boxes for images
     Args:
         m (main.deepforest): A trained deepforest model.
-        image_paths (list): A list of image paths.  
+        image_paths (list): A list of image paths.          
+        crop_model (main.deepforest): A trained deepforest model for classification.
+        model_path (str): The path to a model checkpoint.
+        dask_client (dask.distributed.Client): A dask client for parallel prediction.
     Returns:
         list: A list of image predictions.
     """
@@ -304,9 +305,9 @@ def predict(image_paths, patch_size, patch_overlap, min_score, m=None, model_pat
                                               image_paths=block.compute(),
                                               patch_size=patch_size,
                                               patch_overlap=patch_overlap,
-                                              min_score=min_score,
                                               model_path=model_path,
-                                              m=m)
+                                              m=m,
+                                              crop_model=crop_model)
             block_futures.append(block_future)
         # Get results
         predictions = []
@@ -314,6 +315,6 @@ def predict(image_paths, patch_size, patch_overlap, min_score, m=None, model_pat
             block_result = block_result.result()
             predictions.append(pd.concat(block_result))
     else:
-        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score, model_path=model_path, m=m)
+        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=crop_model)
 
     return predictions

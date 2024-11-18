@@ -27,26 +27,35 @@ propagate:
   time_threshold_seconds: 5
   distance_threshold_pixels: 50
 
-train:
+detection_model:
   validation_csv_path:
   train_csv_folder:
   train_image_dir:
   crop_image_dir:
-  under_sample_ratio: 0
   limit_empty_frac: 0
   fast_dev_run: false
   checkpoint_dir:
   labels:
     - "Bird"
 
+classification_model:
+  validation_csv_path:
+  train_csv_folder:
+  under_sample_ratio: 0
+  fast_dev_run: false
+
 pipeline_evaluation:
   detect_ground_truth_dir:
   classify_confident_ground_truth_dir:
   classify_uncertain_ground_truth_dir:
+  # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
   detection_true_positive_threshold: 0.8
   detection_false_positive_threshold: 0.5
   classification_avg_score: 0.5
-  target_labels:
+  image_dir:
+
+reporting:
+  report_dir:
 
 active_learning:
   images_to_annotate_dir:

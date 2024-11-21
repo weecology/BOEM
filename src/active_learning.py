@@ -1,7 +1,7 @@
 import glob
 import os
 import random
-from src import model
+from src import detection
 import dask.array as da
 import pandas as pd
 
@@ -59,7 +59,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
             blocks = dask_pool.to_delayed().ravel()
             block_futures = []
             for block in blocks:
-                block_future = dask_client.submit(model.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score, model_path=model_path)
+                block_future = dask_client.submit(detection.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score, model_path=model_path)
                 block_futures.append(block_future)
             # Get results
             dask_results = []
@@ -68,7 +68,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
                 dask_results.append(pd.concat(block_result))
             preannotations = pd.concat(dask_results)
         else:
-            preannotations = model.predict(m=m, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
+            preannotations = detection.predict(m=m, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
             preannotations = pd.concat(preannotations)
         
         if strategy == "most-detections":
@@ -140,7 +140,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
             blocks = dask_pool.to_delayed().ravel()
             block_futures = []
             for block in blocks:
-                block_future = dask_client.submit(model.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score, model_path=model_path)
+                block_future = dask_client.submit(detection.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score, model_path=model_path)
                 block_futures.append(block_future)
             # Get results
             dask_results = []
@@ -149,7 +149,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
                 dask_results.append(pd.concat(block_result))
             preannotations = pd.concat(dask_results)
         else:
-            preannotations = model.predict(m=m, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
+            preannotations = detection.predict(m=m, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
             preannotations = pd.concat(preannotations)
         
         if strategy == "most-detections":

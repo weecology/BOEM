@@ -8,7 +8,7 @@ from dask.distributed import Client
 import gc
 import os
 from deepforest import main
-from src import model
+from src import detection
 from dask.distributed import wait
 from dask import delayed
 
@@ -89,9 +89,9 @@ def start(cpus=0, gpus=0, mem_size="50GB"):
 
 def create_model(model_checkpoint, checkpoint_dir, annotations):
     if model_checkpoint:
-        m = model.load(model_checkpoint)
+        m = detection.load(model_checkpoint)
     elif os.path.exists(checkpoint_dir):
-        m = model.get_latest_checkpoint(checkpoint_dir, annotations)
+        m = detection.get_latest_checkpoint(checkpoint_dir, annotations)
     else:
         m = main.deepforest()
         m.use_bird_release()

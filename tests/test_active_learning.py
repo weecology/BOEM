@@ -3,7 +3,7 @@ from src.active_learning import choose_train_images, choose_test_images
 
 @pytest.fixture
 def performance():
-    return {"detection": 0.9, "classification": 0.8}
+    return {"detection": {"mAP":{"map":0.9}}, "confident_classification": {"accuracy": 0.8}}
 
 @pytest.fixture
 def detection_model():

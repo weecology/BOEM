@@ -1,8 +1,6 @@
 defaults:
   - server: serenity
 
-checkpoint: bird
-
 comet:
   project: BOEM
   workspace: bw4sz
@@ -28,19 +26,24 @@ propagate:
   distance_threshold_pixels: 50
 
 detection_model:
+  checkpoint: bird
+  checkpoint_dir:
   validation_csv_path:
   train_csv_folder:
   train_image_dir:
   crop_image_dir:
   limit_empty_frac: 0
   fast_dev_run: false
-  checkpoint_dir:
   labels:
     - "Bird"
 
 classification_model:
+  checkpoint:
+  checkpoint_dir:
   validation_csv_path:
   train_csv_folder:
+  train_image_dir:
+  crop_image_dir:
   under_sample_ratio: 0
   fast_dev_run: false
 

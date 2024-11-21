@@ -2,7 +2,7 @@ from src.label_studio import gather_data
 from torchmetrics.detection import MeanAveragePrecision
 from torchmetrics.classification import Accuracy
 from torchmetrics.functional import confusion_matrix
-from src.model import predict
+from src.detection import predict
 import pandas as pd
 import torch
 class PipelineEvaluation:

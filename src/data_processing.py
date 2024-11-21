@@ -2,7 +2,11 @@ import pandas as pd
 import os
 from logging import warn
 from deepforest import preprocess
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Dict
+import numpy as np
+from scipy.spatial import ConvexHull
+from sklearn.cluster import DBSCAN
+import cv2
 
 def undersample(train_df: pd.DataFrame, ratio: float) -> pd.DataFrame:
     """
@@ -173,3 +177,151 @@ def process_image(
         return empty_annotations
     else:   
         return crop_annotation
+
+def density_cropping(
+    predictions: pd.DataFrame,
+    image_path: str,
+    min_density: int = 3,
+    eps: float = 50,
+    min_samples: int = 3,
+    padding: int = 100
+) -> Dict[str, List[Dict]]:
+    """
+    Create crops around dense areas of detections using clustering and convex hulls.
+    
+    Args:
+        predictions: DataFrame with columns ['xmin', 'ymin', 'xmax', 'ymax']
+        image_path: Path to the original image
+        min_density: Minimum number of detections to consider an area dense
+        eps: Maximum distance between points for DBSCAN clustering
+        min_samples: Minimum samples per cluster for DBSCAN
+        padding: Padding around hull in pixels
+        
+    Returns:
+        Dictionary containing:
+            'crops': List of dictionaries with crop coordinates and paths
+            'clusters': List of cluster assignments for each detection
+    """
+    if len(predictions) < min_density:
+        return {'crops': [], 'clusters': []}
+    
+    # Get centers of bounding boxes
+    centers = np.array([
+        [(row.xmin + row.xmax) / 2, (row.ymin + row.ymax) / 2]
+        for _, row in predictions.iterrows()
+    ])
+    
+    # Cluster centers using DBSCAN
+    clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(centers)
+    labels = clustering.labels_
+    
+    # Process each cluster
+    crops = []
+    unique_labels = np.unique(labels[labels != -1])  # Exclude noise points
+    
+    # Load image to get dimensions
+    img = cv2.imread(image_path)
+    if img is None:
+        raise FileNotFoundError(f"Could not load image: {image_path}")
+    img_height, img_width = img.shape[:2]
+    
+    for label in unique_labels:
+        cluster_points = centers[labels == label]
+        
+        if len(cluster_points) >= min_density:
+            # Create convex hull around cluster points
+            hull = ConvexHull(cluster_points)
+            hull_points = cluster_points[hull.vertices]
+            
+            # Get bounding box of hull
+            xmin = max(0, int(np.min(hull_points[:, 0]) - padding))
+            ymin = max(0, int(np.min(hull_points[:, 1]) - padding))
+            xmax = min(img_width, int(np.max(hull_points[:, 0]) + padding))
+            ymax = min(img_height, int(np.max(hull_points[:, 1]) + padding))
+            
+            # Create crop
+            crop = img[ymin:ymax, xmin:xmax]
+            
+            # Generate crop filename
+            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            crop_name = f"{base_name}_cluster_{label}.jpg"
+            crop_path = os.path.join(os.path.dirname(image_path), "crops", crop_name)
+            
+            # Ensure crops directory exists
+            os.makedirs(os.path.dirname(crop_path), exist_ok=True)
+            
+            # Save crop
+            cv2.imwrite(crop_path, crop)
+            
+            crops.append({
+                'xmin': xmin,
+                'ymin': ymin,
+                'xmax': xmax,
+                'ymax': ymax,
+                'path': crop_path,
+                'num_detections': len(cluster_points)
+            })
+    
+    return {
+        'crops': crops,
+        'clusters': labels.tolist()
+    }
+
+def adjust_coordinates(
+    predictions: pd.DataFrame,
+    crop_info: Dict[str, int]
+) -> pd.DataFrame:
+    """
+    Adjust coordinates of predictions relative to crop boundaries.
+    
+    Args:
+        predictions: DataFrame with bounding box coordinates
+        crop_info: Dictionary with crop boundaries (xmin, ymin, xmax, ymax)
+        
+    Returns:
+        DataFrame with adjusted coordinates
+    """
+    adjusted = predictions.copy()
+    adjusted['xmin'] = adjusted['xmin'] - crop_info['xmin']
+    adjusted['xmax'] = adjusted['xmax'] - crop_info['xmin']
+    adjusted['ymin'] = adjusted['ymin'] - crop_info['ymin']
+    adjusted['ymax'] = adjusted['ymax'] - crop_info['ymin']
+    return adjusted
+
+def merge_crop_predictions(
+    crops: List[Dict],
+    predictions: pd.DataFrame,
+    labels: List[int]
+) -> pd.DataFrame:
+    """
+    Merge predictions from multiple crops back into original image coordinates.
+    
+    Args:
+        crops: List of crop information dictionaries
+        predictions: Original predictions DataFrame
+        labels: Cluster labels for each prediction
+        
+    Returns:
+        DataFrame with merged predictions
+    """
+    merged = []
+    
+    for i, crop in enumerate(crops):
+        # Get predictions for this cluster
+        cluster_mask = np.array(labels) == i
+        cluster_preds = predictions[cluster_mask].copy()
+        
+        # Adjust coordinates back to original image space
+        cluster_preds['xmin'] += crop['xmin']
+        cluster_preds['xmax'] += crop['xmin']
+        cluster_preds['ymin'] += crop['ymin']
+        cluster_preds['ymax'] += crop['ymin']
+        
+        merged.append(cluster_preds)
+    
+    # Add predictions that weren't in any cluster
+    noise_mask = np.array(labels) == -1
+    if noise_mask.any():
+        merged.append(predictions[noise_mask])
+    
+    return pd.concat(merged, ignore_index=True)

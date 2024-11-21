@@ -18,7 +18,6 @@ from src import data_processing
 from src.label_studio import gather_data
 from omegaconf import OmegaConf
 
-
 def evaluate(model, test_csv, image_root_dir):
     """Evaluate a model on labeled images.
     
@@ -53,16 +52,16 @@ def load(path, annotations = None):
     elif path == "bird":
         snapshot = main.deepforest(label_dict={"Bird":0})
         snapshot.use_bird_release()
-    else:   
+    else:
         snapshot = main.deepforest.load_from_checkpoint(path)
 
     if not annotations is None:
         num_labels = len(annotations.label.unique())
         if num_labels != len(snapshot.label_dict):
             snapshot = extract_backbone(snapshot, annotations)
-    
+
     return snapshot
-        
+
 def extract_backbone(snapshot, annotations):
     warnings.warn("The number of classes in the model does not match the number of classes in the annotations. The backbone will be extracted and retrained.")
     new_labels = annotations.label.unique()
@@ -74,7 +73,7 @@ def extract_backbone(snapshot, annotations):
     m.model.head.regression_head.load_state_dict(snapshot.model.head.regression_head.state_dict())
 
     return m
-  
+
 def create_train_test(annotations, train_test_split = 0.1):
     """Create a train and test set from annotations.
     
@@ -107,7 +106,7 @@ def create_train_test(annotations, train_test_split = 0.1):
 
     # Save validation csv
     train_df = annotations[~annotations["image_path"].isin(test_images)]
-    
+
     return train_df, validation_df
 
 def limit_empty_frames(crop_annotations, limit_empty_frac):
@@ -139,7 +138,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     # Set config
     model.config["train"]["csv_file"] = os.path.join(tmpdir,"train.csv")
     model.config["train"]["root_dir"] = train_image_dir
-    
+
     # Loop through all keys in model.config and set them to the value of the key in model.config
     config_args = OmegaConf.to_container(config_args)
     if config_args:
@@ -159,7 +158,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
         model.create_trainer(logger=comet_logger)
     else:
         model.create_trainer()
-    
+
     with comet_logger.experiment.context_manager("train_images"):
         non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
         if non_empty_train_annotations.empty:
@@ -173,7 +172,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
                 comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
 
     model.trainer.fit(model)
-    
+
     with comet_logger.experiment.context_manager("post-training prediction"):
         for image_path in test_annotations.image_path.head(5):
             prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
@@ -181,7 +180,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
                 continue
             visualize.plot_results(prediction, savedir=tmpdir)
             comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
-    
+
     return model
 
 def preprocess_and_train(config, validation_df=None, model_type="detection"):
@@ -195,7 +194,7 @@ def preprocess_and_train(config, validation_df=None, model_type="detection"):
         trained_model: Trained model object
     """
     # Get and split annotations
-    annotations = gather_data(config.train.train_csv_folder)
+    annotations = gather_data(config.detection_model.train_csv_folder)
 
     if validation_df is None:
         train_df, validation_df = create_train_test(annotations)
@@ -203,40 +202,36 @@ def preprocess_and_train(config, validation_df=None, model_type="detection"):
         train_df = annotations[~annotations["image_path"].isin(validation_df["image_path"])]
 
     # Preprocess train and validation data
-    train_df = data_processing.preprocess_images(train_df, 
-                               root_dir=config.train.train_image_dir,
-                               save_dir=config.train.crop_image_dir)
-    
-    validation_df = data_processing.preprocess_images(validation_df,
-                                    root_dir=config.train.train_image_dir, 
-                                    save_dir=config.train.crop_image_dir)
+    train_df = data_processing.preprocess_images(train_df,
+                               root_dir=config.detection_model.train_image_dir,
+                               save_dir=config.detection_model.crop_image_dir)
 
-    # Undersample top classes
-    if config.train.under_sample_ratio > 0:
-        train_df = data_processing.undersample(train_df, config.train.under_sample_ratio)
+    validation_df = data_processing.preprocess_images(validation_df,
+                                    root_dir=config.detection_model.train_image_dir,
+                                    save_dir=config.detection_model.crop_image_dir)
 
     # Limit empty frames
-    if config.train.limit_empty_frac > 0:
-        train_df = limit_empty_frames(train_df, config.train.limit_empty_frac)
-        validation_df = limit_empty_frames(validation_df, config.train.limit_empty_frac)
+    if config.detection_model.limit_empty_frac > 0:
+        train_df = limit_empty_frames(train_df, config.detection_model.limit_empty_frac)
+        validation_df = limit_empty_frames(validation_df, config.detection_model.limit_empty_frac)
 
     # Train model
     # Load existing model
-    if config.checkpoint:
-            loaded_model = load(config.checkpoint, annotations=train_df)
-    elif os.path.exists(config.checkpoint_dir):
-        loaded_model = get_latest_checkpoint(config.checkpoint_dir, train_df)
+    if config.detection_model.checkpoint:
+        loaded_model = load(config.detection_model.checkpoint, annotations=train_df)
+    elif os.path.exists(config.detection_model.checkpoint_dir):
+        loaded_model = get_latest_checkpoint(config.detection_model.checkpoint_dir, train_df)
     else:
         raise ValueError("No checkpoint or checkpoint directory found.")
 
-    trained_model = train(train_annotations=train_df, 
+    trained_model = train(train_annotations=train_df,
                             test_annotations=validation_df,
-                            train_image_dir=config.train.crop_image_dir,
+                            train_image_dir=config.detection_model.crop_image_dir,
                             model=loaded_model,
                             comet_project=config.comet.project,
                             comet_workspace=config.comet.workspace,
                             config_args=config.deepforest)
-    
+
     return trained_model
 
 def get_latest_checkpoint(checkpoint_dir, annotations):
@@ -254,7 +249,7 @@ def get_latest_checkpoint(checkpoint_dir, annotations):
     else:
         os.makedirs(checkpoint_dir)
         m = main.deepforest(config_file="Airplane/deepforest_config.yml")
-    
+
     return m
 
 def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None):
@@ -263,18 +258,18 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
     else:
         if m is None:
             raise ValueError("A model or model_path is required for prediction.")
-    
+
     # if no trainer, create one
     if m.trainer is None:
         m.create_trainer()
-    
+
     predictions = []
     for image_path in image_paths:
         prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
         if prediction is None:
             prediction = pd.DataFrame({"image_path": image_path, "xmin": [None], "ymin": [None], "xmax": [None], "ymax": [None], "label": [None], "score": [None]})
         predictions.append(prediction)
-    
+
     return predictions
 
 def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, dask_client=None, crop_model=None):

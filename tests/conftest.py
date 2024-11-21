@@ -35,14 +35,14 @@ def config(tmpdir_factory):
     for f in os.listdir("tests/data/"):
         if f != '.DS_Store':
             shutil.copy("tests/data/" + f, cfg.detection_model.train_image_dir)
-
+            shutil.copy("tests/data/" + f, cfg.classification_model.train_image_dir)
     # Create sample bounding box annotations
     train_data = {
         'image_path': ['empty.jpg', 'birds.jpg', "birds.jpg"],
         'xmin': [0, 200, 150],
         'ymin': [0, 300, 250],
-        'xmax': [0, 300, 250],
-        'ymax': [0, 400, 350],
+        'xmax': [20, 300, 250],
+        'ymax': [20, 400, 350],
         'label': ['Bird', 'Bird1', 'Bird2'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
@@ -83,6 +83,7 @@ def config(tmpdir_factory):
 
     cfg.detection_model.validation_csv_path = val_csv_path
     cfg.detection_model.fast_dev_run = True
+    cfg.classification_model.fast_dev_run = True
     cfg.detection_model.checkpoint = "bird"
     cfg.detection_model.checkpoint_dir = tmpdir_factory.mktemp(
         "checkpoints").strpath

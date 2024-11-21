@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 from datetime import datetime
-
+from src.visualization import PredictionVisualizer
 class Reporting:
     def __init__(self, report_dir, pipeline_monitor):
         """Initialize reporting class"""
@@ -17,6 +17,14 @@ class Reporting:
         """Get coco datasets"""
         self.pipeline_monitor.mAP.get_coco_datasets()
 
+    def generate_video(self):
+        """Generate a video from the predictions"""
+        visualizer = PredictionVisualizer()
+        visualizer.create_video(
+            predictions_list=self.pipeline_monitor.predictions,
+            output_path=f"{self.report_dir}/predictions.mp4"
+        )
+        
     def write_metrics(self):
         """Write metrics to a csv file
         

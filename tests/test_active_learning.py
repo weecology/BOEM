@@ -36,5 +36,5 @@ def test_choose_test_images(detection_model, config):
         n=config.active_testing.n_images,
         patch_size=config.active_testing.patch_size,
         patch_overlap=config.active_testing.patch_overlap,
-        min_score=config.active_testing.min_score        )
+        min_score=config.active_testing.min_score)
     assert len(test_images_to_annotate) > 0

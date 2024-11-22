@@ -166,3 +166,23 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
         raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', or 'target-labels'.")
 
     return chosen_images
+
+def predict_and_divide(trained_detection_model, trained_classification_model, image_paths, patch_size, patch_overlap, confident_threshold):
+    predictions = detection.predict(
+        model=trained_detection_model,
+        crop_model=trained_classification_model,
+        image_paths=image_paths,
+        patch_size=patch_size,
+        patch_overlap=patch_overlap,
+    )
+    combined_predictions = pd.concat(predictions)
+
+    # Split predictions into confident and uncertain
+    uncertain_predictions = combined_predictions[
+        combined_predictions["score"] <= confident_threshold]
+            
+    confident_predictions = combined_predictions[
+        ~combined_predictions["image_path"].isin(
+            uncertain_predictions["image_path"])]
+    
+    return confident_predictions, uncertain_predictions

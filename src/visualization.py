@@ -10,7 +10,7 @@ from tqdm import tqdm
 class PredictionVisualizer:
     def __init__(
         self,
-        model: CropModel,
+        predictions: pd.DataFrame,
         output_dir: str,
         fps: int = 30,
         frame_size: Tuple[int, int] = (1920, 1080),
@@ -20,26 +20,33 @@ class PredictionVisualizer:
         Initialize the prediction visualizer.
         
         Args:
-            model: Trained CropModel instance
+            predictions: Prediction dataframe
             output_dir: Directory to save visualization outputs
             fps: Frames per second for output video
             frame_size: Output video frame size (width, height)
             thin_factor: Take every nth image from sorted list
         """
-        self.model = model
         self.output_dir = Path(output_dir)
         self.fps = fps
         self.frame_size = frame_size
         self.thin_factor = thin_factor
-        
+        self.predictions = predictions
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Define colors for different classes
-        self.colors = {
-            'Bird': (0, 255, 0),    # Green
-            'Empty': (128, 128, 128) # Gray
-        }
+        # Get unique labels from predictions
+        unique_labels = predictions['label'].unique()
+        
+        # Create color ramp based on number of unique labels
+        color_ramp = {}
+        for i, label in enumerate(unique_labels):
+            # Create evenly spaced hue values between 0-255
+            hue = int(255 * (i / len(unique_labels)))
+            # Convert HSV to BGR (OpenCV uses BGR)
+            rgb = cv2.cvtColor(np.uint8([[[hue, 255, 255]]]), cv2.COLOR_HSV2BGR)[0][0]
+            color_ramp[label] = tuple(map(int, rgb))
+            
+        self.colors = color_ramp
 
     def draw_predictions(
         self,
@@ -90,7 +97,7 @@ class PredictionVisualizer:
 
     def create_visualization(
         self,
-        image_dir: str,
+        images: list,
         output_name: str = "predictions.mp4",
         confidence_threshold: float = 0.5
     ) -> str:
@@ -98,30 +105,24 @@ class PredictionVisualizer:
         Create video visualization of predictions on image sequence.
         
         Args:
-            image_dir: Directory containing images
+            images: List of image paths
             output_name: Name of output video file
             confidence_threshold: Minimum confidence to show prediction
             
         Returns:
             Path to output video file
         """
-        # Get sorted list of images
-        image_paths = sorted([
-            f for f in os.listdir(image_dir)
-            if f.lower().endswith(('.png', '.jpg', '.jpeg'))
-        ])
+        # Sort images by filename
+        images.sort()
         
         # Thin the image list
-        image_paths = image_paths[::self.thin_factor]
-        
-        if not image_paths:
-            raise ValueError(f"No images found in {image_dir}")
+        images = images[::self.thin_factor]
         
         # Create video writer
         output_path = str(self.output_dir / output_name)
-        first_image = cv2.imread(os.path.join(image_dir, image_paths[0]))
+        first_image = cv2.imread(images[0])
         if first_image is None:
-            raise ValueError(f"Could not read first image: {image_paths[0]}")
+            raise ValueError(f"Could not read first image: {images[0]}")
             
         height, width = first_image.shape[:2]
         
@@ -135,8 +136,7 @@ class PredictionVisualizer:
         
         try:
             # Process each image
-            for img_name in tqdm(image_paths[:1000], desc="Creating visualization"):
-                img_path = os.path.join(image_dir, img_name)
+            for img_path in tqdm(images[:1000], desc="Creating visualization"):
                 image = cv2.imread(img_path)
                 
                 if image is None:
@@ -144,7 +144,7 @@ class PredictionVisualizer:
                     continue
                 
                 # Get predictions
-                predictions = self.model.predict_image(img_path)
+                predictions = self.predictions[self.predictions.image_path == img_path]
                 
                 # Draw predictions
                 annotated_image = self.draw_predictions(

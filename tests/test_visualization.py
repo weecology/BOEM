@@ -39,14 +39,14 @@ def test_predictions():
 
 def test_visualizer_initialization(mock_model, tmp_path):
     """Test PredictionVisualizer initialization."""
-    visualizer = PredictionVisualizer(mock_model, tmp_path)
-    assert visualizer.model == mock_model
+    visualizer = PredictionVisualizer(test_predictions, tmp_path)
+    assert visualizer.predictions == test_predictions
     assert visualizer.output_dir == tmp_path
     assert visualizer.fps == 30
 
 def test_draw_predictions(mock_model, tmp_path, test_image, test_predictions):
     """Test drawing predictions on image."""
-    visualizer = PredictionVisualizer(mock_model, tmp_path)
+    visualizer = PredictionVisualizer(test_predictions, tmp_path)
     result = visualizer.draw_predictions(test_image, test_predictions)
     
     assert isinstance(result, np.ndarray)
@@ -63,16 +63,16 @@ def test_create_visualization(mock_model, tmp_path):
     for i in range(5):
         img = np.ones((600, 800, 3), dtype=np.uint8) * 255
         cv2.imwrite(str(image_dir / f"image_{i:03d}.jpg"), img)
-    
-    visualizer = PredictionVisualizer(mock_model, tmp_path)
-    output_path = visualizer.create_visualization(str(image_dir))
+
+    visualizer = PredictionVisualizer(test_predictions, tmp_path)
+    output_path = visualizer.create_visualization(list(image_dir.glob("*.jpg")))
     
     assert Path(output_path).exists()
     assert output_path.endswith('.mp4')
 
 def test_create_summary_image(mock_model, tmp_path):
     """Test creation of summary statistics image."""
-    visualizer = PredictionVisualizer(mock_model, tmp_path)
+    visualizer = PredictionVisualizer(test_predictions, tmp_path)
     
     predictions_list = [
         pd.DataFrame({
@@ -94,9 +94,9 @@ def test_empty_image_dir(mock_model, tmp_path):
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
     
-    visualizer = PredictionVisualizer(mock_model, tmp_path)
+    visualizer = PredictionVisualizer(test_predictions, tmp_path)
     with pytest.raises(ValueError, match="No images found"):
-        visualizer.create_visualization(str(empty_dir))
+        visualizer.create_visualization(list(empty_dir.glob("*.jpg")))
 
 def test_invalid_image(mock_model, tmp_path):
     """Test handling of invalid image file."""
@@ -106,17 +106,17 @@ def test_invalid_image(mock_model, tmp_path):
     # Create invalid image file
     (image_dir / "invalid.jpg").write_text("not an image")
     
-    visualizer = PredictionVisualizer(mock_model, tmp_path)
+    visualizer = PredictionVisualizer(test_predictions, tmp_path)
     with pytest.raises(ValueError, match="Could not read first image"):
-        visualizer.create_visualization(str(image_dir))
+        visualizer.create_visualization(list(image_dir.glob("*.jpg")))
 
 @pytest.mark.parametrize("confidence_threshold", [0.3, 0.7, 0.9])
 def test_confidence_thresholds(mock_model, tmp_path, test_image, test_predictions, confidence_threshold):
     """Test different confidence thresholds."""
-    visualizer = PredictionVisualizer(mock_model, tmp_path)
+    visualizer = PredictionVisualizer(test_predictions, tmp_path)
     result = visualizer.draw_predictions(
         test_image,
         test_predictions,
-        confidence_threshold=confidence_threshold
+        confidence_threshold=confidence_threshold   
     )
     assert isinstance(result, np.ndarray) 

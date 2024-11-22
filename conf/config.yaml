@@ -58,10 +58,11 @@ pipeline_evaluation:
   image_dir:
 
 reporting:
+  image_dir:
   report_dir:
 
 active_learning:
-  images_to_annotate_dir:
+  image_dir:
   strategy: 'random'
   n_images: 100
   m: 10
@@ -77,7 +78,7 @@ active_learning:
   pool_limit: null
 
 active_testing:
-  images_to_annotate_dir:
+  image_dir:
   strategy: 'random'
   n_images: 100
   m: 10

@@ -39,7 +39,7 @@ def mock_deepforest_model(config):
                     })
             else:
                 # Return the validation data for perfect performance
-                val_csv_path = os.path.join(config.train.train_csv_folder, 'validation.csv')
+                val_csv_path = os.path.join(config.detection_model.train_csv_folder, 'validation.csv')
                 validation_df = pd.read_csv(val_csv_path)
                 # Add scores
                 validation_df['score'] = 1.0
@@ -93,7 +93,7 @@ def test_evaluate(config, random_model, random_crop_model):
     pipeline_evaluation = PipelineEvaluation(model=random_model, crop_model=random_crop_model, **config.pipeline_evaluation)
     pipeline_evaluation.evaluate()
 
-    # All the metrics should be 0
-    assert pipeline_evaluation.results["detection"]["mAP"]["map"] == 0
+    # All the metrics should be undefined
+    assert pipeline_evaluation.results["detection"]["mAP"]["map"] == -1
     assert pipeline_evaluation.results["confident_classification"]["confident_classification_accuracy"] == 0
     assert pipeline_evaluation.results["uncertain_classification"]["uncertain_classification_accuracy"] == 0

@@ -15,6 +15,7 @@ from src.reporting import Reporting
 
 
 class Pipeline:
+    """Pipeline for training and evaluating a detection and classification model"""
     def __init__(self, cfg: DictConfig):
         """Initialize the pipeline with optional configuration"""
         self.config = cfg
@@ -60,14 +61,19 @@ class Pipeline:
                         self.config.classification_model.checkpoint_dir)
 
         pipeline_monitor = PipelineEvaluation(
-            model=trained_detection_model, **self.config.pipeline_evaluation)
+            model=trained_detection_model,
+            crop_model=trained_classification_model,
+            **self.config.pipeline_evaluation)
+        
         performance = pipeline_monitor.evaluate()
 
-        reporting = Reporting(self.config.reporting.report_dir)
-        reporting.generate_reports(pipeline_monitor)
+        reporter = Reporting(self.config.reporting.report_dir,
+                            self.config.reporting.image_dir,
+                            pipeline_monitor)
 
         if pipeline_monitor.check_success():
             print("Pipeline performance is satisfactory, exiting")
+            reporter.generate_report()
             return None
         else:
             train_images_to_annotate = choose_train_images(
@@ -86,26 +92,32 @@ class Pipeline:
             combined_predictions = pd.concat(predictions)
 
             # Split predictions into confident and uncertain
-            confident_predictions = combined_predictions[
-                combined_predictions["score"] >
-                self.config.active_learning.confident_threshold]
             uncertain_predictions = combined_predictions[
                 combined_predictions["score"] <=
                 self.config.active_learning.confident_threshold]
+            
+            confident_predictions = combined_predictions[
+                ~combined_predictions["image_path"].isin(
+                    uncertain_predictions["image_path"])]
 
+            reporter.confident_predictions = confident_predictions
+            reporter.uncertain_predictions = uncertain_predictions
+            
             print(f"Images requiring human review: {len(confident_predictions)}")
             print(f"Images auto-annotated: {len(uncertain_predictions)}")
 
             # Intelligent cropping
             image_paths = uncertain_predictions["image_path"].unique()
-            cropped_image_annotations = density_cropping(
-                image_paths, uncertain_predictions, **self.config.intelligent_cropping)
+            # cropped_image_annotations = density_cropping(
+            # image_paths, uncertain_predictions, **self.config.intelligent_cropping)
 
             # Align the predictions with the cropped images
             # Run the annotation pipeline
             label_studio.upload_to_label_studio(self.sftp_client,
-                                                cropped_image_annotations,
+                                                uncertain_predictions,
                                                 **self.config)
             label_studio.upload_to_label_studio(self.sftp_client,
                                                 test_images_to_annotate,
                                                 **self.config)
+            reporter.generate_report()
+

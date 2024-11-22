@@ -54,7 +54,8 @@ def config(tmpdir_factory):
         'xmax': [250, 250],
         'ymax': [350, 350],
         'label': ['Bird1', 'Bird2'],
-        'annotator': ['test_user', 'test_user']
+        'annotator': ['test_user', 'test_user'],
+        "score": [0.9, 0.8]
     }
 
     # Create DataFrames
@@ -109,5 +110,14 @@ def config(tmpdir_factory):
         cfg.pipeline_evaluation.classify_uncertain_ground_truth_dir,
         'uncertain_classification_annotations.csv')
     val_df.to_csv(csv_path, index=False)
+
+    # Active learning
+    cfg.active_learning.image_dir = cfg.detection_model.train_image_dir
+    cfg.active_testing.image_dir = cfg.detection_model.train_image_dir
+    cfg.active_learning.n_images = 1
+    cfg.active_testing.n_images = 1
+    
+    # Reporting
+    cfg.reporting.image_dir = cfg.detection_model.train_image_dir
 
     return cfg

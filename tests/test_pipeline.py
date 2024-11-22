@@ -1,4 +1,5 @@
 from src.pipeline import Pipeline
+from src.label_studio import get_api_key
 import pytest
 import os
 
@@ -6,18 +7,7 @@ import os
 from src import label_studio
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-def get_api_key():
-    """Get Label Studio API key from config file"""
-    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                               '.label_studio.config')
-    if not os.path.exists(config_path):
-        return None
-
-    with open(config_path, 'r') as f:
-        for line in f:
-            if line.startswith('api_key'):
-                return line.split('=')[1].strip()
-    return None
+get_api_key()
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
 @pytest.fixture()

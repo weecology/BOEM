@@ -5,7 +5,7 @@ from src import detection
 import dask.array as da
 import pandas as pd
 
-def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.5, m=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
+def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.5, model=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
     """Choose images to annotate.
     Args:
         evaluation (dict): A dictionary of evaluation metrics.
@@ -19,7 +19,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
         patch_size (int, optional): The size of the image patches to predict on. Defaults to 512.
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
         min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.5.
-        m (main.deepforest, optional): A trained deepforest model. Defaults to None. 
+        model (main.deepforest, optional): A trained deepforest model. Defaults to None. 
         model_path (str, optional): The path to the model checkpoint file. Defaults to None. Only used in combination with dask
         target_labels: (list, optional): A list of target labels to filter images by. Defaults to None.
         pool_limit (int, optional): The maximum number of images to consider. Defaults to 1000.
@@ -68,7 +68,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
                 dask_results.append(pd.concat(block_result))
             preannotations = pd.concat(dask_results)
         else:
-            preannotations = detection.predict(m=m, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
+            preannotations = detection.predict(model=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
             preannotations = pd.concat(preannotations)
         
         if strategy == "most-detections":
@@ -86,7 +86,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
 
     return chosen_images
 
-def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.5, m=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
+def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.5, model=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
     """Choose images to annotate.
     Args:
         evaluation (dict): A dictionary of evaluation metrics.
@@ -100,7 +100,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
         patch_size (int, optional): The size of the image patches to predict on. Defaults to 512.
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
         min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.5.
-        m (main.deepforest, optional): A trained deepforest model. Defaults to None. 
+        model (main.deepforest, optional): A trained deepforest model. Defaults to None. 
         model_path (str, optional): The path to the model checkpoint file. Defaults to None. Only used in combination with dask
         target_labels: (list, optional): A list of target labels to filter images by. Defaults to None.
         pool_limit (int, optional): The maximum number of images to consider. Defaults to 1000.
@@ -149,7 +149,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
                 dask_results.append(pd.concat(block_result))
             preannotations = pd.concat(dask_results)
         else:
-            preannotations = detection.predict(m=m, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
+            preannotations = detection.predict(model=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
             preannotations = pd.concat(preannotations)
         
         if strategy == "most-detections":

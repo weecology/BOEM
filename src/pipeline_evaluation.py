@@ -192,7 +192,7 @@ class PipelineEvaluation:
         confident_classification_results = self.evaluate_confident_classification()
         uncertain_classification_results = self.evaluate_uncertain_classification()
 
-        self.results = {"detection": detection_results, "confident_classficiation":confident_classification_results, "uncertain_classification":uncertain_classification_results}
+        self.results = {"detection": detection_results, "confident_classification":confident_classification_results, "uncertain_classification":uncertain_classification_results}
         
         return self.results
     

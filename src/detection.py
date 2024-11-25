@@ -11,6 +11,7 @@ import math
 import dask.array as da
 import pandas as pd
 from deepforest import main, visualize
+from deepforest.utilities import read_file
 from pytorch_lightning.loggers import CometLogger
 
 # Local imports
@@ -161,6 +162,8 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
 
     with comet_logger.experiment.context_manager("train_images"):
         non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
+        non_empty_train_annotations = read_file(non_empty_train_annotations, root_dir=train_image_dir)
+
         if non_empty_train_annotations.empty:
             pass
         else:
@@ -245,10 +248,11 @@ def get_latest_checkpoint(checkpoint_dir, annotations):
         else:
             warn("No checkpoints found in {}".format(checkpoint_dir))
             label_dict = {value: index for index, value in enumerate(annotations.label.unique())}
-            m = main.deepforest(config_file="Airplane/deepforest_config.yml", label_dict=label_dict)
+            m = main.deepforest(label_dict=label_dict)
     else:
         os.makedirs(checkpoint_dir)
-        m = main.deepforest(config_file="Airplane/deepforest_config.yml")
+        label_dict = {value: index for index, value in enumerate(annotations.label.unique())}
+        m = main.deepforest(label_dict=label_dict)
 
     return m
 

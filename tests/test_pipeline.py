@@ -63,7 +63,7 @@ def cleanup_label_studio(label_studio_client, request):
     # Setup: yield to allow tests to run
     yield
 
-
+@pytest.mark.integration
 def test_pipeline_run(config, label_studio_client):
     """Test complete pipeline run"""
     pipeline = Pipeline(cfg=config)

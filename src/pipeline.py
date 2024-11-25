@@ -96,12 +96,11 @@ class Pipeline:
                 patch_overlap=self.config.active_testing.patch_overlap,
                 min_score=self.config.active_testing.min_score)
 
-
             confident_predictions, uncertain_predictions = predict_and_divide(
                 trained_detection_model, trained_classification_model,
                 train_images_to_annotate, self.config.active_learning.patch_size,
                 self.config.active_learning.patch_overlap,
-                self.config.active_learning.confident_threshold)
+                self.config.pipeline.confidence_threshold)
 
             reporter.confident_predictions = confident_predictions
             reporter.uncertain_predictions = uncertain_predictions
@@ -116,11 +115,20 @@ class Pipeline:
 
             # Align the predictions with the cropped images
             # Run the annotation pipeline
-            label_studio.upload_to_label_studio(self.sftp_client,
-                                                uncertain_predictions,
-                                                **self.config)
-            label_studio.upload_to_label_studio(self.sftp_client,
-                                                test_images_to_annotate,
-                                                **self.config)
+            if len(image_paths) > 0:
+                label_studio.upload_to_label_studio(images=image_paths, 
+                                                    sftp_client=self.sftp_client, 
+                                                    label_studio_project=self.label_studio_project, 
+                                                    images_to_annotate_dir=self.config.active_learning.image_dir, 
+                                                    folder_name=self.config.label_studio.folder_name, 
+                                                        preannotations=uncertain_predictions
+                                                           )
+
+            label_studio.upload_to_label_studio(images=test_images_to_annotate,
+                                                sftp_client=self.sftp_client,
+                                                label_studio_project=self.label_studio_project,
+                                                images_to_annotate_dir=self.config.active_testing.image_dir,
+                                                folder_name=self.config.label_studio.folder_name,
+                                                preannotations=None)
             reporter.generate_report()
 

@@ -169,7 +169,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
 
 def predict_and_divide(trained_detection_model, trained_classification_model, image_paths, patch_size, patch_overlap, confident_threshold):
     predictions = detection.predict(
-        model=trained_detection_model,
+        m=trained_detection_model,
         crop_model=trained_classification_model,
         image_paths=image_paths,
         patch_size=patch_size,

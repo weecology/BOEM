@@ -251,6 +251,7 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
 
     tasks = []
     for index, image_name in enumerate(image_names):
+        print(f"Importing {image_name} into Label Studio")
         data_dict = {'image': os.path.join("/data/local-files/?d=input/", os.path.basename(image_name))}
         if predictions:
             prediction = predictions[index]

@@ -11,7 +11,7 @@ from src import propagate
 from src import label_studio
 from src.classification import preprocess_and_train_classification
 from src.data_processing import density_cropping
-from src.detection import preprocess_and_train
+from src.detection import preprocess_and_train, load
 from src.pipeline_evaluation import PipelineEvaluation
 from src.reporting import Reporting
 
@@ -47,16 +47,19 @@ class Pipeline:
             if new_annotations is None:
                 print("No new annotations, exiting")
                 if self.config.force_upload:
-                    image_paths = glob.glob(os.path.join(self.config.label_studio.images_to_annotate_dir, "*.jpg"))
-                    image_paths = random.sample(image_paths, 10)
-                    label_studio.upload_to_label_studio(images=image_paths, 
-                                                    sftp_client=self.sftp_client, 
-                                                    label_studio_project=self.label_studio_project, 
-                                                    images_to_annotate_dir=self.config.label_studio.images_to_annotate_dir,
-                                                    folder_name=self.config.label_studio.folder_name, 
-                                                        preannotations=None
-                                                           )
-                    return None
+                    detection_model = load(self.config.detection_model.checkpoint)
+                    train_images_to_annotate = choose_train_images(
+                    evaluation=None,
+                    image_dir=self.config.active_learning.image_dir,
+                    model=detection_model,
+                    strategy=self.config.active_learning.strategy,
+                    n=self.config.active_learning.n_images,
+                    patch_size=self.config.active_learning.patch_size,
+                    patch_overlap=self.config.active_learning.patch_overlap,
+                    min_score=self.config.active_learning.min_score,
+                    target_labels=self.config.active_learning.target_labels
+                )
+                return None
                     # Select images to upload
 
                 return None
@@ -106,7 +109,8 @@ class Pipeline:
                 n=self.config.active_learning.n_images,
                 patch_size=self.config.active_learning.patch_size,
                 patch_overlap=self.config.active_learning.patch_overlap,
-                min_score=self.config.active_learning.min_score
+                min_score=self.config.active_learning.min_score,
+                target_labels=self.config.active_learning.target_labels
             )
             
             test_images_to_annotate = choose_test_images(

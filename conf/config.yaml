@@ -6,7 +6,8 @@ comet:
   workspace: bw4sz
 
 check_annotations: true
-force_upload: false
+# Force upload bypasses the pipeline, useful for debugging and starting a new project
+force_upload: true
 label_studio:
   project_name: "Bureau of Ocean Energy Management"
   url: "https://labelstudio.naturecast.org/"
@@ -16,7 +17,7 @@ label_studio:
   csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations
 
 predict:
-  patch_size: 450
+  patch_size: 2000
   patch_overlap: 0
   min_score: 0.5
 
@@ -68,9 +69,9 @@ active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   strategy: 'target-labels'
   n_images: 10
-  patch_size: 256
-  patch_overlap: 0.5
-  min_score: 0.5
+  patch_size: 2000
+  patch_overlap: 0
+  min_score: 0.2
   model_checkpoint:
   target_labels:
     - "Bird"
@@ -78,16 +79,16 @@ active_learning:
   # Optional parameters:
   evaluation: 
   dask_client: 
-  pool_limit: 100
+  pool_limit: 500
 
 active_testing:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   strategy: 'random'
-  n_images: 100
-  m: 10
-  patch_size: 256
-  patch_overlap: 0.5
-  min_score: 0.5
+  n_images: 10
+  m: 
+  patch_size: 2000
+  patch_overlap: 0
+  min_score: 0.2
 
 deepforest:
   train:

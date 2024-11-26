@@ -45,8 +45,8 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
         return chosen_images    
     elif strategy in ["most-detections","target-labels"]:
         # Predict all images
-        if model_path is None:
-            raise ValueError("A model is required for the 'most-detections' or 'target-labels' strategy.")
+        if model_path is None and model is None:
+            raise ValueError("A model is required for the 'most-detections' or 'target-labels' strategy. Either pass a model or a model_path.")
         if dask_client:
             # load model on each client
             def update_sys_path():
@@ -59,7 +59,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
             blocks = dask_pool.to_delayed().ravel()
             block_futures = []
             for block in blocks:
-                block_future = dask_client.submit(detection.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score, model_path=model_path)
+                block_future = dask_client.submit(detection.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path)
                 block_futures.append(block_future)
             # Get results
             dask_results = []
@@ -68,7 +68,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
                 dask_results.append(pd.concat(block_result))
             preannotations = pd.concat(dask_results)
         else:
-            preannotations = detection.predict(model=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
+            preannotations = detection.predict(m=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap)
             preannotations = pd.concat(preannotations)
         
         if strategy == "most-detections":

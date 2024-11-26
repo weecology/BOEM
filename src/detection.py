@@ -209,14 +209,16 @@ def preprocess_and_train(config, validation_df=None, model_type="detection"):
                                root_dir=config.detection_model.train_image_dir,
                                save_dir=config.detection_model.crop_image_dir)
 
-    validation_df = data_processing.preprocess_images(validation_df,
+    if not validation_df.empty:
+        validation_df = data_processing.preprocess_images(validation_df,
                                     root_dir=config.detection_model.train_image_dir,
                                     save_dir=config.detection_model.crop_image_dir)
 
     # Limit empty frames
     if config.detection_model.limit_empty_frac > 0:
         train_df = limit_empty_frames(train_df, config.detection_model.limit_empty_frac)
-        validation_df = limit_empty_frames(validation_df, config.detection_model.limit_empty_frac)
+        if not validation_df.empty:
+            validation_df = limit_empty_frames(validation_df, config.detection_model.limit_empty_frac)
 
     # Train model
     # Load existing model

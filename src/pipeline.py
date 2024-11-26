@@ -1,5 +1,7 @@
 from datetime import datetime
 import os
+import glob
+import random
 
 import pandas as pd
 from omegaconf import DictConfig
@@ -37,6 +39,19 @@ class Pipeline:
                 **self.config.label_studio)
             if new_annotations is None:
                 print("No new annotations, exiting")
+                if self.config.force_upload:
+                    image_paths = glob.glob(os.path.join(self.config.active_learning.image_dir, "*.jpg"))
+                    image_paths = random.sample(image_paths, 10)
+                    label_studio.upload_to_label_studio(images=image_paths, 
+                                                    sftp_client=self.sftp_client, 
+                                                    label_studio_project=self.label_studio_project, 
+                                                    images_to_annotate_dir=self.config.active_learning.image_dir, 
+                                                    folder_name=self.config.label_studio.folder_name, 
+                                                        preannotations=None
+                                                           )
+                    return None
+                    # Select images to upload
+
                 return None
 
             # Given new annotations, propogate labels to nearby images

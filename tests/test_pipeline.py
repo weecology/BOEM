@@ -68,3 +68,13 @@ def test_pipeline_run(config, label_studio_client):
     """Test complete pipeline run"""
     pipeline = Pipeline(cfg=config)
     pipeline.run()
+
+
+@pytest.mark.integration
+def test_first_phase(config, label_studio_client):
+    """Test init phase with no data"""
+    # Set validation csv paths to None
+    config.detection_model.validation_csv_path = None
+    config.classification_model.validation_csv_path = None
+    pipeline = Pipeline(cfg=config)
+    pipeline.run()

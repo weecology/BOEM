@@ -119,5 +119,6 @@ def config(tmpdir_factory):
     
     # Reporting
     cfg.reporting.image_dir = cfg.detection_model.train_image_dir
-
+    cfg.reporting.report_dir = tmpdir_factory.mktemp("reports").strpath
+    
     return cfg

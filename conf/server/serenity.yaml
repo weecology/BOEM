@@ -1,4 +1,4 @@
 # Remote server for image hosting
 user: 'ben'
 host: 'serenity.ifas.ufl.edu'
-key_filename: '/Users/benweinstein/.ssh/id_rsa.pub'
+key_filename: '/home/b.weinstein/.ssh/id_rsa.pub'

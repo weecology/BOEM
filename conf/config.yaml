@@ -1,16 +1,19 @@
 defaults:
   - server: serenity
-
+  
 comet:
   project: BOEM
   workspace: bw4sz
 
-check_annotations: false
+check_annotations: true
+force_upload: false
 label_studio:
   project_name: "Bureau of Ocean Energy Management"
   url: "https://labelstudio.naturecast.org/"
-  api_key: "${oc.env:LABEL_STUDIO_API_KEY}"
   folder_name: "/pgsql/retrieverdash/everglades-label-studio/everglades-data"
+  images_to_annotate_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
+  annotated_images_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations
 
 predict:
   patch_size: 450
@@ -27,28 +30,28 @@ propagate:
 
 detection_model:
   checkpoint: bird
-  checkpoint_dir:
+  checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   validation_csv_path:
-  train_csv_folder:
-  train_image_dir:
-  crop_image_dir:
+  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/
+  train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
   limit_empty_frac: 0
   fast_dev_run: false
   labels:
     - "Bird"
 
 classification_model:
-  checkpoint:
-  checkpoint_dir:
-  validation_csv_path:
-  train_csv_folder:
-  train_image_dir:
-  crop_image_dir:
+  checkpoint: 
+  checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
+  validation_csv_path: 
+  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/
+  train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/
   under_sample_ratio: 0
-  fast_dev_run: false
+  fast_dev_run: True
 
 pipeline_evaluation:
-  detect_ground_truth_dir:
+  detect_ground_truth_dir: 
   classify_confident_ground_truth_dir:
   classify_uncertain_ground_truth_dir:
   # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
@@ -62,23 +65,23 @@ reporting:
   report_dir:
 
 active_learning:
-  image_dir:
-  strategy: 'random'
-  n_images: 100
-  m: 10
+  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  strategy: 'target-labels'
+  n_images: 10
   patch_size: 256
   patch_overlap: 0.5
   min_score: 0.5
   model_checkpoint:
   target_labels:
+    - "Bird"
   
   # Optional parameters:
-  evaluation: null
-  dask_client: null
-  pool_limit: null
+  evaluation: 
+  dask_client: 
+  pool_limit: 100
 
 active_testing:
-  image_dir:
+  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   strategy: 'random'
   n_images: 100
   m: 10
@@ -89,4 +92,5 @@ active_testing:
 deepforest:
   train:
     fast_dev_run: True
+    epochs: 1
   workers: 0

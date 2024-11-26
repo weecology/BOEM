@@ -36,16 +36,23 @@ class Pipeline:
         # Check for new annotations if the check_annotations flag is set
         if self.config.check_annotations:
             new_annotations = label_studio.check_for_new_annotations(
-                **self.config.label_studio)
+                sftp_client=self.sftp_client,
+                url=self.config.label_studio.url,
+                csv_dir=self.config.label_studio.csv_dir,
+                project_name=self.config.label_studio.project_name,
+                folder_name=self.config.label_studio.folder_name,
+                images_to_annotate_dir=self.config.label_studio.images_to_annotate_dir,
+                annotated_images_dir=self.config.label_studio.annotated_images_dir,
+            )
             if new_annotations is None:
                 print("No new annotations, exiting")
                 if self.config.force_upload:
-                    image_paths = glob.glob(os.path.join(self.config.active_learning.image_dir, "*.jpg"))
+                    image_paths = glob.glob(os.path.join(self.config.label_studio.images_to_annotate_dir, "*.jpg"))
                     image_paths = random.sample(image_paths, 10)
                     label_studio.upload_to_label_studio(images=image_paths, 
                                                     sftp_client=self.sftp_client, 
                                                     label_studio_project=self.label_studio_project, 
-                                                    images_to_annotate_dir=self.config.active_learning.image_dir, 
+                                                    images_to_annotate_dir=self.config.label_studio.images_to_annotate_dir,
                                                     folder_name=self.config.label_studio.folder_name, 
                                                         preannotations=None
                                                            )

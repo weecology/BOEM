@@ -45,10 +45,11 @@ class Pipeline:
                 annotated_images_dir=self.config.label_studio.annotated_images_dir,
             )
             if new_annotations is None:
-                print("No new annotations, exiting")
                 if self.config.force_upload:
+                    print("No new annotations, but force_upload is set to True, continuing")
                     self.skip_training = True
                 else:
+                    print("No new annotations, exiting")
                     return None
             else:   
                 print(f"New annotations found: {len(new_annotations)}")

@@ -62,11 +62,12 @@ pipeline_evaluation:
   image_dir:
 
 reporting:
-  image_dir:
-  report_dir:
+  image_dir: /blue/ewhite/b.weinstein/BOEM/reporting/samples
+  report_dir: /blue/ewhite/b.weinstein/BOEM/reporting/reports
+  metadata_dir: /blue/ewhite/b.weinstein/BOEM/reporting/metadata
 
 active_learning:
-  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: 'target-labels'
   n_images: 10
   patch_size: 2000
@@ -82,7 +83,7 @@ active_learning:
   pool_limit: 500
 
 active_testing:
-  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: 'random'
   n_images: 10
   m: 

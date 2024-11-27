@@ -39,10 +39,10 @@ def config(tmpdir_factory):
     # Create sample bounding box annotations
     train_data = {
         'image_path': ['empty.jpg', 'birds.jpg', "birds.jpg"],
-        'xmin': [None, 200, 150],
-        'ymin': [None, 300, 250],
-        'xmax': [None, 300, 250],
-        'ymax': [None, 400, 350],
+        'xmin': [0, 200, 150],
+        'ymin': [0, 300, 250],
+        'xmax': [0, 300, 250],
+        'ymax': [0, 400, 350],
         'label': ['Bird', 'Bird1', 'Bird2'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
@@ -120,5 +120,5 @@ def config(tmpdir_factory):
     # Reporting
     cfg.reporting.image_dir = cfg.detection_model.train_image_dir
     cfg.reporting.report_dir = tmpdir_factory.mktemp("reports").strpath
-    
+
     return cfg

@@ -58,6 +58,8 @@ def train(model, train_dir, val_dir, comet_project=None, comet_workspace=None, f
     return model
 
 def preprocess_images(model, annotations, root_dir, save_dir):
+    # Remove any annotations with empty boxes
+    annotations = annotations[annotations['xmin'] != 0]
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
     images = annotations["image_path"].values
     labels = annotations["label"].values

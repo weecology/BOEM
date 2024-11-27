@@ -13,6 +13,7 @@ import pandas as pd
 from deepforest import main, visualize
 from deepforest.utilities import read_file
 from pytorch_lightning.loggers import CometLogger
+import geopandas as gpd
 
 # Local imports
 from src import data_processing
@@ -37,24 +38,24 @@ def evaluate(model, test_csv, image_root_dir):
 
     return results
 
-def load(path, annotations = None):
+def load(checkpoint, annotations = None):
     """Load a trained model from disk.
     
     Args:
-        path (str): The path to a model checkpoint.
+        checkpoint (str): The path to a model checkpoint.
     
     Returns:
         main.deepforest: A trained deepforest model.
     """
     # Check classes
-    if path == "tree":
+    if checkpoint == "tree":
         snapshot = main.deepforest()
         snapshot.use_release()
-    elif path == "bird":
+    elif checkpoint == "bird":
         snapshot = main.deepforest(label_dict={"Bird":0})
         snapshot.use_bird_release()
     else:
-        snapshot = main.deepforest.load_from_checkpoint(path)
+        snapshot = main.deepforest.load_from_checkpoint(checkpoint)
 
     if not annotations is None:
         num_labels = len(annotations.label.unique())
@@ -162,7 +163,12 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
 
     with comet_logger.experiment.context_manager("train_images"):
         non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
-        non_empty_train_annotations = read_file(non_empty_train_annotations, root_dir=train_image_dir)
+        try:
+            non_empty_train_annotations= gpd.GeoDataFrame(non_empty_train_annotations)
+            non_empty_train_annotations.root_dir = train_image_dir
+            non_empty_train_annotations = read_file(non_empty_train_annotations)
+        except: 
+            non_empty_train_annotations = read_file(non_empty_train_annotations, root_dir=train_image_dir)
 
         if non_empty_train_annotations.empty:
             pass

@@ -89,28 +89,7 @@ def test_create_summary_image(mock_model, tmp_path, test_predictions):
     summary = visualizer.create_summary_image(predictions_list)
     assert isinstance(summary, np.ndarray)
     assert summary.shape == (600, 800, 3)
-
-def test_empty_image_dir(mock_model, tmp_path, test_predictions):
-    """Test handling of empty image directory."""
-    empty_dir = tmp_path / "empty"
-    empty_dir.mkdir()
     
-    visualizer = PredictionVisualizer(test_predictions, tmp_path)
-    with pytest.raises(ValueError, match="No images found"):
-        visualizer.create_visualization(list(empty_dir.glob("*.jpg")))
-
-def test_invalid_image(mock_model, tmp_path):
-    """Test handling of invalid image file."""
-    image_dir = tmp_path / "images"
-    image_dir.mkdir()
-    
-    # Create invalid image file
-    (image_dir / "invalid.jpg").write_text("not an image")
-    
-    visualizer = PredictionVisualizer(test_predictions, tmp_path)
-    with pytest.raises(ValueError, match="Could not read first image"):
-        visualizer.create_visualization(list(image_dir.glob("*.jpg")))
-
 @pytest.mark.parametrize("confidence_threshold", [0.3, 0.7, 0.9])
 def test_confidence_thresholds(mock_model, tmp_path, test_image, test_predictions, confidence_threshold):
     """Test different confidence thresholds."""

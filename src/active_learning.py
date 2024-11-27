@@ -75,6 +75,8 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
             # Sort images by total number of predictions
             chosen_images = preannotations.groupby("image_path").size().sort_values(ascending=False).head(n).index.tolist()
         elif strategy == "target-labels":
+            if target_labels is None:
+                raise ValueError("Target labels are required for the 'target-labels' strategy.")
             # Filter images by target labels
             chosen_images = preannotations[preannotations.label.isin(target_labels)].groupby("image_path").size().sort_values(ascending=False).head(n).index.tolist()
         else:

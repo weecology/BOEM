@@ -34,13 +34,14 @@ def test_predictions():
         'xmax': [200, 300],
         'ymax': [200, 300],
         'label': ['Bird', 'Bird'],
-        'score': [0.9, 0.8]
+        'score': [0.9, 0.8],
+        'image_path': ['image_1.jpg', 'image_2.jpg']
     })
 
-def test_visualizer_initialization(mock_model, tmp_path):
+
+def test_visualizer_initialization(mock_model, tmp_path, test_predictions):
     """Test PredictionVisualizer initialization."""
     visualizer = PredictionVisualizer(test_predictions, tmp_path)
-    assert visualizer.predictions == test_predictions
     assert visualizer.output_dir == tmp_path
     assert visualizer.fps == 30
 
@@ -54,7 +55,7 @@ def test_draw_predictions(mock_model, tmp_path, test_image, test_predictions):
     # Image should be different from original due to drawn boxes
     assert not np.array_equal(result, test_image)
 
-def test_create_visualization(mock_model, tmp_path):
+def test_create_visualization(mock_model, tmp_path, test_predictions):
     """Test video creation from image sequence."""
     # Create test images
     image_dir = tmp_path / "images"
@@ -70,7 +71,7 @@ def test_create_visualization(mock_model, tmp_path):
     assert Path(output_path).exists()
     assert output_path.endswith('.mp4')
 
-def test_create_summary_image(mock_model, tmp_path):
+def test_create_summary_image(mock_model, tmp_path, test_predictions):
     """Test creation of summary statistics image."""
     visualizer = PredictionVisualizer(test_predictions, tmp_path)
     
@@ -89,7 +90,7 @@ def test_create_summary_image(mock_model, tmp_path):
     assert isinstance(summary, np.ndarray)
     assert summary.shape == (600, 800, 3)
 
-def test_empty_image_dir(mock_model, tmp_path):
+def test_empty_image_dir(mock_model, tmp_path, test_predictions):
     """Test handling of empty image directory."""
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()

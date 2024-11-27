@@ -58,6 +58,17 @@ def config(tmpdir_factory):
         "score": [0.9, 0.8]
     }
 
+    metadata = {
+        'image_long': ['-68.81369', '-68.81369'],
+        'image_lat': ['44.81369', '44.81369'],
+        'image_date': ['2024-01-01', '2024-01-01'],
+        'unique_image':['birds_val', 'birds_val'],
+        'gsd_cm': [1.4, 1.4],
+        'camera_GUID': ['1234567890', '1234567890']
+    }
+
+    metadata_df = pd.DataFrame(metadata)
+
     # Create DataFrames
     train_df = pd.DataFrame(train_data)
     val_df = pd.DataFrame(val_data)
@@ -120,5 +131,7 @@ def config(tmpdir_factory):
     # Reporting
     cfg.reporting.image_dir = cfg.detection_model.train_image_dir
     cfg.reporting.report_dir = tmpdir_factory.mktemp("reports").strpath
+    cfg.reporting.metadata = os.path.join(cfg.reporting.report_dir, 'metadata.csv')
+    metadata_df.to_csv(cfg.reporting.metadata, index=False)
 
     return cfg

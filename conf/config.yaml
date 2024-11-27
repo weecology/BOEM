@@ -64,7 +64,7 @@ pipeline_evaluation:
 reporting:
   image_dir: /blue/ewhite/b.weinstein/BOEM/reporting/samples
   report_dir: /blue/ewhite/b.weinstein/BOEM/reporting/reports
-  metadata_dir: /blue/ewhite/b.weinstein/BOEM/reporting/metadata
+  metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata.csv
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27

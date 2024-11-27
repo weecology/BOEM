@@ -10,9 +10,9 @@
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
 #SBATCH --partition=gpu
-#SBATCH --gpus=1
+#SBATCH --gpus=3
 
 source activate BOEM
 
 cd ~/BOEM/
-python main.py
+python main.py active_learning.gpus = 3

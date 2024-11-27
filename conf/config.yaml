@@ -69,7 +69,7 @@ reporting:
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: 'target-labels'
-  n_images: 10
+  n_images: 1
   patch_size: 2000
   patch_overlap: 0
   min_score: 0.2
@@ -80,12 +80,13 @@ active_learning:
   # Optional parameters:
   evaluation: 
   dask_client: 
-  pool_limit: 500
+  pool_limit: 10
+  gpus: 1
 
 active_testing:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: 'random'
-  n_images: 10
+  n_images: 1
   m: 
   patch_size: 2000
   patch_overlap: 0

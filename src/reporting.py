@@ -4,7 +4,7 @@ from datetime import datetime
 from src.visualization import PredictionVisualizer
 
 class Reporting:
-    def __init__(self, report_dir, image_dir, pipeline_monitor):
+    def __init__(self, report_dir, image_dir, pipeline_monitor=None):
         """Initialize reporting class
         
         Args:
@@ -17,10 +17,11 @@ class Reporting:
         self.report_file = f"{report_dir}/report.csv"
         self.image_dir = image_dir
         self.pipeline_monitor = pipeline_monitor
-        self.all_predictions = pd.concat(self.pipeline_monitor.predictions)
 
     def generate_report(self):
         """Generate a report"""
+        self.all_predictions = pd.concat(self.pipeline_monitor.predictions)
+
         self.write_predictions()
         self.write_metrics()
         self.generate_video()

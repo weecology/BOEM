@@ -164,7 +164,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     with comet_logger.experiment.context_manager("train_images"):
         non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
         try:
-            non_empty_train_annotations= gpd.GeoDataFrame(non_empty_train_annotations)
+            non_empty_train_annotations= gpd.GeoDataFrame(non_empty_train_annotations, geometry=non_empty_train_annotations["geometry"])
             non_empty_train_annotations.root_dir = train_image_dir
             non_empty_train_annotations = read_file(non_empty_train_annotations)
         except: 

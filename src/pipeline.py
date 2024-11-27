@@ -14,7 +14,7 @@ from src import detection
 from src import classification
 from src.pipeline_evaluation import PipelineEvaluation
 from src.reporting import Reporting
-
+from src.cluster import start
 
 class Pipeline:
     """Pipeline for training and evaluating a detection and classification model"""
@@ -67,6 +67,10 @@ class Pipeline:
         else:
             validation_df = None
 
+
+        reporter = Reporting(self.config.reporting.report_dir,
+                            self.config.reporting.image_dir)
+
         if not self.skip_training:
             trained_detection_model = detection.preprocess_and_train(
                 self.config, validation_df=validation_df)
@@ -84,10 +88,7 @@ class Pipeline:
             **self.config.pipeline_evaluation)
         
             performance = pipeline_monitor.evaluate()
-
-            reporter = Reporting(self.config.reporting.report_dir,
-                                self.config.reporting.image_dir,
-                                pipeline_monitor)
+            reporter.pipeline_monitor = pipeline_monitor
 
             if pipeline_monitor.check_success():
                 print("Pipeline performance is satisfactory, exiting")
@@ -105,6 +106,11 @@ class Pipeline:
             
             performance = None
 
+        if self.config.active_learning.gpus > 1:
+            dask_client = start(gpus=self.config.active_learning.gpus, mem_size="70GB")
+        else:
+            dask_client = None
+
         train_images_to_annotate = choose_train_images(
             evaluation=performance,
             image_dir=self.config.active_learning.image_dir,
@@ -114,7 +120,9 @@ class Pipeline:
             patch_size=self.config.active_learning.patch_size,
             patch_overlap=self.config.active_learning.patch_overlap,
             min_score=self.config.active_learning.min_score,
-            target_labels=self.config.active_learning.target_labels
+            target_labels=self.config.active_learning.target_labels,
+            pool_limit=self.config.active_learning.pool_limit,
+            dask_client=dask_client
         )
             
         test_images_to_annotate = choose_test_images(
@@ -124,7 +132,8 @@ class Pipeline:
             n=self.config.active_testing.n_images,
             patch_size=self.config.active_testing.patch_size,
             patch_overlap=self.config.active_testing.patch_overlap,
-            min_score=self.config.active_testing.min_score)
+            min_score=self.config.active_testing.min_score
+            )
 
         confident_predictions, uncertain_predictions = predict_and_divide(
             trained_detection_model, trained_classification_model,
@@ -160,5 +169,7 @@ class Pipeline:
                                             images_to_annotate_dir=self.config.active_testing.image_dir,
                                             folder_name=self.config.label_studio.folder_name,
                                             preannotations=None)
-        reporter.generate_report()
+        
+        if reporter.pipeline_monitor is not None:
+            reporter.generate_report()
 

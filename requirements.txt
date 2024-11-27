@@ -16,6 +16,7 @@ label-studio-sdk
 # Additional requirements from AirborneFieldGuide
 dask
 dask_jobqueue
+bokeh
 
 # Additional requirements from AirborneFieldGuide src files
 torch

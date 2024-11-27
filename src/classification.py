@@ -32,6 +32,17 @@ def get_latest_checkpoint(checkpoint_dir, annotations):
 
     return m
 
+def load(checkpoint=None, annotations=None, checkpoint_dir=None):
+    if checkpoint: 
+        loaded_model = CropModel(checkpoint, num_classes=len(annotations["label"].unique()))
+    elif checkpoint_dir:
+        loaded_model = get_latest_checkpoint(
+            checkpoint_dir, annotations)
+    else:
+        raise ValueError("No checkpoint or checkpoint directory found.")
+    
+    return loaded_model
+
 def train(model, train_dir, val_dir, comet_project=None, comet_workspace=None, fast_dev_run=False):
     """Train a model on labeled images.
     Args:
@@ -81,18 +92,8 @@ def preprocess_and_train_classification(config, validation_df=None):
         train_df = annotations[~annotations["image_path"].
                                isin(validation_df["image_path"])]
 
-    # Train model
-
     # Load existing model
-    if config.classification_model.checkpoint:
-        loaded_model = CropModel(config.classification_model.checkpoint, num_classes=len(train_df["label"].unique()))
-
-    elif os.path.exists(config.classification_model.checkpoint_dir):
-        loaded_model = get_latest_checkpoint(
-            config.classification_model.checkpoint_dir, train_df)
-    else:
-        raise ValueError("No checkpoint or checkpoint directory found.")
-
+    loaded_model = load(checkpoint=config.classification_model.checkpoint, checkpoint_dir=config.classification_model.checkpoint_dir, annotations=annotations)
 
     # Preprocess train and validation data
     preprocess_images(
@@ -100,6 +101,7 @@ def preprocess_and_train_classification(config, validation_df=None):
         annotations=train_df, 
         root_dir=config.classification_model.train_image_dir, 
         save_dir=config.classification_model.crop_image_dir)    
+    
     preprocess_images(
         model=loaded_model, 
         annotations=validation_df, 

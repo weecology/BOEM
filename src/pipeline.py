@@ -9,9 +9,9 @@ from omegaconf import DictConfig
 from src.active_learning import choose_train_images, choose_test_images, predict_and_divide
 from src import propagate
 from src import label_studio
-from src.classification import preprocess_and_train_classification
 from src.data_processing import density_cropping
-from src.detection import preprocess_and_train, load
+from src import detection
+from src import classification
 from src.pipeline_evaluation import PipelineEvaluation
 from src.reporting import Reporting
 
@@ -47,22 +47,13 @@ class Pipeline:
             if new_annotations is None:
                 print("No new annotations, exiting")
                 if self.config.force_upload:
-                    detection_model = load(self.config.detection_model.checkpoint)
-                    train_images_to_annotate = choose_train_images(
-                    evaluation=None,
-                    image_dir=self.config.active_learning.image_dir,
-                    model=detection_model,
-                    strategy=self.config.active_learning.strategy,
-                    n=self.config.active_learning.n_images,
-                    patch_size=self.config.active_learning.patch_size,
-                    patch_overlap=self.config.active_learning.patch_overlap,
-                    min_score=self.config.active_learning.min_score,
-                    target_labels=self.config.active_learning.target_labels
-                )
-                return None
-                    # Select images to upload
+                    self.skip_training = True
+                else:
+                    return None
+            else:   
+                print(f"New annotations found: {len(new_annotations)}")
+                self.skip_training = False
 
-                return None
 
             # Given new annotations, propogate labels to nearby images
             # label_propagator = propagate.LabelPropagator(
@@ -75,86 +66,98 @@ class Pipeline:
         else:
             validation_df = None
 
-        trained_detection_model = preprocess_and_train(
-            self.config, validation_df=validation_df)
-        trained_classification_model = preprocess_and_train_classification(
-            self.config, validation_df=validation_df)
+        if not self.skip_training:
+            trained_detection_model = detection.preprocess_and_train(
+                self.config, validation_df=validation_df)
+            trained_classification_model = classification.preprocess_and_train_classification(
+                self.config, validation_df=validation_df)
 
-        self.save_model(trained_detection_model,
-                        self.config.detection_model.checkpoint_dir)
-        self.save_model(trained_classification_model,
-                        self.config.classification_model.checkpoint_dir)
-
-        pipeline_monitor = PipelineEvaluation(
+            self.save_model(trained_detection_model,
+                            self.config.detection_model.checkpoint_dir)
+            self.save_model(trained_classification_model,
+                            self.config.classification_model.checkpoint_dir)
+            
+            pipeline_monitor = PipelineEvaluation(
             model=trained_detection_model,
             crop_model=trained_classification_model,
             **self.config.pipeline_evaluation)
         
-        performance = pipeline_monitor.evaluate()
+            performance = pipeline_monitor.evaluate()
 
-        reporter = Reporting(self.config.reporting.report_dir,
-                            self.config.reporting.image_dir,
-                            pipeline_monitor)
+            reporter = Reporting(self.config.reporting.report_dir,
+                                self.config.reporting.image_dir,
+                                pipeline_monitor)
 
-        if pipeline_monitor.check_success():
-            print("Pipeline performance is satisfactory, exiting")
-            reporter.generate_report()
-            return None
+            if pipeline_monitor.check_success():
+                print("Pipeline performance is satisfactory, exiting")
+                reporter.generate_report()
+                return None
         else:
-            train_images_to_annotate = choose_train_images(
-                evaluation=performance,
-                image_dir=self.config.active_learning.image_dir,
-                model=trained_detection_model,
-                strategy=self.config.active_learning.strategy,
-                n=self.config.active_learning.n_images,
-                patch_size=self.config.active_learning.patch_size,
-                patch_overlap=self.config.active_learning.patch_overlap,
-                min_score=self.config.active_learning.min_score,
-                target_labels=self.config.active_learning.target_labels
-            )
+            trained_detection_model = detection.load(
+                checkpoint = self.config.detection_model.checkpoint)
             
-            test_images_to_annotate = choose_test_images(
-                image_dir=self.config.active_testing.image_dir,
-                model=trained_detection_model,
-                strategy=self.config.active_testing.strategy,
-                n=self.config.active_testing.n_images,
-                patch_size=self.config.active_testing.patch_size,
-                patch_overlap=self.config.active_testing.patch_overlap,
-                min_score=self.config.active_testing.min_score)
+            if self.config.classification_model.checkpoint:
+                trained_classification_model = classification.load(
+                self.config.classification_model.checkpoint, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=None)
+            else:
+                trained_classification_model = None
+            
+            performance = None
 
-            confident_predictions, uncertain_predictions = predict_and_divide(
-                trained_detection_model, trained_classification_model,
-                train_images_to_annotate, self.config.active_learning.patch_size,
-                self.config.active_learning.patch_overlap,
-                self.config.pipeline.confidence_threshold)
+        train_images_to_annotate = choose_train_images(
+            evaluation=performance,
+            image_dir=self.config.active_learning.image_dir,
+            model=trained_detection_model,
+            strategy=self.config.active_learning.strategy,
+            n=self.config.active_learning.n_images,
+            patch_size=self.config.active_learning.patch_size,
+            patch_overlap=self.config.active_learning.patch_overlap,
+            min_score=self.config.active_learning.min_score,
+            target_labels=self.config.active_learning.target_labels
+        )
+            
+        test_images_to_annotate = choose_test_images(
+            image_dir=self.config.active_testing.image_dir,
+            model=trained_detection_model,
+            strategy=self.config.active_testing.strategy,
+            n=self.config.active_testing.n_images,
+            patch_size=self.config.active_testing.patch_size,
+            patch_overlap=self.config.active_testing.patch_overlap,
+            min_score=self.config.active_testing.min_score)
 
-            reporter.confident_predictions = confident_predictions
-            reporter.uncertain_predictions = uncertain_predictions
+        confident_predictions, uncertain_predictions = predict_and_divide(
+            trained_detection_model, trained_classification_model,
+            train_images_to_annotate, self.config.active_learning.patch_size,
+            self.config.active_learning.patch_overlap,
+            self.config.pipeline.confidence_threshold)
 
-            print(f"Images requiring human review: {len(confident_predictions)}")
-            print(f"Images auto-annotated: {len(uncertain_predictions)}")
+        reporter.confident_predictions = confident_predictions
+        reporter.uncertain_predictions = uncertain_predictions
 
-            # Intelligent cropping
-            image_paths = uncertain_predictions["image_path"].unique()
-            # cropped_image_annotations = density_cropping(
-            # image_paths, uncertain_predictions, **self.config.intelligent_cropping)
+        print(f"Images requiring human review: {len(confident_predictions)}")
+        print(f"Images auto-annotated: {len(uncertain_predictions)}")
 
-            # Align the predictions with the cropped images
-            # Run the annotation pipeline
-            if len(image_paths) > 0:
-                label_studio.upload_to_label_studio(images=image_paths, 
-                                                    sftp_client=self.sftp_client, 
-                                                    label_studio_project=self.label_studio_project, 
-                                                    images_to_annotate_dir=self.config.active_learning.image_dir, 
-                                                    folder_name=self.config.label_studio.folder_name, 
-                                                        preannotations=uncertain_predictions
-                                                           )
+        # Intelligent cropping
+        image_paths = uncertain_predictions["image_path"].unique()
+        # cropped_image_annotations = density_cropping(
+        # image_paths, uncertain_predictions, **self.config.intelligent_cropping)
 
-            label_studio.upload_to_label_studio(images=test_images_to_annotate,
-                                                sftp_client=self.sftp_client,
-                                                label_studio_project=self.label_studio_project,
-                                                images_to_annotate_dir=self.config.active_testing.image_dir,
-                                                folder_name=self.config.label_studio.folder_name,
-                                                preannotations=None)
-            reporter.generate_report()
+        # Align the predictions with the cropped images
+        # Run the annotation pipeline
+        if len(image_paths) > 0:
+            label_studio.upload_to_label_studio(images=image_paths, 
+                                                sftp_client=self.sftp_client, 
+                                                label_studio_project=self.label_studio_project, 
+                                                images_to_annotate_dir=self.config.active_learning.image_dir, 
+                                                folder_name=self.config.label_studio.folder_name, 
+                                                    preannotations=uncertain_predictions
+                                                        )
+
+        label_studio.upload_to_label_studio(images=test_images_to_annotate,
+                                            sftp_client=self.sftp_client,
+                                            label_studio_project=self.label_studio_project,
+                                            images_to_annotate_dir=self.config.active_testing.image_dir,
+                                            folder_name=self.config.label_studio.folder_name,
+                                            preannotations=None)
+        reporter.generate_report()
 

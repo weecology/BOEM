@@ -29,7 +29,7 @@ def pipeline_monitor(config, random_model, random_crop_model):
 
 @pytest.fixture
 def reporter(config, pipeline_monitor, tmpdir_factory):
-    report_dir = tmpdir_factory.mktemp("report_dir").strpath
+    report_dir = tmpdir_factory.mktemp("report_dir").strpath  
     return reporting.Reporting(report_dir, config.reporting.image_dir, pipeline_monitor)
 
 def test_generate_video(reporter):

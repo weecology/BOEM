@@ -155,7 +155,8 @@ class Pipeline:
         # Align the predictions with the cropped images
         # Run the annotation pipeline
         if len(image_paths) > 0:
-            label_studio.upload_to_label_studio(images=image_paths, 
+            full_image_paths = [os.path.join(self.config.active_learning.image_dir, image) for image in image_paths]
+            label_studio.upload_to_label_studio(images=full_image_paths, 
                                                 sftp_client=self.sftp_client, 
                                                 label_studio_project=self.label_studio_project, 
                                                 images_to_annotate_dir=self.config.active_learning.image_dir, 

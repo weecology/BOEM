@@ -18,16 +18,25 @@ class Reporting:
         self.image_dir = image_dir
         self.pipeline_monitor = pipeline_monitor
 
+    def concat_predictions(self):
+        """Concatenate predictions
+        
+        Args:
+            predictions: List of dataframes containing predictions
+        """
+        self.all_predictions = pd.concat(self.pipeline_monitor.predictions, ignore_index=True)
+
     def generate_report(self):
         """Generate a report"""
-        self.all_predictions = pd.concat(self.pipeline_monitor.predictions)
 
+        self.concat_predictions()
         self.write_predictions()
         self.write_metrics()
         self.generate_video()
 
     def write_predictions(self):
         """Write predictions to a csv file"""
+        self.concat_predictions()
         self.all_predictions.to_csv(f"{self.report_dir}/predictions.csv", index=False)
 
         return f"{self.report_dir}/predictions.csv"
@@ -37,6 +46,7 @@ class Reporting:
 
     def generate_video(self):
         """Generate a video from the predictions"""
+        self.concat_predictions()
         visualizer = PredictionVisualizer(self.all_predictions, self.report_dir)
         output_path = f"{self.report_dir}/predictions.mp4"
         images = self.all_predictions['image_path'].unique()
@@ -52,6 +62,7 @@ class Reporting:
         Args:
             pipeline_monitor: PipelineEvaluation instance containing model performance metrics
         """
+        self.concat_predictions()
         # Get current timestamp
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         

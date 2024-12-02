@@ -136,10 +136,14 @@ class Pipeline:
             )
 
         confident_predictions, uncertain_predictions = predict_and_divide(
-            trained_detection_model, trained_classification_model,
-            train_images_to_annotate, self.config.active_learning.patch_size,
-            self.config.active_learning.patch_overlap,
-            self.config.pipeline.confidence_threshold)
+            detection_model=trained_detection_model,
+            classification_model=trained_classification_model,
+            image_paths=train_images_to_annotate,
+            patch_size=self.config.active_learning.patch_size,
+            patch_overlap=self.config.active_learning.patch_overlap,
+            confident_threshold=self.config.pipeline.confidence_threshold,
+            min_score=self.config.active_learning.min_score
+        )
 
         reporter.confident_predictions = confident_predictions
         reporter.uncertain_predictions = uncertain_predictions
@@ -156,13 +160,13 @@ class Pipeline:
         # Run the annotation pipeline
         if len(image_paths) > 0:
             full_image_paths = [os.path.join(self.config.active_learning.image_dir, image) for image in image_paths]
+            preannotations = [uncertain_predictions[uncertain_predictions["image_path"] == image_path] for image_path in image_paths]
             label_studio.upload_to_label_studio(images=full_image_paths, 
                                                 sftp_client=self.sftp_client, 
                                                 label_studio_project=self.label_studio_project, 
                                                 images_to_annotate_dir=self.config.active_learning.image_dir, 
                                                 folder_name=self.config.label_studio.folder_name, 
-                                                    preannotations=uncertain_predictions
-                                                        )
+                                                preannotations=preannotations)
 
         label_studio.upload_to_label_studio(images=test_images_to_annotate,
                                             sftp_client=self.sftp_client,

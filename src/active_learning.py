@@ -5,7 +5,7 @@ from src import detection
 import dask.array as da
 import pandas as pd
 
-def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.5, model=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
+def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
     """Choose images to annotate.
     Args:
         evaluation (dict): A dictionary of evaluation metrics.
@@ -70,6 +70,8 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
         else:
             preannotations = detection.predict(m=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap)
             preannotations = pd.concat(preannotations)
+
+        preannotations = preannotations[preannotations["score"] >= min_score]
         
         if strategy == "most-detections":
             # Sort images by total number of predictions
@@ -88,7 +90,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
 
     return chosen_images
 
-def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.5, model=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
+def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=0, min_score=0.5, model=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
     """Choose images to annotate.
     Args:
         evaluation (dict): A dictionary of evaluation metrics.
@@ -101,7 +103,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
         dask_client (dask.distributed.Client, optional): A Dask client for parallel processing. Defaults to None.
         patch_size (int, optional): The size of the image patches to predict on. Defaults to 512.
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
-        min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.5.
+        min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.1.
         model (main.deepforest, optional): A trained deepforest model. Defaults to None. 
         model_path (str, optional): The path to the model checkpoint file. Defaults to None. Only used in combination with dask
         target_labels: (list, optional): A list of target labels to filter images by. Defaults to None.
@@ -142,7 +144,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
             blocks = dask_pool.to_delayed().ravel()
             block_futures = []
             for block in blocks:
-                block_future = dask_client.submit(detection.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score, model_path=model_path)
+                block_future = dask_client.submit(detection.predict,image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path)
                 block_futures.append(block_future)
             # Get results
             dask_results = []
@@ -151,9 +153,11 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
                 dask_results.append(pd.concat(block_result))
             preannotations = pd.concat(dask_results)
         else:
-            preannotations = detection.predict(model=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, min_score=min_score)
+            preannotations = detection.predict(model=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap)
             preannotations = pd.concat(preannotations)
         
+        preannotations = preannotations[preannotations["score"] >= min_score]
+
         if strategy == "most-detections":
             # Sort images by total number of predictions
             chosen_images = preannotations.groupby("image_path").size().sort_values(ascending=False).head(n).index.tolist()
@@ -169,15 +173,29 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
 
     return chosen_images
 
-def predict_and_divide(trained_detection_model, trained_classification_model, image_paths, patch_size, patch_overlap, confident_threshold):
+def predict_and_divide(detection_model, classification_model, image_paths, patch_size, patch_overlap, confident_threshold, min_score):
+    """
+    Predict on images and divide into confident and uncertain predictions.
+    Args:
+        detection_model (deepforest.deepforest): A trained detection model.
+        classification_model (deepforest.deepforest): A trained classification model.
+        image_paths (list): A list of image paths.
+        patch_size (int): The size of the image patches to predict on.
+        patch_overlap (float): The amount of overlap between image patches.
+        confident_threshold (float): The threshold for confident predictions.
+        min_score (float): The minimum score for a prediction to be included.
+        Returns:
+        tuple: A tuple of confident and uncertain predictions.
+        """
     predictions = detection.predict(
-        m=trained_detection_model,
-        crop_model=trained_classification_model,
+        m=detection_model,
+        crop_model=classification_model,
         image_paths=image_paths,
         patch_size=patch_size,
         patch_overlap=patch_overlap,
     )
     combined_predictions = pd.concat(predictions)
+    combined_predictions[combined_predictions["score"] > min_score]
 
     # Split predictions into confident and uncertain
     uncertain_predictions = combined_predictions[

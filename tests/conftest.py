@@ -127,6 +127,7 @@ def config(tmpdir_factory):
     cfg.active_testing.image_dir = cfg.detection_model.train_image_dir
     cfg.active_learning.n_images = 1
     cfg.active_testing.n_images = 1
+    cfg.active_learning.min_score = 0.01
     
     # Reporting
     cfg.reporting.image_dir = cfg.detection_model.train_image_dir

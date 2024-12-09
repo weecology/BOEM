@@ -16,6 +16,12 @@ class Reporting:
         self.report_dir = report_dir
         self.report_file = f"{report_dir}/report.csv"
         self.image_dir = image_dir
+        self.sample_prediction_dir = f"{report_dir}/samples"
+
+        # Check the dirs exist
+        os.makedirs(self.report_dir, exist_ok=True)
+        os.makedirs(self.sample_prediction_dir, exist_ok=True)
+
         self.pipeline_monitor = pipeline_monitor
 
     def concat_predictions(self):

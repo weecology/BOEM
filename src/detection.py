@@ -153,6 +153,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
 
     if comet_project:
         comet_logger = CometLogger(project_name=comet_project, workspace=comet_workspace)
+        comet_logger.experiment.add_tags(["detection"])
         comet_logger.experiment.log_parameters(model.config)
         comet_logger.experiment.log_table("train.csv", train_annotations)
         comet_logger.experiment.log_table("test.csv", test_annotations)
@@ -161,24 +162,24 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     else:
         model.create_trainer()
 
-    with comet_logger.experiment.context_manager("train_images"):
-        non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
-        try:
-            non_empty_train_annotations= gpd.GeoDataFrame(non_empty_train_annotations, geometry=non_empty_train_annotations["geometry"])
-            non_empty_train_annotations.root_dir = train_image_dir
-            non_empty_train_annotations = read_file(non_empty_train_annotations)
-        except: 
-            non_empty_train_annotations = read_file(non_empty_train_annotations, root_dir=train_image_dir)
+    # with comet_logger.experiment.context_manager("train_images"):
+    #     non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
+    #     try:
+    #         non_empty_train_annotations= gpd.GeoDataFrame(non_empty_train_annotations, geometry=non_empty_train_annotations["geometry"])
+    #         non_empty_train_annotations.root_dir = train_image_dir
+    #         non_empty_train_annotations = read_file(non_empty_train_annotations)
+    #     except: 
+    #         non_empty_train_annotations = read_file(non_empty_train_annotations, root_dir=train_image_dir)
 
-        if non_empty_train_annotations.empty:
-            pass
-        else:
-            sample_train_annotations = non_empty_train_annotations[non_empty_train_annotations.image_path.isin(non_empty_train_annotations.image_path.head(5))]
-            for filename in sample_train_annotations.image_path:
-                sample_train_annotations_for_image = sample_train_annotations[sample_train_annotations.image_path == filename]
-                sample_train_annotations_for_image.root_dir = train_image_dir
-                visualize.plot_results(sample_train_annotations_for_image, savedir=tmpdir)
-                comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
+    #     if non_empty_train_annotations.empty:
+    #         pass
+    #     else:
+    #         sample_train_annotations = non_empty_train_annotations[non_empty_train_annotations.image_path.isin(non_empty_train_annotations.image_path.head(5))]
+    #         for filename in sample_train_annotations.image_path:
+    #             sample_train_annotations_for_image = sample_train_annotations[sample_train_annotations.image_path == filename]
+    #             sample_train_annotations_for_image.root_dir = train_image_dir
+    #             visualize.plot_results(sample_train_annotations_for_image, savedir=tmpdir)
+    #             comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
 
     model.trainer.fit(model)
 
@@ -214,11 +215,16 @@ def preprocess_and_train(config, validation_df=None, model_type="detection"):
     train_df = data_processing.preprocess_images(train_df,
                                root_dir=config.detection_model.train_image_dir,
                                save_dir=config.detection_model.crop_image_dir)
+    
+    non_empty = train_df[train_df.xmin!=0]
+    train_df.loc[train_df.label==0,"label"] = "Bird"
 
     if not validation_df.empty:
         validation_df = data_processing.preprocess_images(validation_df,
                                     root_dir=config.detection_model.train_image_dir,
                                     save_dir=config.detection_model.crop_image_dir)
+        non_empty = validation_df[validation_df.xmin!=0]
+        validation_df.loc[validation_df.label==0,"label"] = "Bird"
 
     # Limit empty frames
     if config.detection_model.limit_empty_frac > 0:
@@ -295,7 +301,6 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
     Returns:
         list: A list of image predictions.
     """
-
     if dask_client:
         # load model on each client
         def update_sys_path():

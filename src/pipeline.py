@@ -21,9 +21,13 @@ class Pipeline:
     def __init__(self, cfg: DictConfig):
         """Initialize the pipeline with optional configuration"""
         self.config = cfg
-        self.label_studio_project = label_studio.connect_to_label_studio(
+        self.label_studio_project_train = label_studio.connect_to_label_studio(
             url=self.config.label_studio.url,
-            project_name=self.config.label_studio.project_name)
+            project_name=self.config.label_studio.project_name_train)
+
+        self.label_studio_project_validation = label_studio.connect_to_label_studio(
+            url=self.config.label_studio.url,
+            project_name=self.config.label_studio.project_name_validation)
         self.sftp_client = label_studio.create_sftp_client(
             **self.config.server)
 
@@ -38,8 +42,19 @@ class Pipeline:
             new_annotations = label_studio.check_for_new_annotations(
                 sftp_client=self.sftp_client,
                 url=self.config.label_studio.url,
-                csv_dir=self.config.label_studio.csv_dir,
-                project_name=self.config.label_studio.project_name,
+                csv_dir=self.config.label_studio.csv_dir_train,
+                project_name=self.config.label_studio.project_name_train,
+                folder_name=self.config.label_studio.folder_name,
+                images_to_annotate_dir=self.config.label_studio.images_to_annotate_dir,
+                annotated_images_dir=self.config.label_studio.annotated_images_dir,
+            )
+
+            # Validation
+            new_annotations = label_studio.check_for_new_annotations(
+                sftp_client=self.sftp_client,
+                url=self.config.label_studio.url,
+                csv_dir=self.config.label_studio.csv_dir_validation,
+                project_name=self.config.label_studio.project_name_validation,
                 folder_name=self.config.label_studio.folder_name,
                 images_to_annotate_dir=self.config.label_studio.images_to_annotate_dir,
                 annotated_images_dir=self.config.label_studio.annotated_images_dir,
@@ -55,25 +70,24 @@ class Pipeline:
                 print(f"New annotations found: {len(new_annotations)}")
                 self.skip_training = False
 
-
             # Given new annotations, propogate labels to nearby images
             # label_propagator = propagate.LabelPropagator(
             #     **self.config.propagate)
             # label_propagator.through_time(new_annotations)
-
+        else:
+            self.skip_training = False
+        
         if self.config.detection_model.validation_csv_path is not None:
-            validation_df = pd.read_csv(
-                self.config.detection_model.validation_csv_path)
+            validation_df = pd.read_csv(self.config.detection_model.validation_csv_path)
         else:
             validation_df = None
 
-
-        reporter = Reporting(self.config.reporting.report_dir,
-                            self.config.reporting.image_dir)
-
+        reporter = Reporting(report_dir=self.config.reporting.report_dir, image_dir=self.config.active_learning.image_dir)
+        
         if not self.skip_training:
             trained_detection_model = detection.preprocess_and_train(
                 self.config, validation_df=validation_df)
+
             trained_classification_model = classification.preprocess_and_train_classification(
                 self.config, validation_df=validation_df)
 
@@ -110,6 +124,23 @@ class Pipeline:
             dask_client = start(gpus=self.config.active_learning.gpus, mem_size="70GB")
         else:
             dask_client = None
+            
+        test_images_to_annotate = choose_test_images(
+            image_dir=self.config.active_testing.image_dir,
+            model=trained_detection_model,
+            strategy=self.config.active_testing.strategy,
+            n=self.config.active_testing.n_images,
+            patch_size=self.config.active_testing.patch_size,
+            patch_overlap=self.config.active_testing.patch_overlap,
+            min_score=self.config.active_testing.min_score
+            )
+        
+        label_studio.upload_to_label_studio(images=test_images_to_annotate,
+                                    sftp_client=self.sftp_client,
+                                    label_studio_project=self.label_studio_project_validation,
+                                    images_to_annotate_dir=self.config.active_testing.image_dir,
+                                    folder_name=self.config.label_studio.folder_name,
+                                    preannotations=None)
 
         train_images_to_annotate = choose_train_images(
             evaluation=performance,
@@ -124,56 +155,41 @@ class Pipeline:
             pool_limit=self.config.active_learning.pool_limit,
             dask_client=dask_client
         )
-            
-        test_images_to_annotate = choose_test_images(
-            image_dir=self.config.active_testing.image_dir,
-            model=trained_detection_model,
-            strategy=self.config.active_testing.strategy,
-            n=self.config.active_testing.n_images,
-            patch_size=self.config.active_testing.patch_size,
-            patch_overlap=self.config.active_testing.patch_overlap,
-            min_score=self.config.active_testing.min_score
+
+        if len(train_images_to_annotate) > 0:
+            confident_predictions, uncertain_predictions = predict_and_divide(
+                detection_model=trained_detection_model,
+                classification_model=trained_classification_model,
+                image_paths=train_images_to_annotate,
+                patch_size=self.config.active_learning.patch_size,
+                patch_overlap=self.config.active_learning.patch_overlap,
+                confident_threshold=self.config.pipeline.confidence_threshold,
+                min_score=self.config.active_learning.min_score
             )
 
-        confident_predictions, uncertain_predictions = predict_and_divide(
-            detection_model=trained_detection_model,
-            classification_model=trained_classification_model,
-            image_paths=train_images_to_annotate,
-            patch_size=self.config.active_learning.patch_size,
-            patch_overlap=self.config.active_learning.patch_overlap,
-            confident_threshold=self.config.pipeline.confidence_threshold,
-            min_score=self.config.active_learning.min_score
-        )
+            reporter.confident_predictions = confident_predictions
+            reporter.uncertain_predictions = uncertain_predictions
 
-        reporter.confident_predictions = confident_predictions
-        reporter.uncertain_predictions = uncertain_predictions
+            print(f"Images requiring human review: {len(confident_predictions)}")
+            print(f"Images auto-annotated: {len(uncertain_predictions)}")
 
-        print(f"Images requiring human review: {len(confident_predictions)}")
-        print(f"Images auto-annotated: {len(uncertain_predictions)}")
+            # Intelligent cropping
+            image_paths = uncertain_predictions["image_path"].unique()
+            # cropped_image_annotations = density_cropping(
+            # image_paths, uncertain_predictions, **self.config.intelligent_cropping)
 
-        # Intelligent cropping
-        image_paths = uncertain_predictions["image_path"].unique()
-        # cropped_image_annotations = density_cropping(
-        # image_paths, uncertain_predictions, **self.config.intelligent_cropping)
+            # Align the predictions with the cropped images
+            # Run the annotation pipeline
+            if len(image_paths) > 0:
+                full_image_paths = [os.path.join(self.config.active_learning.image_dir, image) for image in image_paths]
+                preannotations = [uncertain_predictions[uncertain_predictions["image_path"] == image_path] for image_path in image_paths]
+                label_studio.upload_to_label_studio(images=full_image_paths, 
+                                                    sftp_client=self.sftp_client, 
+                                                    label_studio_project=self.label_studio_project_train, 
+                                                    images_to_annotate_dir=self.config.active_learning.image_dir, 
+                                                    folder_name=self.config.label_studio.folder_name, 
+                                                    preannotations=preannotations)
 
-        # Align the predictions with the cropped images
-        # Run the annotation pipeline
-        if len(image_paths) > 0:
-            full_image_paths = [os.path.join(self.config.active_learning.image_dir, image) for image in image_paths]
-            preannotations = [uncertain_predictions[uncertain_predictions["image_path"] == image_path] for image_path in image_paths]
-            label_studio.upload_to_label_studio(images=full_image_paths, 
-                                                sftp_client=self.sftp_client, 
-                                                label_studio_project=self.label_studio_project, 
-                                                images_to_annotate_dir=self.config.active_learning.image_dir, 
-                                                folder_name=self.config.label_studio.folder_name, 
-                                                preannotations=preannotations)
-
-        label_studio.upload_to_label_studio(images=test_images_to_annotate,
-                                            sftp_client=self.sftp_client,
-                                            label_studio_project=self.label_studio_project,
-                                            images_to_annotate_dir=self.config.active_testing.image_dir,
-                                            folder_name=self.config.label_studio.folder_name,
-                                            preannotations=None)
         
         if reporter.pipeline_monitor is not None:
             reporter.generate_report()

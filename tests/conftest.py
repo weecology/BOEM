@@ -43,7 +43,7 @@ def config(tmpdir_factory):
         'ymin': [0, 300, 250],
         'xmax': [0, 300, 250],
         'ymax': [0, 400, 350],
-        'label': ['Bird', 'Bird1', 'Bird2'],
+        'label': ['Bird', 'Bird', 'Bird2'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
 
@@ -53,7 +53,7 @@ def config(tmpdir_factory):
         'ymin': [250, 250],
         'xmax': [250, 250],
         'ymax': [350, 350],
-        'label': ['Bird1', 'Bird2'],
+        'label': ['Bird', 'Bird2'],
         'annotator': ['test_user', 'test_user'],
         "score": [0.9, 0.8]
     }

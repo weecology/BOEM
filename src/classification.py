@@ -10,12 +10,11 @@ from deepforest.model import CropModel
 from src.label_studio import gather_data
 from pytorch_lightning.loggers import CometLogger
 
-
 def create_train_test(annotations):
     return annotations.sample(frac=0.8, random_state=1), annotations.drop(
         annotations.sample(frac=0.8, random_state=1).index)
 
-def get_latest_checkpoint(checkpoint_dir, annotations):
+def get_latest_checkpoint(checkpoint_dir, annotations, lr=0.0001):
     #Get model with latest checkpoint dir, if none exist make a new model
     if os.path.exists(checkpoint_dir):
         checkpoints = glob.glob(os.path.join(checkpoint_dir,"*.ckpt"))
@@ -25,16 +24,16 @@ def get_latest_checkpoint(checkpoint_dir, annotations):
             m = CropModel.load_from_checkpoint(checkpoint)
         else:
             warnings.warn("No checkpoints found in {}".format(checkpoint_dir))
-            m = CropModel(num_classes=len(annotations["label"].unique()))
+            m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
     else:
         os.makedirs(checkpoint_dir)
-        m = CropModel(num_classes=len(annotations["label"].unique()))
+        m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
 
     return m
 
-def load(checkpoint=None, annotations=None, checkpoint_dir=None):
+def load(checkpoint=None, annotations=None, checkpoint_dir=None, lr=0.0001):
     if checkpoint: 
-        loaded_model = CropModel(checkpoint, num_classes=len(annotations["label"].unique()))
+        loaded_model = CropModel(checkpoint, num_classes=len(annotations["label"].unique()), lr=lr)
     elif checkpoint_dir:
         loaded_model = get_latest_checkpoint(
             checkpoint_dir, annotations)
@@ -43,24 +42,25 @@ def load(checkpoint=None, annotations=None, checkpoint_dir=None):
     
     return loaded_model
 
-def train(model, train_dir, val_dir, comet_project=None, comet_workspace=None, fast_dev_run=False):
+def train(model, train_dir, val_dir, comet_workspace=None, comet_project=None, fast_dev_run=False, max_epochs=10):
     """Train a model on labeled images.
     Args:
         model (CropModel): A CropModel object.
         train_dir (str): The directory containing the training images.
         val_dir (str): The directory containing the validation images.
-        comet_project (str): The comet project name for logging. Defaults to None.
-        comet_workspace (str): The comet workspace for logging. Defaults to None.
+        fast_dev_run (bool): Whether to run a fast development run.
+        max_epochs (int): The maximum number of epochs to train for.
 
     Returns:
         main.deepforest: A trained deepforest model.
     """
-    # Update
+    
     if comet_project:
         comet_logger = CometLogger(project_name=comet_project, workspace=comet_workspace)
-        model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run)
     else:
-        model.create_trainer(fast_dev_run=fast_dev_run)
+        comet_logger = None
+
+    model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs)
 
     # Get the data stored from the write_crops step above.
     model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
@@ -82,6 +82,7 @@ def preprocess_and_train_classification(config, validation_df=None):
     Args:
         config: Configuration object containing training parameters
         validation_df (pd.DataFrame): A DataFrame containing validation annotations.
+        comet_logger (CometLogger): A CometLogger object.
     Returns:
         trained_model: Trained model object
     """
@@ -95,7 +96,7 @@ def preprocess_and_train_classification(config, validation_df=None):
                                isin(validation_df["image_path"])]
 
     # Load existing model
-    loaded_model = load(checkpoint=config.classification_model.checkpoint, checkpoint_dir=config.classification_model.checkpoint_dir, annotations=annotations)
+    loaded_model = load(checkpoint=config.classification_model.checkpoint, checkpoint_dir=config.classification_model.checkpoint_dir, annotations=annotations, lr=config.classification_model.trainer.lr)
 
     # Preprocess train and validation data
     preprocess_images(
@@ -114,8 +115,10 @@ def preprocess_and_train_classification(config, validation_df=None):
         train_dir=config.classification_model.crop_image_dir,
         val_dir=config.classification_model.crop_image_dir,
         model=loaded_model,
-        comet_project=config.comet.project,
         comet_workspace=config.comet.workspace,
-        fast_dev_run=config.classification_model.fast_dev_run)
+        comet_project=config.comet.project,
+        fast_dev_run=config.classification_model.trainer.fast_dev_run,
+        max_epochs=config.classification_model.trainer.max_epochs,
+        )
 
     return trained_model

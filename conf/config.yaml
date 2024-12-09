@@ -9,12 +9,14 @@ check_annotations: true
 # Force upload bypasses the pipeline, useful for debugging and starting a new project
 force_upload: true
 label_studio:
-  project_name: "Bureau of Ocean Energy Management"
+  project_name_train: "Bureau of Ocean Energy Management - Training"
+  project_name_validation: "Bureau of Ocean Energy Management - Validation"
   url: "https://labelstudio.naturecast.org/"
   folder_name: "/pgsql/retrieverdash/everglades-label-studio/everglades-data"
   images_to_annotate_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   annotated_images_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
-  csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations
+  csv_dir_train: /blue/ewhite/b.weinstein/BOEM/annotations/train
+  csv_dir_validation: /blue/ewhite/b.weinstein/BOEM/annotations/validation
 
 predict:
   patch_size: 2000
@@ -23,7 +25,7 @@ predict:
 
 pipeline:
   confidence_threshold: 0.5
-  limit_empty_frac: 0.1
+  limit_empty_frac: 0.01
 
 propagate:
   time_threshold_seconds: 5
@@ -33,10 +35,10 @@ detection_model:
   checkpoint: bird
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   validation_csv_path:
-  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/
+  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train/
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
-  limit_empty_frac: 0
+  limit_empty_frac: 0.05
   fast_dev_run: false
   labels:
     - "Bird"
@@ -45,31 +47,33 @@ classification_model:
   checkpoint: 
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
   validation_csv_path: 
-  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/
+  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/
   under_sample_ratio: 0
-  fast_dev_run: True
+  trainer:
+    fast_dev_run: false
+    max_epochs: 1
+    lr: 0.001
 
 pipeline_evaluation:
-  detect_ground_truth_dir: 
-  classify_confident_ground_truth_dir:
-  classify_uncertain_ground_truth_dir:
+  detect_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
+  classify_confident_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
+  classify_uncertain_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
   # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
   detection_true_positive_threshold: 0.8
   detection_false_positive_threshold: 0.5
   classification_avg_score: 0.5
-  image_dir:
+  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
 
 reporting:
-  image_dir: /blue/ewhite/b.weinstein/BOEM/reporting/samples
   report_dir: /blue/ewhite/b.weinstein/BOEM/reporting/reports
   metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata.csv
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: 'target-labels'
-  n_images: 1
+  n_images: 50
   patch_size: 2000
   patch_overlap: 0
   min_score: 0.3
@@ -80,7 +84,7 @@ active_learning:
   # Optional parameters:
   evaluation: 
   dask_client: 
-  pool_limit: 10
+  pool_limit: 5000
   gpus: 1
 
 active_testing:
@@ -94,6 +98,7 @@ active_testing:
 
 deepforest:
   train:
-    fast_dev_run: True
-    epochs: 1
+    fast_dev_run: False
+    epochs: 10
+    lr: 0.00001
   workers: 0

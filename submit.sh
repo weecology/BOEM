@@ -15,4 +15,5 @@
 source activate BOEM
 
 cd ~/BOEM/
-python main.py active_learning.pool_limit=5000 active_learning.n_images=100
+which gcc
+python main.py check_annotations=False

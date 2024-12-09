@@ -5,8 +5,10 @@ from torchmetrics.functional import confusion_matrix
 from src.detection import predict
 import pandas as pd
 import torch
+import os
+
 class PipelineEvaluation:
-    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir=None, classify_confident_ground_truth_dir=None, classify_uncertain_ground_truth_dir=None, detection_true_positive_threshold=0.8, detection_false_positive_threshold=0.5, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5):
+    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir, classify_confident_ground_truth_dir, classify_uncertain_ground_truth_dir, detection_true_positive_threshold=0.8, detection_false_positive_threshold=0.5, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5):
         """Initialize pipeline evaluation.
         
         Args:
@@ -34,11 +36,19 @@ class PipelineEvaluation:
         self.uncertain_classification_ground_truth_dir = classify_uncertain_ground_truth_dir
         self.image_dir = image_dir
         self.classification_model = crop_model
+        self.model = model
+
 
         # Gather data
         self.detection_annotations_df = gather_data(detect_ground_truth_dir)
+        self.detection_annotations_df = self.detection_annotations_df[self.detection_annotations_df.label.isin(["Bird","Cetacean","Turtle"])]
+        
         self.confident_classification_annotations_df = gather_data(classify_confident_ground_truth_dir)
         self.uncertain_classification_annotations_df = gather_data(classify_uncertain_ground_truth_dir)
+
+        # There is one caveat for empty frames, assign a label which the dict contains
+        self.confident_classification_annotations_df.loc[self.confident_classification_annotations_df.label.astype(str)=='0',"label"] = self.model.numeric_to_label_dict[0]
+        self.uncertain_classification_annotations_df.loc[self.uncertain_classification_annotations_df.label.astype(str)=='0',"label"] = self.model.numeric_to_label_dict[0]
 
         # If no annotations, raise errors
         if self.detection_annotations_df.empty:
@@ -48,12 +58,18 @@ class PipelineEvaluation:
         if self.uncertain_classification_annotations_df.empty:
             raise ValueError("No uncertain classification annotations found")
 
-        self.model = model
-
         # Metrics
         self.mAP = MeanAveragePrecision(box_format="xyxy",extended_summary=True)
-        self.confident_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=len(self.confident_classification_annotations_df["label"].unique()))
-        self.uncertain_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=len(self.uncertain_classification_annotations_df["label"].unique()))
+        num_classes_confident = len(self.confident_classification_annotations_df["label"].unique())
+        num_classes_uncertain = len(self.uncertain_classification_annotations_df["label"].unique())
+        
+        if num_classes_confident == 1:
+            num_classes_confident = 2
+        if num_classes_uncertain == 1:
+            num_classes_uncertain = 2
+
+        self.confident_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=num_classes_confident)
+        self.uncertain_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=num_classes_uncertain)
 
         # Prediction container
         self.predictions = []
@@ -131,20 +147,24 @@ class PipelineEvaluation:
         preds = []
         for image_predictions in predictions:
             # Min score for predictions
-            image_targets = self.confident_classification_annotations_df.loc[self.confident_classification_annotations_df.image_path == image_predictions["image_path"].iloc[0]]
+            image_targets = self.confident_classification_annotations_df.loc[self.confident_classification_annotations_df.image_path == os.path.basename(image_predictions["image_path"].iloc[0])]
             image_predictions = image_predictions[image_predictions.score > self.min_score]
             target = self._format_targets(image_targets)
             pred = self._format_targets(image_predictions)
+            if len(pred["labels"]) == 0:
+                continue
             targets.append(target)
             preds.append(pred)
         
-        # Classification is just the labels dict
-        target_labels = torch.stack([x["labels"] for x in targets])
-        pred_labels = torch.stack([x["labels"] for x in preds])
+        if len(preds) == 0:
+            return {"confident_classification_accuracy": None}
+        else:
+            # Classification is just the labels dict
+            target_labels = torch.stack([x["labels"] for x in targets])
+            pred_labels = torch.stack([x["labels"] for x in preds])
 
-        self.confident_classification_accuracy.update(preds=pred_labels, target=target_labels)
-        results = {"confident_classification_accuracy": self.confident_classification_accuracy.compute()}
-
+            self.confident_classification_accuracy.update(preds=pred_labels, target=target_labels)
+            results = {"confident_classification_accuracy": self.confident_classification_accuracy.compute()}
 
         return results
 
@@ -167,20 +187,27 @@ class PipelineEvaluation:
         preds = []
         for image_predictions in predictions:
             # Min score for predictions
-            image_targets = self.uncertain_classification_annotations_df.loc[self.uncertain_classification_annotations_df.image_path == image_predictions["image_path"].iloc[0]]
+            image_targets = self.uncertain_classification_annotations_df.loc[self.uncertain_classification_annotations_df.image_path == os.path.basename(image_predictions["image_path"].iloc[0])]
             image_predictions = image_predictions[image_predictions.score > self.min_score]
             target = self._format_targets(image_targets)
             pred = self._format_targets(image_predictions)
+            if len(pred["labels"]) == 0:
+                continue
             targets.append(target)
             preds.append(pred)
 
-        # Classification is just the labels dict
-        target_labels = torch.stack([x["labels"] for x in targets])
-        pred_labels = torch.stack([x["labels"] for x in preds])
-        
-        self.uncertain_classification_accuracy.update(preds=pred_labels, target=target_labels)
-        results = {"uncertain_classification_accuracy": self.uncertain_classification_accuracy.compute()}
-        return results
+        if len(preds) == 0:
+            
+            return {"uncertain_classification_accuracy": None}
+        else:
+            # Classification is just the labels dict
+            target_labels = torch.stack([x["labels"] for x in targets])
+            pred_labels = torch.stack([x["labels"] for x in preds])
+            
+            self.uncertain_classification_accuracy.update(preds=pred_labels, target=target_labels)
+            results = {"uncertain_classification_accuracy": self.uncertain_classification_accuracy.compute()}
+            
+            return results
 
     def evaluate(self):
         """

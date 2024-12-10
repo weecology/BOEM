@@ -1,0 +1,27 @@
+name: BOEM
+channels:
+    - conda-forge
+dependencies:
+    - python=3.10
+    - mamba
+    - geopandas
+    - hydra-core
+    - numpy
+    - pandas
+    - scikit-learn
+    - rasterio
+    - pytest
+    - label-studio-sdk
+    - dask
+    - bokeh
+    - pytorch
+    - torchvision
+    - paramiko
+    - omegaconf
+    - matplotlib
+    - torchmetrics
+    - pip:
+        - dask_jobqueue
+        - label-studio-converter
+        - comet-ml
+

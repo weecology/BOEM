@@ -191,25 +191,24 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
             visualize.plot_results(prediction, savedir=tmpdir)
             comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
 
+    comet_logger.experiment.end()
+    model.trainer.logger.experiment.end()
+    
     return model
 
-def preprocess_and_train(config, validation_df=None, model_type="detection"):
+def preprocess_and_train(config, model_type="detection"):
     """Preprocess data and train model.
     
     Args:
         config: Configuration object containing training parameters
-        validation_df (pd.DataFrame): A DataFrame containing validation annotations.
         model_type (str): The type of model to train. Defaults to "detection".
     Returns:
         trained_model: Trained model object
     """
     # Get and split annotations
-    annotations = gather_data(config.detection_model.train_csv_folder)
-
-    if validation_df is None:
-        train_df, validation_df = create_train_test(annotations)
-    else:
-        train_df = annotations[~annotations["image_path"].isin(validation_df["image_path"])]
+    train_df = gather_data(config.detection_model.train_csv_folder)
+    validation_df = gather_data(config.label_studio.csv_dir_validation)
+    validation_df.loc[validation_df.label==0,"label"] = "Bird"
 
     # Preprocess train and validation data
     train_df = data_processing.preprocess_images(train_df,
@@ -247,7 +246,7 @@ def preprocess_and_train(config, validation_df=None, model_type="detection"):
                             model=loaded_model,
                             comet_project=config.comet.project,
                             comet_workspace=config.comet.workspace,
-                            config_args=config.deepforest)
+                            config_args=config.detection_model.trainer)
 
     return trained_model
 
@@ -277,9 +276,7 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
         if m is None:
             raise ValueError("A model or model_path is required for prediction.")
 
-    # if no trainer, create one
-    if m.trainer is None:
-        m.create_trainer()
+    m.create_trainer(fast_dev_run=False)
 
     predictions = []
     for image_path in image_paths:
@@ -318,7 +315,6 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
                                               patch_size=patch_size,
                                               patch_overlap=patch_overlap,
                                               model_path=model_path,
-                                              m=m,
                                               crop_model=crop_model)
             block_futures.append(block_future)
         # Get results

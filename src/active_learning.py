@@ -5,7 +5,7 @@ from src import detection
 import dask.array as da
 import pandas as pd
 
-def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, target_labels=None, pool_limit=1000):
+def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, classification_model=None, dask_client=None, target_labels=None, pool_limit=1000):
     """Choose images to annotate.
     Args:
         evaluation (dict): A dictionary of evaluation metrics.
@@ -20,6 +20,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
         min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.5.
         model (main.deepforest, optional): A trained deepforest model. Defaults to None. 
+        classification_model (main.deepforest, optional): A trained deepforest model for classification. Defaults to None.
         model_path (str, optional): The path to the model checkpoint file. Defaults to None. Only used in combination with dask
         target_labels: (list, optional): A list of target labels to filter images by. Defaults to None.
         pool_limit (int, optional): The maximum number of images to consider. Defaults to 1000.

@@ -2,6 +2,7 @@ from src.pipeline import Pipeline
 from src.label_studio import get_api_key
 import pytest
 import os
+import torch
 
 # Local imports
 from src import label_studio
@@ -74,7 +75,14 @@ def test_pipeline_run(config, label_studio_client):
 def test_first_phase(config, label_studio_client):
     """Test init phase with no data"""
     # Set validation csv paths to None
-    config.detection_model.validation_csv_path = None
-    config.classification_model.validation_csv_path = None
+    pipeline = Pipeline(cfg=config)
+    pipeline.run()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires GPU")
+def test_multiple_gpu(config, label_studio_client):
+    """Test init phase with no data"""
+    # Set validation csv paths to None
+    config["active_learning"]["gpus"] = 2
     pipeline = Pipeline(cfg=config)
     pipeline.run()

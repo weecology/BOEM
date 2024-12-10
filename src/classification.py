@@ -57,6 +57,7 @@ def train(model, train_dir, val_dir, comet_workspace=None, comet_project=None, f
     
     if comet_project:
         comet_logger = CometLogger(project_name=comet_project, workspace=comet_workspace)
+        comet_logger.experiment.add_tags(["classification"])
     else:
         comet_logger = None
 
@@ -65,6 +66,9 @@ def train(model, train_dir, val_dir, comet_workspace=None, comet_project=None, f
     # Get the data stored from the write_crops step above.
     model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
     model.trainer.fit(model)
+
+    model.trainer.logger.experiment.end()
+    comet_logger.experiment.end()
 
     return model
 
@@ -82,7 +86,6 @@ def preprocess_and_train_classification(config, validation_df=None):
     Args:
         config: Configuration object containing training parameters
         validation_df (pd.DataFrame): A DataFrame containing validation annotations.
-        comet_logger (CometLogger): A CometLogger object.
     Returns:
         trained_model: Trained model object
     """

@@ -15,6 +15,7 @@ def config(tmpdir_factory):
     # Detection model
     cfg.detection_model.train_csv_folder = tmpdir_factory.mktemp(
         "csvs").strpath
+    cfg.label_studio.csv_dir_validation = cfg.detection_model.train_csv_folder
     cfg.detection_model.train_image_dir = tmpdir_factory.mktemp(
         "images").strpath
     cfg.detection_model.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
@@ -93,9 +94,7 @@ def config(tmpdir_factory):
                                 'validation.csv')
     val_df.to_csv(val_csv_path, index=False)
 
-    cfg.detection_model.validation_csv_path = val_csv_path
-    cfg.detection_model.fast_dev_run = True
-    cfg.classification_model.fast_dev_run = True
+    cfg.classification_model.trainer.fast_dev_run = True
     cfg.detection_model.checkpoint = "bird"
     cfg.detection_model.checkpoint_dir = tmpdir_factory.mktemp(
         "checkpoints").strpath
@@ -108,18 +107,11 @@ def config(tmpdir_factory):
     val_df.to_csv(csv_path, index=False)
 
     # Create classification annotations
-    cfg.pipeline_evaluation.classify_confident_ground_truth_dir = tmpdir_factory.mktemp(
-        "confident_classification_annotations").strpath
+    cfg.pipeline_evaluation.classify_ground_truth_dir = tmpdir_factory.mktemp(
+        "classification_annotations").strpath
     csv_path = os.path.join(
-        cfg.pipeline_evaluation.classify_confident_ground_truth_dir,
-        'confident_classification_annotations.csv')
-    val_df.to_csv(csv_path, index=False)
-
-    cfg.pipeline_evaluation.classify_uncertain_ground_truth_dir = tmpdir_factory.mktemp(
-        "uncertain_classification_annotations").strpath
-    csv_path = os.path.join(
-        cfg.pipeline_evaluation.classify_uncertain_ground_truth_dir,
-        'uncertain_classification_annotations.csv')
+        cfg.pipeline_evaluation.classify_ground_truth_dir,
+        'classification_annotations.csv')
     val_df.to_csv(csv_path, index=False)
 
     # Active learning
@@ -128,11 +120,15 @@ def config(tmpdir_factory):
     cfg.active_learning.n_images = 1
     cfg.active_testing.n_images = 1
     cfg.active_learning.min_score = 0.01
-    
+    cfg.active_learning.gpus=1
+
     # Reporting
-    cfg.reporting.image_dir = cfg.detection_model.train_image_dir
     cfg.reporting.report_dir = tmpdir_factory.mktemp("reports").strpath
     cfg.reporting.metadata = os.path.join(cfg.reporting.report_dir, 'metadata.csv')
     metadata_df.to_csv(cfg.reporting.metadata, index=False)
+
+    # Labelstudio
+    cfg.label_studio.project_name_train = "test_BOEM"
+    cfg.label_studio.project_name_validation = "test_BOEM"
 
     return cfg

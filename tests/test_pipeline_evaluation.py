@@ -46,11 +46,11 @@ def mock_deepforest_model(config):
 
                 return validation_df
               
-    return MockDeepForest(label_dict={"Bird1": 1,"Bird2": 2})
+    return MockDeepForest(label_dict={"Bird": 0,"Bird2": 1})
 
 @pytest.fixture
 def random_model():
-    m = main.deepforest(label_dict={"Bird1": 1,"Bird2": 2}, num_classes=2)
+    m = main.deepforest(label_dict={"Bird": 0,"Bird2": 1}, num_classes=2)
     return m
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def test_uncertain_classification_accuracy(config, mock_deepforest_model, random
     pipeline_evaluation = PipelineEvaluation(model=mock_deepforest_model, crop_model=random_crop_model, **config.pipeline_evaluation)
     uncertain_classification_accuracy = pipeline_evaluation.evaluate_uncertain_classification()
    
-    assert uncertain_classification_accuracy["uncertain_classification_accuracy"] == 1.0
+    assert uncertain_classification_accuracy["uncertain_classification_accuracy"] == None
 
 def test_evaluate(config, random_model, random_crop_model):
     """Test evaluate with mock model."""
@@ -95,5 +95,5 @@ def test_evaluate(config, random_model, random_crop_model):
 
     # All the metrics should be undefined
     assert pipeline_evaluation.results["detection"]["mAP"]["map"] == -1
-    assert pipeline_evaluation.results["confident_classification"]["confident_classification_accuracy"] == 0
-    assert pipeline_evaluation.results["uncertain_classification"]["uncertain_classification_accuracy"] == 0
+    assert pipeline_evaluation.results["confident_classification"]["confident_classification_accuracy"] == None
+    assert pipeline_evaluation.results["uncertain_classification"]["uncertain_classification_accuracy"] == None

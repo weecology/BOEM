@@ -34,41 +34,45 @@ propagate:
 detection_model:
   checkpoint: bird
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
-  validation_csv_path:
   train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train/
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
   limit_empty_frac: 0.05
-  fast_dev_run: false
   labels:
     - "Bird"
+  trainer:
+    train:
+      fast_dev_run: False
+      epochs: 3
+      lr: 0.00001
+    workers: 0
 
 classification_model:
   checkpoint: 
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
-  validation_csv_path: 
   train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/
   under_sample_ratio: 0
   trainer:
-    fast_dev_run: false
-    max_epochs: 1
+    fast_dev_run: False
+    max_epochs: 4
     lr: 0.001
 
 pipeline_evaluation:
   detect_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
-  classify_confident_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
-  classify_uncertain_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
+  classify_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
   # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
   detection_true_positive_threshold: 0.8
   detection_false_positive_threshold: 0.5
   classification_avg_score: 0.5
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  debug: False
 
 reporting:
   report_dir: /blue/ewhite/b.weinstein/BOEM/reporting/reports
   metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata.csv
+  thin_factor: 500
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
@@ -84,7 +88,7 @@ active_learning:
   # Optional parameters:
   evaluation: 
   dask_client: 
-  pool_limit: 5000
+  pool_limit: 500
   gpus: 1
 
 active_testing:
@@ -95,10 +99,3 @@ active_testing:
   patch_size: 2000
   patch_overlap: 0
   min_score: 0.2
-
-deepforest:
-  train:
-    fast_dev_run: False
-    epochs: 10
-    lr: 0.00001
-  workers: 0

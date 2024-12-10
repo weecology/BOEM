@@ -36,10 +36,12 @@ class Pipeline:
         checkpoint_path = os.path.join(directory, f"model_{timestamp}.ckpt")
         model.trainer.save_checkpoint(checkpoint_path)
 
+        return checkpoint_path
+
     def run(self):
         # Check for new annotations if the check_annotations flag is set
         if self.config.check_annotations:
-            new_annotations = label_studio.check_for_new_annotations(
+            new_train_annotations = label_studio.check_for_new_annotations(
                 sftp_client=self.sftp_client,
                 url=self.config.label_studio.url,
                 csv_dir=self.config.label_studio.csv_dir_train,
@@ -50,7 +52,7 @@ class Pipeline:
             )
 
             # Validation
-            new_annotations = label_studio.check_for_new_annotations(
+            new_val_annotations = label_studio.check_for_new_annotations(
                 sftp_client=self.sftp_client,
                 url=self.config.label_studio.url,
                 csv_dir=self.config.label_studio.csv_dir_validation,
@@ -59,7 +61,7 @@ class Pipeline:
                 images_to_annotate_dir=self.config.label_studio.images_to_annotate_dir,
                 annotated_images_dir=self.config.label_studio.annotated_images_dir,
             )
-            if new_annotations is None:
+            if new_val_annotations is None:
                 if self.config.force_upload:
                     print("No new annotations, but force_upload is set to True, continuing")
                     self.skip_training = True
@@ -67,7 +69,12 @@ class Pipeline:
                     print("No new annotations, exiting")
                     return None
             else:   
-                print(f"New annotations found: {len(new_annotations)}")
+                try:
+                    print(f"New train annotations found: {len(new_train_annotations)}")
+                except:
+                    pass
+                print(f"New val annotations found: {len(new_val_annotations)}")
+
                 self.skip_training = False
 
             # Given new annotations, propogate labels to nearby images
@@ -76,37 +83,28 @@ class Pipeline:
             # label_propagator.through_time(new_annotations)
         else:
             self.skip_training = False
-        
-        if self.config.detection_model.validation_csv_path is not None:
-            validation_df = pd.read_csv(self.config.detection_model.validation_csv_path)
-        else:
-            validation_df = None
 
-        reporter = Reporting(report_dir=self.config.reporting.report_dir, image_dir=self.config.active_learning.image_dir)
-        
         if not self.skip_training:
             trained_detection_model = detection.preprocess_and_train(
-                self.config, validation_df=validation_df)
+                self.config)
 
             trained_classification_model = classification.preprocess_and_train_classification(
-                self.config, validation_df=validation_df)
+                self.config)
 
-            self.save_model(trained_detection_model,
+            detection_checkpoint_path = self.save_model(trained_detection_model,
                             self.config.detection_model.checkpoint_dir)
-            self.save_model(trained_classification_model,
+            classification_checkpoint_path = self.save_model(trained_classification_model,
                             self.config.classification_model.checkpoint_dir)
             
             pipeline_monitor = PipelineEvaluation(
-            model=trained_detection_model,
-            crop_model=trained_classification_model,
-            **self.config.pipeline_evaluation)
+                model=trained_detection_model,
+                crop_model=trained_classification_model,
+                **self.config.pipeline_evaluation)
         
             performance = pipeline_monitor.evaluate()
-            reporter.pipeline_monitor = pipeline_monitor
 
             if pipeline_monitor.check_success():
                 print("Pipeline performance is satisfactory, exiting")
-                reporter.generate_report()
                 return None
         else:
             trained_detection_model = detection.load(
@@ -119,6 +117,8 @@ class Pipeline:
                 trained_classification_model = None
             
             performance = None
+            pipeline_monitor = None
+            detection_checkpoint_path = None
 
         if self.config.active_learning.gpus > 1:
             dask_client = start(gpus=self.config.active_learning.gpus, mem_size="70GB")
@@ -145,6 +145,7 @@ class Pipeline:
         train_images_to_annotate = choose_train_images(
             evaluation=performance,
             image_dir=self.config.active_learning.image_dir,
+            model_path=detection_checkpoint_path,
             model=trained_detection_model,
             strategy=self.config.active_learning.strategy,
             n=self.config.active_learning.n_images,
@@ -167,9 +168,6 @@ class Pipeline:
                 min_score=self.config.active_learning.min_score
             )
 
-            reporter.confident_predictions = confident_predictions
-            reporter.uncertain_predictions = uncertain_predictions
-
             print(f"Images requiring human review: {len(confident_predictions)}")
             print(f"Images auto-annotated: {len(uncertain_predictions)}")
 
@@ -191,6 +189,18 @@ class Pipeline:
                                                     preannotations=preannotations)
 
         
-        if reporter.pipeline_monitor is not None:
-            reporter.generate_report()
+            if pipeline_monitor:
+                reporter = Reporting(
+                    report_dir=self.config.reporting.report_dir,
+                    image_dir=self.config.active_learning.image_dir,
+                    model=trained_detection_model,
+                    classification_model=trained_classification_model,
+                    thin_factor=self.config.reporting.thin_factor,
+                    patch_overlap=self.config.active_learning.patch_overlap,
+                    patch_size=self.config.active_learning.patch_size,
+                    confident_predictions=confident_predictions,
+                    uncertain_predictions=uncertain_predictions,
+                    pipeline_monitor=pipeline_monitor)
+
+                reporter.generate_report()
 

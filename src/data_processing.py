@@ -140,7 +140,6 @@ def process_image(
     crop_csv = "{}.csv".format(os.path.join(save_dir, image_name))
     
     if os.path.exists(crop_csv):
-        warn("Crops for {} already exist in {}. Skipping.".format(crop_csv, save_dir))
         return pd.read_csv(crop_csv)
         
     full_path = os.path.join(root_dir, image_path)

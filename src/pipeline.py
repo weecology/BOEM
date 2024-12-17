@@ -64,10 +64,11 @@ class Pipeline:
             if new_val_annotations is None:
                 if self.config.force_upload:
                     print("No new annotations, but force_upload is set to True, continuing")
-                    self.skip_training = True
-                else:
+                elif not self.config.force_training:
                     print("No new annotations, exiting")
                     return None
+                else:
+                    print(f"No new annotations, but force training is {self.config.force_training} and force upload is {self.config.force_upload}, continuing")
             else:   
                 try:
                     print(f"New train annotations found: {len(new_train_annotations)}")
@@ -75,16 +76,12 @@ class Pipeline:
                     pass
                 print(f"New val annotations found: {len(new_val_annotations)}")
 
-                self.skip_training = False
-
             # Given new annotations, propogate labels to nearby images
             # label_propagator = propagate.LabelPropagator(
             #     **self.config.propagate)
             # label_propagator.through_time(new_annotations)
-        else:
-            self.skip_training = False
 
-        if not self.skip_training:
+        if self.config.force_training:
             trained_detection_model = detection.preprocess_and_train(
                 self.config)
 
@@ -203,4 +200,5 @@ class Pipeline:
                     pipeline_monitor=pipeline_monitor)
 
                 reporter.generate_report()
-
+        else:
+            print("No images to annotate")

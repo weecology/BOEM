@@ -136,10 +136,14 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     tmpdir = tempfile.gettempdir()
 
     train_annotations.to_csv(os.path.join(tmpdir,"train.csv"), index=False)
+    test_annotations.to_csv(os.path.join(tmpdir,"test.csv"), index=False)
 
     # Set config
     model.config["train"]["csv_file"] = os.path.join(tmpdir,"train.csv")
     model.config["train"]["root_dir"] = train_image_dir
+
+    #model.config["validation"]["csv_file"] = os.path.join(tmpdir,"test.csv")
+    #model.config["validation"]["root_dir"] = train_image_dir
 
     # Loop through all keys in model.config and set them to the value of the key in model.config
     config_args = OmegaConf.to_container(config_args)
@@ -162,24 +166,20 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     else:
         model.create_trainer()
 
-    # with comet_logger.experiment.context_manager("train_images"):
-    #     non_empty_train_annotations = train_annotations[~(train_annotations.xmax==0)]
-    #     try:
-    #         non_empty_train_annotations= gpd.GeoDataFrame(non_empty_train_annotations, geometry=non_empty_train_annotations["geometry"])
-    #         non_empty_train_annotations.root_dir = train_image_dir
-    #         non_empty_train_annotations = read_file(non_empty_train_annotations)
-    #     except: 
-    #         non_empty_train_annotations = read_file(non_empty_train_annotations, root_dir=train_image_dir)
-
-    #     if non_empty_train_annotations.empty:
-    #         pass
-    #     else:
-    #         sample_train_annotations = non_empty_train_annotations[non_empty_train_annotations.image_path.isin(non_empty_train_annotations.image_path.head(5))]
-    #         for filename in sample_train_annotations.image_path:
-    #             sample_train_annotations_for_image = sample_train_annotations[sample_train_annotations.image_path == filename]
-    #             sample_train_annotations_for_image.root_dir = train_image_dir
-    #             visualize.plot_results(sample_train_annotations_for_image, savedir=tmpdir)
-    #             comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
+    with comet_logger.experiment.context_manager("train_images"):
+        non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
+        for filename in non_empty_train_annotations.image_path.sample(5):
+            sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
+            sample_train_annotations_for_image.root_dir = train_image_dir
+            visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
+            comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
+    # with comet_logger.experiment.context_manager("test_images"):
+    #     non_empty_train_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
+    #     for filename in non_empty_train_annotations.image_path.sample(5):
+    #         sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
+    #         sample_train_annotations_for_image.root_dir = train_image_dir
+    #         visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
+    #         comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
 
     model.trainer.fit(model)
 
@@ -207,22 +207,32 @@ def preprocess_and_train(config, model_type="detection"):
     """
     # Get and split annotations
     train_df = gather_data(config.detection_model.train_csv_folder)
-    validation_df = gather_data(config.label_studio.csv_dir_validation)
-    validation_df.loc[validation_df.label==0,"label"] = "Bird"
+    validation = gather_data(config.label_studio.csv_dir_validation)
+    validation.loc[validation.label==0,"label"] = "Bird"
+
+    # Remove the empty frames, using hard mining instead
+    train_df = train_df[~(train_df.label.astype(str)== "0")]
 
     # Preprocess train and validation data
     train_df = data_processing.preprocess_images(train_df,
                                root_dir=config.detection_model.train_image_dir,
-                               save_dir=config.detection_model.crop_image_dir)
+                               save_dir=config.detection_model.crop_image_dir,
+                               patch_size=config.predict.patch_size,
+                               patch_overlap=config.predict.patch_overlap)
     
     non_empty = train_df[train_df.xmin!=0]
-    train_df.loc[train_df.label==0,"label"] = "Bird"
 
-    if not validation_df.empty:
-        validation_df = data_processing.preprocess_images(validation_df,
+    train_df.loc[train_df.label==0,"label"] = "Bird"
+    validation.loc[validation.label==0,"label"] = "Bird"
+
+    if not validation.empty:
+        validation_df = data_processing.preprocess_images(validation,
                                     root_dir=config.detection_model.train_image_dir,
-                                    save_dir=config.detection_model.crop_image_dir)
-        non_empty = validation_df[validation_df.xmin!=0]
+                                    save_dir=config.detection_model.crop_image_dir,
+                                    patch_size=config.predict.patch_size,
+                                    patch_overlap=config.predict.patch_overlap,
+                                    allow_empty=True
+                                    )
         validation_df.loc[validation_df.label==0,"label"] = "Bird"
 
     # Limit empty frames
@@ -230,6 +240,7 @@ def preprocess_and_train(config, model_type="detection"):
         train_df = limit_empty_frames(train_df, config.detection_model.limit_empty_frac)
         if not validation_df.empty:
             validation_df = limit_empty_frames(validation_df, config.detection_model.limit_empty_frac)
+
 
     # Train model
     # Load existing model
@@ -239,6 +250,9 @@ def preprocess_and_train(config, model_type="detection"):
         loaded_model = get_latest_checkpoint(config.detection_model.checkpoint_dir, train_df)
     else:
         raise ValueError("No checkpoint or checkpoint directory found.")
+
+    # Assert no FalsePositive label in train
+    assert "FalsePositive" not in train_df.label.unique(), "FalsePositive label found in training data."
 
     trained_model = train(train_annotations=train_df,
                             test_annotations=validation_df,
@@ -280,7 +294,7 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
 
     predictions = []
     for image_path in image_paths:
-        prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
+        prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model, verbose=True)
         if prediction is None:
             prediction = pd.DataFrame({"image_path": image_path, "xmin": [None], "ymin": [None], "xmax": [None], "ymax": [None], "label": [None], "score": [None]})
         predictions.append(prediction)

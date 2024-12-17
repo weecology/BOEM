@@ -27,7 +27,8 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
     Returns:
         list: A list of image paths.
     """
-    pool = glob.glob(os.path.join(image_dir,"*")) # Get all images in the data directory
+    pool = glob.glob(os.path.join(image_dir,"*.jpg")) # Get all images in the data directory
+    
     # Remove .csv files from the pool
     pool = [image for image in pool if not image.endswith('.csv')]
     
@@ -81,7 +82,7 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
             if target_labels is None:
                 raise ValueError("Target labels are required for the 'target-labels' strategy.")
             # Filter images by target labels
-            chosen_images = preannotations[preannotations.label.isin(target_labels)].groupby("image_path").size().sort_values(ascending=False).head(n).index.tolist()
+            chosen_images = preannotations[preannotations.label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
         else:
             raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', or 'target-labels'.")
         # Get full path

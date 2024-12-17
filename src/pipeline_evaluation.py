@@ -186,11 +186,10 @@ class PipelineEvaluation:
             image_targets = self.classification_annotations.loc[self.classification_annotations.image_path == os.path.basename(image_path)]
             image_predictions = self.uncertain_predictions.loc[self.uncertain_predictions.image_path == os.path.basename(image_path)]
             image_predictions = image_predictions[image_predictions.score > self.min_score]
+            if image_predictions.empty:
+                    continue
             target = self._format_targets(image_targets)
             pred = self._format_targets(image_predictions)
-            
-            if len(pred["labels"]) == 0:
-                    continue
             targets.append(target)
             preds.append(pred)
 

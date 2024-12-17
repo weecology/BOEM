@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from logging import warn
 from deepforest import preprocess
+from deepforest.utilities import read_file
 from typing import Optional, Union, List, Dict
 import numpy as np
 from scipy.spatial import ConvexHull
@@ -52,7 +53,8 @@ def preprocess_images(
     save_dir: str,
     limit_empty_frac: float = 0.1,
     patch_size: int = 450,
-    patch_overlap: int = 0
+    patch_overlap: int = 0,
+    allow_empty: bool = False
 ) -> pd.DataFrame:
     """
     Cut images into GPU-friendly chunks and process annotations accordingly.
@@ -68,6 +70,7 @@ def preprocess_images(
         limit_empty_frac: Maximum fraction of empty patches to keep
         patch_size: Size of the output patches in pixels
         patch_overlap: Overlap between patches in pixels
+        allow_empty: Whether to allow patches without annotations
     
     Returns:
         DataFrame containing annotations for the processed image patches
@@ -88,11 +91,6 @@ def preprocess_images(
 
     for image_path in annotations.image_path.unique():
         annotation_df = annotations[annotations.image_path == image_path]
-        
-        if annotation_df.empty:
-            allow_empty = True
-        else:
-            allow_empty = False
 
         crop_annotation = process_image(
             image_path=image_path,
@@ -144,12 +142,6 @@ def process_image(
         
     full_path = os.path.join(root_dir, image_path)
     
-    # Check if all xmin values are 0, indicating empty annotations
-    if annotation_df is not None and all(annotation_df['xmin'] == 0):
-        allow_empty = True
-    else:
-        allow_empty = False
-    
     crop_annotation = preprocess.split_raster(
         path_to_raster=full_path,
         annotations_file=annotation_df,
@@ -159,7 +151,31 @@ def process_image(
         root_dir=root_dir,
         allow_empty=allow_empty
     )
+
+    # Split FalsePositives out for hard negative mining, for those images with no true positives
+    true_positive_images = crop_annotation.loc[crop_annotation.label != "FalsePositive", "image_path"].unique()
     
+    # Remove any FalsePositives that are in true positive images
+    crop_annotation = crop_annotation.loc[~((crop_annotation.label == "FalsePositive") & (crop_annotation.image_path.isin(true_positive_images))), :]
+    crop_annotation.loc[crop_annotation.label == "FalsePositive", ["xmin", "ymin", "xmax", "ymax"]] = 0
+    crop_annotation["label"] = crop_annotation["label"].astype(str)
+    crop_annotation.loc[crop_annotation.label == "FalsePositive", "label"] = "Bird"
+    crop_annotation.loc[crop_annotation.label == "0", "label"] = "Bird"
+
+    # Update geometry for FalsePositives
+    crop_annotation.drop(columns=["geometry"], inplace=True)
+    crop_annotation = pd.DataFrame(crop_annotation)
+    crop_annotation = read_file(crop_annotation)
+    
+    # Remove duplicates
+    crop_annotation = crop_annotation.drop_duplicates(subset=["image_path", "xmin", "ymin", "xmax", "ymax", "label"])
+
+    # Remove FalsePositives that are in true positive images
+    crop_annotation = crop_annotation.loc[~((crop_annotation.label == "FalsePositive") & (crop_annotation.image_path.isin(true_positive_images))), :]
+    
+    # Save over the original csv
+    crop_annotation.to_csv(crop_csv, index=False)
+
     if annotation_df is None:
         empty_annotations = []
         for i in range(len(crop_annotation)):

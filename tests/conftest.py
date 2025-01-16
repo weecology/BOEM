@@ -40,23 +40,22 @@ def config(tmpdir_factory):
     # Create sample bounding box annotations
     train_data = {
         'image_path': ['empty.jpg', 'birds.jpg', "birds.jpg"],
-        'xmin': [0, 200, 150],
-        'ymin': [0, 300, 250],
-        'xmax': [0, 300, 250],
-        'ymax': [0, 400, 350],
-        'label': ['Bird', 'Bird', 'Bird2'],
+        'xmin': [20, 200, 150],
+        'ymin': [10, 300, 250],
+        'xmax': [40, 300, 250],
+        'ymax': [20, 400, 350],
+        'label': ['FalsePositive', 'Bird', 'Bird2'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
 
     val_data = {
-        'image_path': ['birds_val.jpg', 'birds_val.jpg'],
-        'xmin': [150, 150],
-        'ymin': [250, 250],
-        'xmax': [250, 250],
-        'ymax': [350, 350],
-        'label': ['Bird', 'Bird2'],
-        'annotator': ['test_user', 'test_user'],
-        "score": [0.9, 0.8]
+        'image_path': ['empty.jpg','birds_val.jpg', 'birds_val.jpg'],
+        'xmin': [None,150, 150],
+        'ymin': [None,250, 250],
+        'xmax': [None,250, 250],
+        'ymax': [None,350, 350],
+        'label': ['Bird','Bird', 'Bird2'],
+        'annotator': ['test_user','test_user', 'test_user'],
     }
 
     metadata = {

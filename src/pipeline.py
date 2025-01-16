@@ -165,8 +165,8 @@ class Pipeline:
                 min_score=self.config.active_learning.min_score
             )
 
-            print(f"Images requiring human review: {len(confident_predictions)}")
-            print(f"Images auto-annotated: {len(uncertain_predictions)}")
+            print(f"Images requiring human review: {len(uncertain_predictions)}")
+            print(f"Images auto-annotated: {len(confident_predictions)}")
 
             # Intelligent cropping
             image_paths = uncertain_predictions["image_path"].unique()
@@ -199,6 +199,7 @@ class Pipeline:
                     uncertain_predictions=uncertain_predictions,
                     pipeline_monitor=pipeline_monitor)
 
-                reporter.generate_report()
+                reporter.generate_report(create_video=True)
         else:
             print("No images to annotate")
+

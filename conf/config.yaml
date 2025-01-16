@@ -26,7 +26,7 @@ predict:
   min_score: 0.4
 
 pipeline:
-  confidence_threshold: 0.5
+  confidence_threshold: 0.9
   limit_empty_frac: 0.01
 
 propagate:
@@ -34,12 +34,12 @@ propagate:
   distance_threshold_pixels: 50
 
 detection_model:
-  checkpoint: bird
+  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Annotations/checkpoints/5420a9c3f27d4299992094a7b9b49cb7.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train/
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
-  limit_empty_frac: 0.25
+  limit_empty_frac: 0.2
   labels:
     - "Bird"
   trainer: 
@@ -49,7 +49,7 @@ detection_model:
       lr: 0.0001
     workers: 0
     validation:
-      val_accuracy_interval: 20
+      val_accuracy_interval: 3
 
 classification_model:
   checkpoint: 
@@ -84,7 +84,7 @@ active_learning:
   n_images: 50
   patch_size: 2000
   patch_overlap: 0
-  min_score: 0.25
+  min_score: 0.1
   model_checkpoint:
   target_labels:
     - "Bird"
@@ -98,7 +98,7 @@ active_learning:
 active_testing:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: 'random'
-  n_images: 1
+  n_images: 1000
   m: 
   patch_size: 2000
   patch_overlap: 0

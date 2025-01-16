@@ -17,12 +17,13 @@ def mock_deepforest_model(config):
             # Return realistic predictions based on image name
             if "empty" in raster_path.lower():
                 return pd.DataFrame({
-                    'xmin': [],
-                    'ymin': [],
-                    'xmax': [],
-                    'ymax': [],
-                    'label': [],
-                    'score': []
+                    'xmin': [None],
+                    'ymin': [None],
+                    'xmax': [None],
+                    'ymax': [None],
+                    'label': [None],
+                    'score': [None],
+                    "image_path": [os.path.basename(raster_path)]
                 })
                 
             # If random, Generate 1-3 random predictions for non-empty images
@@ -34,7 +35,7 @@ def mock_deepforest_model(config):
                         'xmax': np.random.randint(800, 1000, num_predictions),
                         'ymax': np.random.randint(600, 800, num_predictions),
                         'label': ['Bird1'] * num_predictions,
-                        'score': np.random.uniform(0.5, 0.99, num_predictions),
+                        'score': np.random.uniform(0.1, 0.99, num_predictions),
                         'image_path': [os.path.basename(raster_path)] * num_predictions
                     })
             else:

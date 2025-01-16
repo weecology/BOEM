@@ -59,7 +59,7 @@ def load(checkpoint, annotations = None):
 
     if not annotations is None:
         num_labels = len(annotations.label.unique())
-        if num_labels != len(snapshot.label_dict):
+        if num_labels > len(snapshot.label_dict):
             snapshot = extract_backbone(snapshot, annotations)
 
     return snapshot
@@ -135,6 +135,10 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     """
     tmpdir = tempfile.gettempdir()
 
+   # Fix taxonomy
+    train_annotations = fix_taxonomy(train_annotations)
+    test_annotations = fix_taxonomy(test_annotations)
+
     train_annotations.to_csv(os.path.join(tmpdir,"train.csv"), index=False)
     test_annotations.to_csv(os.path.join(tmpdir,"test.csv"), index=False)
 
@@ -142,8 +146,8 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     model.config["train"]["csv_file"] = os.path.join(tmpdir,"train.csv")
     model.config["train"]["root_dir"] = train_image_dir
 
-    #model.config["validation"]["csv_file"] = os.path.join(tmpdir,"test.csv")
-    #model.config["validation"]["root_dir"] = train_image_dir
+    model.config["validation"]["csv_file"] = os.path.join(tmpdir,"test.csv")
+    model.config["validation"]["root_dir"] = train_image_dir
 
     # Loop through all keys in model.config and set them to the value of the key in model.config
     config_args = OmegaConf.to_container(config_args)
@@ -173,13 +177,14 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
             sample_train_annotations_for_image.root_dir = train_image_dir
             visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
             comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
-    # with comet_logger.experiment.context_manager("test_images"):
-    #     non_empty_train_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
-    #     for filename in non_empty_train_annotations.image_path.sample(5):
-    #         sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
-    #         sample_train_annotations_for_image.root_dir = train_image_dir
-    #         visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
-    #         comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
+    
+    with comet_logger.experiment.context_manager("test_images"):
+        non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
+        for filename in non_empty_validation_annotations.image_path.head(5):
+            sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
+            sample_validation_annotations_for_image.root_dir = train_image_dir
+            visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
+            comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
 
     model.trainer.fit(model)
 
@@ -196,6 +201,12 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     
     return model
 
+def fix_taxonomy(df):
+    df["label"] = df.label.replace('Turtle', 'Reptile')
+    df["label"] = df.label.replace('Cetacean', 'Mammal')
+
+    return df
+
 def preprocess_and_train(config, model_type="detection"):
     """Preprocess data and train model.
     
@@ -208,6 +219,7 @@ def preprocess_and_train(config, model_type="detection"):
     # Get and split annotations
     train_df = gather_data(config.detection_model.train_csv_folder)
     validation = gather_data(config.label_studio.csv_dir_validation)
+    
     validation.loc[validation.label==0,"label"] = "Bird"
 
     # Remove the empty frames, using hard mining instead
@@ -239,7 +251,9 @@ def preprocess_and_train(config, model_type="detection"):
     if config.detection_model.limit_empty_frac > 0:
         train_df = limit_empty_frames(train_df, config.detection_model.limit_empty_frac)
         if not validation_df.empty:
-            validation_df = limit_empty_frames(validation_df, config.detection_model.limit_empty_frac)
+            #validation_df = limit_empty_frames(validation_df, config.detection_model.limit_empty_frac)
+            # DeepForest evaluate doesn't work with empty frames yet, see https://github.com/weecology/DeepForest/pull/858
+            validation_df = validation_df[validation_df.xmin!=0]
 
 
     # Train model
@@ -283,7 +297,7 @@ def get_latest_checkpoint(checkpoint_dir, annotations):
 
     return m
 
-def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None):
+def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None, batch_size=64):
     if model_path:
         m = load(model_path)
     else:
@@ -291,17 +305,17 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
             raise ValueError("A model or model_path is required for prediction.")
 
     m.create_trainer(fast_dev_run=False)
-
+    m.config["batch_size"] = batch_size
     predictions = []
     for image_path in image_paths:
-        prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model, verbose=True)
+        prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
         if prediction is None:
             prediction = pd.DataFrame({"image_path": image_path, "xmin": [None], "ymin": [None], "xmax": [None], "ymax": [None], "label": [None], "score": [None]})
         predictions.append(prediction)
 
     return predictions
 
-def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, dask_client=None, crop_model=None):
+def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, dask_client=None, crop_model=None, batch_size=8):
     """Predict bounding boxes for images
     Args:
         m (main.deepforest): A trained deepforest model.
@@ -309,6 +323,7 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
         crop_model (main.deepforest): A trained deepforest model for classification.
         model_path (str): The path to a model checkpoint.
         dask_client (dask.distributed.Client): A dask client for parallel prediction.
+        batch_size (int): The batch size for prediction.
     Returns:
         list: A list of image predictions.
     """
@@ -337,6 +352,6 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
             block_result = block_result.result()
             predictions.append(pd.concat(block_result))
     else:
-        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=crop_model)
+        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=crop_model, batch_size=batch_size)
 
     return predictions

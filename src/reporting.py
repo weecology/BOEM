@@ -50,14 +50,15 @@ class Reporting:
         """
         self.all_predictions = pd.concat(self.pipeline_monitor.predictions, ignore_index=True)
 
-    def generate_report(self):
+    def generate_report(self, create_video=False):
         """Generate a report"""
 
         if self.pipeline_monitor:
             self.concat_predictions()
             self.write_predictions()
         self.write_metrics()
-        self.generate_video()
+        if create_video:
+            self.generate_video()
 
     def write_predictions(self):
         """Write predictions to a csv file"""

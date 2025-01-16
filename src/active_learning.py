@@ -70,10 +70,15 @@ def choose_train_images(evaluation, image_dir, strategy, n=10, patch_size=512, p
                 dask_results.append(pd.concat(block_result))
             preannotations = pd.concat(dask_results)
         else:
-            preannotations = detection.predict(m=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap)
+            preannotations = detection.predict(m=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, batch_size=32)
             preannotations = pd.concat(preannotations)
 
+        # Print the number of preannotations before removing min score
+        print("There are {} preannotations before removing min score".format(preannotations.shape[0]))
+        print("There are {} images before removing min score".format(preannotations["image_path"].nunique()))
         preannotations = preannotations[preannotations["score"] >= min_score]
+        print("There are {} preannotations after removing min score".format(preannotations.shape[0]))
+        print("There are {} images after removing min score".format(preannotations["image_path"].nunique()))
         
         if strategy == "most-detections":
             # Sort images by total number of predictions
@@ -158,6 +163,7 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
             preannotations = detection.predict(model=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap)
             preannotations = pd.concat(preannotations)
         
+        print("There are {} preannotations before removing min score".format(preannotations.shape[0]))
         preannotations = preannotations[preannotations["score"] >= min_score]
 
         if strategy == "most-detections":

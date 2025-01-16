@@ -128,6 +128,7 @@ class PipelineEvaluation:
             image_paths=full_image_paths, 
             patch_size=self.patch_size, 
             patch_overlap=self.patch_overlap, 
+            batch_size=32
         )
         combined_predictions = pd.concat(predictions)
         self.predictions.append(combined_predictions)

@@ -86,7 +86,7 @@ class Pipeline:
                 self.config)
 
             trained_classification_model = classification.preprocess_and_train_classification(
-                self.config)
+                self.config, num_classes=len(trained_detection_model.label_dict))
 
             detection_checkpoint_path = self.save_model(trained_detection_model,
                             self.config.detection_model.checkpoint_dir)

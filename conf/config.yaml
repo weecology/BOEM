@@ -39,10 +39,11 @@ detection_model:
   train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train/
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
-  limit_empty_frac: 0.2
+  limit_empty_frac: 0.01
   labels:
     - "Bird"
   trainer: 
+    batch_size: 4
     train:
       fast_dev_run: False
       epochs: 10
@@ -59,7 +60,7 @@ classification_model:
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/
   under_sample_ratio: 0
   trainer:
-    fast_dev_run: False
+    fast_dev_run: True
     max_epochs: 1
     lr: 0.00001
 

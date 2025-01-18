@@ -14,29 +14,47 @@ def create_train_test(annotations):
     return annotations.sample(frac=0.8, random_state=1), annotations.drop(
         annotations.sample(frac=0.8, random_state=1).index)
 
-def get_latest_checkpoint(checkpoint_dir, annotations, lr=0.0001):
+def get_latest_checkpoint(checkpoint_dir, annotations, lr=0.0001, num_classes=None):
     #Get model with latest checkpoint dir, if none exist make a new model
     if os.path.exists(checkpoint_dir):
         checkpoints = glob.glob(os.path.join(checkpoint_dir,"*.ckpt"))
         if len(checkpoints) > 0:
             checkpoints.sort()
             checkpoint = checkpoints[-1]
-            m = CropModel.load_from_checkpoint(checkpoint)
+            try:
+                m = CropModel.load_from_checkpoint(checkpoint)
+            except Exception as e:
+                warnings.warn("Could not load model from checkpoint, {}".format(e))
+                if num_classes:
+                    m = CropModel(num_classes=num_classes, lr=lr)
+                else:
+                    m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
         else:
             warnings.warn("No checkpoints found in {}".format(checkpoint_dir))
-            m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
+            if num_classes:
+                m = CropModel(num_classes=num_classes, lr=lr)
+            else:
+                m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
     else:
         os.makedirs(checkpoint_dir)
-        m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
+        if num_classes:
+            m = CropModel(num_classes=num_classes, lr=lr)
+        else:
+            m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
 
     return m
 
-def load(checkpoint=None, annotations=None, checkpoint_dir=None, lr=0.0001):
+def load(checkpoint=None, annotations=None, checkpoint_dir=None, lr=0.0001, num_classes=None):
     if checkpoint: 
-        loaded_model = CropModel(checkpoint, num_classes=len(annotations["label"].unique()), lr=lr)
+        if num_classes:
+            loaded_model = CropModel(checkpoint, num_classes=num_classes, lr=lr)
+        else:
+            loaded_model = CropModel(checkpoint, num_classes=len(annotations["label"].unique()), lr=lr)
     elif checkpoint_dir:
         loaded_model = get_latest_checkpoint(
-            checkpoint_dir, annotations)
+            checkpoint_dir,
+            num_classes=num_classes,
+            annotations=annotations)
     else:
         raise ValueError("No checkpoint or checkpoint directory found.")
     
@@ -80,7 +98,7 @@ def preprocess_images(model, annotations, root_dir, save_dir):
     labels = annotations["label"].values
     model.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
 
-def preprocess_and_train_classification(config, validation_df=None):
+def preprocess_and_train_classification(config, validation_df=None, num_classes=None):
     """Preprocess data and train a crop model.
     
     Args:
@@ -92,6 +110,10 @@ def preprocess_and_train_classification(config, validation_df=None):
     # Get and split annotations
     annotations = gather_data(config.classification_model.train_csv_folder)
 
+    # Remove the empty frames
+    annotations = annotations[~(annotations.label.astype(str)== "0")]
+    annotations = annotations[annotations.label != "FalsePositive"]
+
     if validation_df is None:
         train_df, validation_df = create_train_test(annotations)
     else:
@@ -99,7 +121,13 @@ def preprocess_and_train_classification(config, validation_df=None):
                                isin(validation_df["image_path"])]
 
     # Load existing model
-    loaded_model = load(checkpoint=config.classification_model.checkpoint, checkpoint_dir=config.classification_model.checkpoint_dir, annotations=annotations, lr=config.classification_model.trainer.lr)
+    loaded_model = load(
+        checkpoint=config.classification_model.checkpoint,
+        checkpoint_dir=config.classification_model.checkpoint_dir,
+        annotations=annotations,
+        lr=config.classification_model.trainer.lr,
+        num_classes=num_classes
+        )
 
     # Preprocess train and validation data
     preprocess_images(

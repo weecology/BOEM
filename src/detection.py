@@ -219,6 +219,9 @@ def preprocess_and_train(config, model_type="detection"):
     # Get and split annotations
     train_df = gather_data(config.detection_model.train_csv_folder)
     validation = gather_data(config.label_studio.csv_dir_validation)
+
+    if config.detection_model.limit_empty_frac > 0:
+        validation = limit_empty_frames(validation, config.detection_model.limit_empty_frac)
     
     validation.loc[validation.label==0,"label"] = "Bird"
 
@@ -246,15 +249,9 @@ def preprocess_and_train(config, model_type="detection"):
                                     allow_empty=True
                                     )
         validation_df.loc[validation_df.label==0,"label"] = "Bird"
-
-    # Limit empty frames
-    if config.detection_model.limit_empty_frac > 0:
-        train_df = limit_empty_frames(train_df, config.detection_model.limit_empty_frac)
-        if not validation_df.empty:
-            #validation_df = limit_empty_frames(validation_df, config.detection_model.limit_empty_frac)
-            # DeepForest evaluate doesn't work with empty frames yet, see https://github.com/weecology/DeepForest/pull/858
-            validation_df = validation_df[validation_df.xmin!=0]
-
+        non_empty = validation_df[(validation_df.xmin!=0)]
+        empty = validation_df[validation_df.xmin==0]
+        validation_df = pd.concat([empty.head(1), non_empty])
 
     # Train model
     # Load existing model
@@ -297,7 +294,7 @@ def get_latest_checkpoint(checkpoint_dir, annotations):
 
     return m
 
-def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None, batch_size=64):
+def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None, batch_size=16):
     if model_path:
         m = load(model_path)
     else:
@@ -315,7 +312,7 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
 
     return predictions
 
-def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, dask_client=None, crop_model=None, batch_size=8):
+def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, dask_client=None, crop_model=None, batch_size=16):
     """Predict bounding boxes for images
     Args:
         m (main.deepforest): A trained deepforest model.
@@ -352,6 +349,6 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
             block_result = block_result.result()
             predictions.append(pd.concat(block_result))
     else:
-        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=crop_model, batch_size=batch_size)
+        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=None, batch_size=batch_size)
 
     return predictions

@@ -1,10 +1,12 @@
 from src.label_studio import gather_data
 from torchmetrics.detection import MeanAveragePrecision
 from torchmetrics.classification import Accuracy
-from torchmetrics.functional import confusion_matrix
-from src.detection import predict
+from src.detection import predict, fix_taxonomy
 import pandas as pd
 import torch
+from torchvision.ops.boxes import box_iou
+from torchvision.models.detection._utils import Matcher
+
 import os
 
 class PipelineEvaluation:
@@ -39,11 +41,24 @@ class PipelineEvaluation:
 
         # Gather data
         self.detection_annotations = gather_data(detect_ground_truth_dir)
-        self.detection_annotations = self.detection_annotations[self.detection_annotations.label.isin(["Bird","Cetacean","Turtle"])]
+        self.detection_annotations= fix_taxonomy(self.detection_annotations)
+
+        self.detection_annotations = self.detection_annotations[self.detection_annotations.label.isin(self.model.label_dict.keys())]
+
         self.classification_annotations = gather_data(classify_ground_truth_dir)
         
         # There is one caveat for empty frames, assign a label which the dict contains
         self.classification_annotations.loc[self.classification_annotations.label.astype(str)=='0',"label"] = self.model.numeric_to_label_dict[0]
+
+        # No need to evaluate if there are no annotations for classification
+        self.classification_annotations = self.classification_annotations.loc[
+            ~(
+            (self.classification_annotations.xmin == 0) &
+            (self.classification_annotations.ymin == 0) &
+            (self.classification_annotations.xmax == 0) &
+            (self.classification_annotations.ymax == 0)
+            )
+        ]
 
         # Prediction container
         self.predictions = []
@@ -53,6 +68,10 @@ class PipelineEvaluation:
             
         if self.num_classes == 1:
             self.num_classes = 2
+
+        # Metrics
+        self.confident_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=self.num_classes)
+        self.uncertain_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=self.num_classes)
 
     def _format_targets(self, annotations_df):
         targets = {}
@@ -128,7 +147,7 @@ class PipelineEvaluation:
             image_paths=full_image_paths, 
             patch_size=self.patch_size, 
             patch_overlap=self.patch_overlap, 
-            batch_size=32
+            batch_size=16
         )
         combined_predictions = pd.concat(predictions)
         self.predictions.append(combined_predictions)
@@ -145,9 +164,51 @@ class PipelineEvaluation:
 
         return confident_predictions, uncertain_predictions
     
+    def match_predictions_and_targets(self, pred, target):
+        """
+        Matches predicted bounding boxes with source bounding boxes using Intersection over Union (IoU).
+        Args:
+            pred (Tensor): A tensor containing the source bounding boxes.
+            target (Tensor): A tensor containing the predicted bounding boxes.
+        Returns:
+            DataFrame: A dataframe containing the matched predictions and targets.
+        """
+        
+        # Match predictions and targets
+        matcher = Matcher(
+            0.3,
+            0.3,
+            allow_low_quality_matches=False)
+        
+        pred_boxes = pred["boxes"]
+        src_boxes = target["boxes"]
+
+        match_quality_matrix = box_iou(
+            src_boxes,
+            pred_boxes)
+        
+        results = matcher(match_quality_matrix)
+
+        matched_pred = []
+        matched_target = []
+
+        for i, match in enumerate(results):
+            if match >= 0:
+                matched_pred.append(int(pred["labels"][i].item()))
+                matched_target.append(int(target["labels"][match].item()))
+            else:
+                matched_pred.append(int(pred["labels"][i].item()))
+                matched_target.append(None)
+
+        matches = pd.DataFrame({"pred": matched_pred, "target": matched_target})
+
+        # Remove the None values for predicted, can't get class scores if the box doesn't match
+        matches = matches.dropna(subset=["pred"])
+        
+        return matches
+            
     def evaluate_confident_classification(self):
         """Evaluate confident classification performance"""
-
         targets = []
         preds = []
         for image_path in self.confident_predictions.drop_duplicates("image_path").image_path.tolist():
@@ -159,27 +220,19 @@ class PipelineEvaluation:
             pred = self._format_targets(image_predictions)
             if len(pred["labels"]) == 0:
                 continue
-            targets.append(target)
-            preds.append(pred)
+
+            matches = self.match_predictions_and_targets(pred, target)
+            if len(matches) == 0:
+                continue
+            else:
+                self.confident_classification_accuracy.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
         
-        if len(preds) == 0:
-            return {"confident_classification_accuracy": None}
-        else:
-            # Classification is just the labels dict
-            target_labels = torch.stack([x["labels"] for x in targets])
-            pred_labels = torch.stack([x["labels"] for x in preds])
-
-            self.confident_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=self.num_classes)
-
-            self.confident_classification_accuracy.update(preds=pred_labels, target=target_labels)
-            results = {"confident_classification_accuracy": self.confident_classification_accuracy.compute()}
-
+        results = {"confident_classification_accuracy": self.confident_classification_accuracy.compute()}
+        
         return results
 
     def evaluate_uncertain_classification(self):
         """Evaluate uncertain classification performance"""
-
-        self.uncertain_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=self.num_classes)
 
         targets = []
         preds = []
@@ -189,23 +242,19 @@ class PipelineEvaluation:
             image_predictions = image_predictions[image_predictions.score > self.min_score]
             if image_predictions.empty:
                     continue
-            target = self._format_targets(image_targets)
-            pred = self._format_targets(image_predictions)
-            targets.append(target)
-            preds.append(pred)
+            targets = self._format_targets(image_targets)
+            preds = self._format_targets(image_predictions)
 
-        if len(preds) == 0:
+            matches = self.match_predictions_and_targets(preds, targets)
+
+            if len(matches) == 0:
+                continue
+            else:
+                self.uncertain_classification_accuracy.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
+        
+        results = {"uncertain_classification_accuracy": self.uncertain_classification_accuracy.compute()}
             
-            return {"uncertain_classification_accuracy": None}
-        else:
-            # Classification is just the labels dict
-            target_labels = torch.stack([x["labels"] for x in targets])
-            pred_labels = torch.stack([x["labels"] for x in preds])
-            
-            self.uncertain_classification_accuracy.update(preds=pred_labels, target=target_labels)
-            results = {"uncertain_classification_accuracy": self.uncertain_classification_accuracy.compute()}
-            
-            return results
+        return results
 
     def evaluate(self):
         """

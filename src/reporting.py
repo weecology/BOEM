@@ -82,7 +82,7 @@ class Reporting:
             m=self.model,
             crop_model=self.classification_model,
             patch_overlap=self.patch_overlap,
-            patch_size=self.patch_overlap,
+            patch_size=self.patch_size,
             )
         
         predictions = predictions[predictions.score > self.min_score]

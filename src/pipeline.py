@@ -199,7 +199,7 @@ class Pipeline:
                     uncertain_predictions=uncertain_predictions,
                     pipeline_monitor=pipeline_monitor)
 
-                reporter.generate_report(create_video=True)
+                reporter.generate_report(create_video=False)
         else:
             print("No images to annotate")
 

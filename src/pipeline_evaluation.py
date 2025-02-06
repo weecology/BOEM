@@ -203,57 +203,36 @@ class PipelineEvaluation:
         matches = pd.DataFrame({"pred": matched_pred, "target": matched_target})
 
         # Remove the None values for predicted, can't get class scores if the box doesn't match
-        matches = matches.dropna(subset=["pred"])
+        matches = matches.dropna(subset=["target"])
         
         return matches
             
     def evaluate_confident_classification(self):
         """Evaluate confident classification performance"""
-        targets = []
-        preds = []
-        for image_path in self.confident_predictions.drop_duplicates("image_path").image_path.tolist():
-            # Min score for predictions
+        return self._evaluate_classification(self.confident_predictions, self.confident_classification_accuracy)
+
+    def evaluate_uncertain_classification(self):
+        """Evaluate uncertain classification performance"""
+        return self._evaluate_classification(self.uncertain_predictions, self.uncertain_classification_accuracy)
+
+    def _evaluate_classification(self, predictions, accuracy_metric):
+        """Helper function to evaluate classification performance"""
+        for image_path in predictions.drop_duplicates("image_path").image_path.tolist():
             image_targets = self.classification_annotations.loc[self.classification_annotations.image_path == os.path.basename(image_path)]
-            image_predictions = self.confident_predictions.loc[self.confident_predictions.image_path == os.path.basename(image_path)]
+            image_predictions = predictions.loc[predictions.image_path == os.path.basename(image_path)]
             image_predictions = image_predictions[image_predictions.score > self.min_score]
+            if image_predictions.empty:
+                continue
             target = self._format_targets(image_targets)
             pred = self._format_targets(image_predictions)
             if len(pred["labels"]) == 0:
                 continue
-
             matches = self.match_predictions_and_targets(pred, target)
-            if len(matches) == 0:
+            if matches.empty:
                 continue
-            else:
-                self.confident_classification_accuracy.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
+            accuracy_metric.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
         
-        results = {"confident_classification_accuracy": self.confident_classification_accuracy.compute()}
-        
-        return results
-
-    def evaluate_uncertain_classification(self):
-        """Evaluate uncertain classification performance"""
-
-        targets = []
-        preds = []
-        for image_path in self.uncertain_predictions.drop_duplicates("image_path").image_path.tolist():
-            image_targets = self.classification_annotations.loc[self.classification_annotations.image_path == os.path.basename(image_path)]
-            image_predictions = self.uncertain_predictions.loc[self.uncertain_predictions.image_path == os.path.basename(image_path)]
-            image_predictions = image_predictions[image_predictions.score > self.min_score]
-            if image_predictions.empty:
-                    continue
-            targets = self._format_targets(image_targets)
-            preds = self._format_targets(image_predictions)
-
-            matches = self.match_predictions_and_targets(preds, targets)
-
-            if len(matches) == 0:
-                continue
-            else:
-                self.uncertain_classification_accuracy.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
-        
-        results = {"uncertain_classification_accuracy": self.uncertain_classification_accuracy.compute()}
-            
+        results = {f"{accuracy_metric.__class__.__name__.lower()}": accuracy_metric.compute()}
         return results
 
     def evaluate(self):

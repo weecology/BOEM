@@ -197,6 +197,7 @@ class Pipeline:
                     patch_size=self.config.active_learning.patch_size,
                     confident_predictions=confident_predictions,
                     uncertain_predictions=uncertain_predictions,
+                    metadata_csv=self.config.reporting.metadata,
                     pipeline_monitor=pipeline_monitor)
 
                 reporter.generate_report(create_video=False)

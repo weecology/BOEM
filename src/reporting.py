@@ -6,7 +6,7 @@ from src.detection import predict
 import glob
 
 class Reporting:
-    def __init__(self, report_dir, image_dir, pipeline_monitor=None, model=None, classification_model=None, confident_predictions=None, uncertain_predictions=None, thin_factor=10,patch_overlap=0.2, patch_size=300, min_score=0.3):
+    def __init__(self, report_dir, image_dir, metadata_csv, pipeline_monitor=None, model=None, classification_model=None, confident_predictions=None, uncertain_predictions=None, thin_factor=10,patch_overlap=0.2, patch_size=300, min_score=0.3):
         """Initialize reporting class
         
         Args:
@@ -19,14 +19,17 @@ class Reporting:
             patch_size: Patch size for detection model
             min_score: Minimum score for detection model
             thin_factor: Factor to thin images by for video creation
+            metadata_csv: Path to metadata csv for image location
             confident_predictions: Dataframe containing confident predictions
             uncertain_predictions: Dataframe containing uncertain predictions
         """
 
-        self.report_dir = report_dir
-        self.report_file = f"{report_dir}/report.csv"
+        # Create timestamped report directory
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.report_dir = os.path.join(report_dir, timestamp)
+        self.report_file = f"{self.report_dir}/report.csv"
         self.image_dir = image_dir
-        self.sample_prediction_dir = f"{report_dir}/samples"
+        self.sample_prediction_dir = f"{self.report_dir}/samples"
         self.model = model
         self.classification_model = classification_model
         self.patch_overlap = patch_overlap
@@ -35,6 +38,10 @@ class Reporting:
         self.thin_factor = thin_factor
         self.uncertain_predictions = uncertain_predictions
         self.confident_predictions = confident_predictions
+        self.metadata = metadata_csv
+
+        self.detection_experiment = model.trainer.logger.experiment
+        self.classification_experiment = classification_model.trainer.logger.experiment
         
         # Check the dirs exist
         os.makedirs(self.report_dir, exist_ok=True)
@@ -64,6 +71,13 @@ class Reporting:
         """Write predictions to a csv file"""
         self.concat_predictions()
         self.all_predictions.to_csv(f"{self.report_dir}/predictions.csv", index=False)
+        self.all_predictions['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.all_predictions["unique_image"] = self.all_predictions["image_path"].apply(lambda x: os.path.splitext(os.path.basename(x))[0])
+        
+        # Connect with metadata on location
+        metadata_df = pd.read_csv(self.metadata)
+        merged_predictions = self.all_predictions.merge(metadata_df[["unique_image", "flight_name","date","lat","long"]], on='unique_image')
+        merged_predictions.to_csv(f"{self.report_dir}/predictions.csv", index=False)
 
         return f"{self.report_dir}/predictions.csv"
 
@@ -118,8 +132,8 @@ class Reporting:
         
         # Extract key metrics
         detection_map = performance['detection']['mAP']['map']
-        confident_acc = performance['confident_classification']["confident_classification_accuracy"]
-        uncertain_acc = performance['uncertain_classification']["uncertain_classification_accuracy"]
+        confident_acc = performance['confident_classification']["multiclassaccuracy"]
+        uncertain_acc = performance['uncertain_classification']["multiclassaccuracy"]
 
         # Get annotation counts and completion rate
         human_reviewed_images = len(self.all_predictions['image_path'].unique())

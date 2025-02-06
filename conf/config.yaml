@@ -76,8 +76,9 @@ pipeline_evaluation:
 
 reporting:
   report_dir: /blue/ewhite/b.weinstein/BOEM/reporting/reports
-  metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata.csv
+  metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata/metadata.csv
   thin_factor: 500
+
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27

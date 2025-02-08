@@ -76,13 +76,13 @@ class PipelineEvaluation:
     def _format_targets(self, annotations_df):
         targets = {}
         
-        if annotations_df.xmin.isna().all():
-            # Torchmetrics expects empty tensors, see https://github.com/Lightning-AI/torchmetrics/pull/624/files
+        if annotations_df.empty:
             targets["boxes"] = torch.tensor([])
             targets["labels"] = torch.tensor([])
             if "score" in annotations_df.columns:
                 targets["scores"] = torch.tensor([])
-        elif annotations_df.empty:
+        elif (annotations_df.xmin == 0).all():
+            # Torchmetrics expects empty tensors, see https://github.com/Lightning-AI/torchmetrics/pull/624/files
             targets["boxes"] = torch.tensor([])
             targets["labels"] = torch.tensor([])
             if "score" in annotations_df.columns:
@@ -101,7 +101,7 @@ class PipelineEvaluation:
         # Metrics
         self.mAP = MeanAveragePrecision(box_format="xyxy",extended_summary=True)
 
-        full_image_paths = [self.image_dir + "/" + image_path for image_path in self.detection_annotations.image_path.tolist()] 
+        full_image_paths = [self.image_dir + "/" + image_path for image_path in self.detection_annotations.drop_duplicates("image_path").image_path.tolist()] 
         
         if self.debug:
             full_image_paths = full_image_paths[:3]

@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from src.visualization import PredictionVisualizer
 from src.detection import predict
+import geopandas as gpd
 import glob
 
 class Reporting:
@@ -79,6 +80,9 @@ class Reporting:
         merged_predictions = self.all_predictions.merge(metadata_df[["unique_image", "flight_name","date","lat","long"]], on='unique_image')
         merged_predictions.to_csv(f"{self.report_dir}/predictions.csv", index=False)
 
+        # Create shapefile
+        gpd.GeoDataFrame(merged_predictions, geometry=gpd.points_from_xy(merged_predictions.long, merged_predictions.lat)).to_file(f"{self.report_dir}/predictions.shp")
+
         return f"{self.report_dir}/predictions.csv"
 
     def select_images_for_video(self):
@@ -98,6 +102,8 @@ class Reporting:
             patch_overlap=self.patch_overlap,
             patch_size=self.patch_size,
             )
+        
+        predictions = pd.concat(predictions, ignore_index=True)
         
         predictions = predictions[predictions.score > self.min_score]
         
@@ -162,9 +168,24 @@ class Reporting:
             'total_images': total_images,
             'completion_rate': completion_rate,
             'confident_classification_accuracy': confident_acc,
-            'uncertain_classification_accuracy': uncertain_acc
+            'uncertain_classification_accuracy': uncertain_acc,
         }
-        
+
+        # If comet logger exists add model evaluation urls
+        try:
+            report_data['detection_model_url'] = self.detection_experiment.url
+            for metric in self.detection_experiment.metrics:
+                report_data[f"detection_{metric}"] = self.detection_experiment.metrics[metric]
+        except AttributeError:
+            report_data['detection_model_url'] = None
+
+        try:
+            report_data['classification_model_url'] = self.classification_experiment.url
+            for metric in self.classification_experiment.metrics:
+                report_data[f"classification_{metric}"] = self.classification_experiment.metrics[metric]
+        except AttributeError:
+            report_data['classification_model_url'] = None
+
         # Load existing or create new report file
         if os.path.exists(self.report_file):
             df = pd.read_csv(self.report_file)

@@ -1,15 +1,10 @@
 from datetime import datetime
 import os
-import glob
-import random
 
-import pandas as pd
 from omegaconf import DictConfig
 
 from src.active_learning import choose_train_images, choose_test_images, predict_and_divide
-from src import propagate
 from src import label_studio
-from src.data_processing import density_cropping
 from src import detection
 from src import classification
 from src.pipeline_evaluation import PipelineEvaluation
@@ -75,11 +70,6 @@ class Pipeline:
                 except:
                     pass
                 print(f"New val annotations found: {len(new_val_annotations)}")
-
-            # Given new annotations, propogate labels to nearby images
-            # label_propagator = propagate.LabelPropagator(
-            #     **self.config.propagate)
-            # label_propagator.through_time(new_annotations)
 
         if self.config.force_training:
             trained_detection_model = detection.preprocess_and_train(
@@ -168,10 +158,7 @@ class Pipeline:
             print(f"Images requiring human review: {len(uncertain_predictions)}")
             print(f"Images auto-annotated: {len(confident_predictions)}")
 
-            # Intelligent cropping
             image_paths = uncertain_predictions["image_path"].unique()
-            # cropped_image_annotations = density_cropping(
-            # image_paths, uncertain_predictions, **self.config.intelligent_cropping)
 
             # Align the predictions with the cropped images
             # Run the annotation pipeline
@@ -185,22 +172,24 @@ class Pipeline:
                                                     folder_name=self.config.label_studio.folder_name, 
                                                     preannotations=preannotations)
 
-        
-            if pipeline_monitor:
-                reporter = Reporting(
-                    report_dir=self.config.reporting.report_dir,
-                    image_dir=self.config.active_learning.image_dir,
-                    model=trained_detection_model,
-                    classification_model=trained_classification_model,
-                    thin_factor=self.config.reporting.thin_factor,
-                    patch_overlap=self.config.active_learning.patch_overlap,
-                    patch_size=self.config.active_learning.patch_size,
-                    confident_predictions=confident_predictions,
-                    uncertain_predictions=uncertain_predictions,
-                    metadata_csv=self.config.reporting.metadata,
-                    pipeline_monitor=pipeline_monitor)
-
-                reporter.generate_report(create_video=False)
         else:
             print("No images to annotate")
+            confident_predictions = None
+            uncertain_predictions = None
+        
+        if pipeline_monitor:
+            reporter = Reporting(
+                report_dir=self.config.reporting.report_dir,
+                image_dir=self.config.active_learning.image_dir,
+                model=trained_detection_model,
+                classification_model=trained_classification_model,
+                thin_factor=self.config.reporting.thin_factor,
+                patch_overlap=self.config.active_learning.patch_overlap,
+                patch_size=self.config.active_learning.patch_size,
+                confident_predictions=confident_predictions,
+                uncertain_predictions=uncertain_predictions,
+                metadata_csv=self.config.reporting.metadata,
+                pipeline_monitor=pipeline_monitor)
+
+            reporter.generate_report(create_video=True)
 

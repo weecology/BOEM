@@ -13,7 +13,6 @@ import pandas as pd
 from deepforest import main, visualize
 from deepforest.utilities import read_file
 from pytorch_lightning.loggers import CometLogger
-import geopandas as gpd
 
 # Local imports
 from src import data_processing
@@ -172,7 +171,9 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
 
     with comet_logger.experiment.context_manager("train_images"):
         non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
-        for filename in non_empty_train_annotations.image_path.sample(5):
+        # Sanity check for debug
+        n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
+        for filename in non_empty_train_annotations.image_path.sample():
             sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
             sample_train_annotations_for_image.root_dir = train_image_dir
             visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
@@ -180,6 +181,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
     
     with comet_logger.experiment.context_manager("test_images"):
         non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
+        n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
         for filename in non_empty_validation_annotations.image_path.head(5):
             sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
             sample_validation_annotations_for_image.root_dir = train_image_dir
@@ -207,12 +209,11 @@ def fix_taxonomy(df):
 
     return df
 
-def preprocess_and_train(config, model_type="detection"):
+def preprocess_and_train(config):
     """Preprocess data and train model.
     
     Args:
         config: Configuration object containing training parameters
-        model_type (str): The type of model to train. Defaults to "detection".
     Returns:
         trained_model: Trained model object
     """
@@ -251,8 +252,10 @@ def preprocess_and_train(config, model_type="detection"):
         validation_df.loc[validation_df.label==0,"label"] = "Bird"
         non_empty = validation_df[(validation_df.xmin!=0)]
         empty = validation_df[validation_df.xmin==0]
-        validation_df = pd.concat([empty.head(1), non_empty])
 
+        # TO DO confirm empty frames here
+        validation_df = non_empty
+        
     # Train model
     # Load existing model
     if config.detection_model.checkpoint:

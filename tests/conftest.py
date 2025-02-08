@@ -14,8 +14,9 @@ def config(tmpdir_factory):
 
     # Detection model
     cfg.detection_model.train_csv_folder = tmpdir_factory.mktemp(
-        "csvs").strpath
-    cfg.label_studio.csv_dir_validation = cfg.detection_model.train_csv_folder
+        "train_csvs").strpath
+    cfg.label_studio.csv_dir_validation = tmpdir_factory.mktemp(
+        "test_csvs").strpath
     cfg.detection_model.train_image_dir = tmpdir_factory.mktemp(
         "images").strpath
     cfg.detection_model.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
@@ -44,27 +45,27 @@ def config(tmpdir_factory):
         'ymin': [10, 300, 250],
         'xmax': [40, 250, 200],
         'ymax': [20, 350, 300],
-        'label': ['FalsePositive', 'Bird', 'Bird2'],
+        'label': ['FalsePositive', 'Bird', 'Mammal'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
 
     val_data = {
         'image_path': ['empty.jpg','birds_val.jpg', 'birds_val.jpg'],
-        'xmin': [None,200, 150],
-        'ymin': [None,300, 250],
-        'xmax': [None,250, 200],
-        'ymax': [None,350, 300],
-        'label': ['Bird','Bird', 'Bird2'],
+        'xmin': [0,200, 150],
+        'ymin': [0,300, 250],
+        'xmax': [0,250, 200],
+        'ymax': [0,350, 300],
+        'label': ['Bird','Bird', 'Mammal'],
         'annotator': ['test_user','test_user', 'test_user'],
     }
 
     metadata = {
-        'image_long': ['-68.81369', '-68.81369'],
-        'image_lat': ['44.81369', '44.81369'],
-        'image_date': ['2024-01-01', '2024-01-01'],
         'unique_image':['birds_val', 'birds_val'],
-        'gsd_cm': [1.4, 1.4],
-        'camera_GUID': ['1234567890', '1234567890']
+        'camera_GUID': ['1234567890', '1234567890'],
+        'flight_name': ['flight1', 'flight2'],
+        'date': ['2024-01-01', '2024-01-01'],
+        'lat': ['44.81369', '44.81369'],
+        'long': ['-68.81369', '-68.81369']
     }
 
     metadata_df = pd.DataFrame(metadata)
@@ -79,7 +80,7 @@ def config(tmpdir_factory):
     train_df.to_csv(train_csv_path, index=False)
 
     # Save validation data to CSV
-    val_csv_path = os.path.join(cfg.detection_model.train_csv_folder,
+    val_csv_path = os.path.join(cfg.label_studio.csv_dir_validation,
                                 'validation.csv')
     val_df.to_csv(val_csv_path, index=False)
 

@@ -34,24 +34,27 @@ def mock_deepforest_model(config):
                         'ymin': np.random.randint(0, 600, num_predictions),
                         'xmax': np.random.randint(800, 1000, num_predictions),
                         'ymax': np.random.randint(600, 800, num_predictions),
-                        'label': ['Bird1'] * num_predictions,
+                        'label': ['Bird'] * num_predictions,
                         'score': np.random.uniform(0.1, 0.99, num_predictions),
                         'image_path': [os.path.basename(raster_path)] * num_predictions
                     })
             else:
                 # Return the validation data for perfect performance
-                val_csv_path = os.path.join(config.detection_model.train_csv_folder, 'validation.csv')
+                val_csv_path = os.path.join(config.label_studio.csv_dir_validation, 'validation.csv')
                 validation_df = pd.read_csv(val_csv_path)
+                # Drop the empty image
+                validation_df = validation_df[validation_df['image_path'] != 'empty.jpg']
+
                 # Add scores
                 validation_df['score'] = 1.0
 
                 return validation_df
               
-    return MockDeepForest(label_dict={"Bird": 0,"Bird2": 1})
+    return MockDeepForest(label_dict={"Bird": 0,"Mammal": 1})
 
 @pytest.fixture
 def random_model():
-    m = main.deepforest(label_dict={"Bird": 0,"Bird2": 1}, num_classes=2)
+    m = main.deepforest(label_dict={"Bird": 0,"Mammal": 1}, num_classes=2)
     return m
 
 @pytest.fixture
@@ -71,7 +74,8 @@ def test_evaluate_detection(config, mock_deepforest_model, random_crop_model):
     pipeline_evaluation = PipelineEvaluation(model=mock_deepforest_model, crop_model=random_crop_model, **config.pipeline_evaluation)
     detection_results = pipeline_evaluation.evaluate_detection()
     
-    assert detection_results["mAP"]["map"] == 1.0
+    # Detection results are mocked, so the mAP should be 1
+    assert detection_results["mAP"]["map"] == 1
 
 def test_confident_classification_accuracy(config, mock_deepforest_model, random_crop_model):
     """Test confident classification accuracy with mock model and perfect performance."""
@@ -79,7 +83,7 @@ def test_confident_classification_accuracy(config, mock_deepforest_model, random
     pipeline_evaluation = PipelineEvaluation(model=mock_deepforest_model, crop_model=random_crop_model, **config.pipeline_evaluation)
     confident_classification_accuracy = pipeline_evaluation.evaluate_confident_classification()
    
-    assert confident_classification_accuracy["confident_classification_accuracy"] == 1.0
+    assert confident_classification_accuracy["multiclassaccuracy"] == 1.0
 
 def test_uncertain_classification_accuracy(config, mock_deepforest_model, random_crop_model):
     """Test uncertain classification accuracy with mock model and perfect performance."""
@@ -87,7 +91,7 @@ def test_uncertain_classification_accuracy(config, mock_deepforest_model, random
     pipeline_evaluation = PipelineEvaluation(model=mock_deepforest_model, crop_model=random_crop_model, **config.pipeline_evaluation)
     uncertain_classification_accuracy = pipeline_evaluation.evaluate_uncertain_classification()
    
-    assert uncertain_classification_accuracy["uncertain_classification_accuracy"] == None
+    assert uncertain_classification_accuracy["multiclassaccuracy"] == 0
 
 def test_evaluate(config, random_model, random_crop_model):
     """Test evaluate with mock model."""
@@ -96,5 +100,5 @@ def test_evaluate(config, random_model, random_crop_model):
 
     # All the metrics should be undefined
     assert pipeline_evaluation.results["detection"]["mAP"]["map"] == -1
-    assert pipeline_evaluation.results["confident_classification"]["confident_classification_accuracy"] == None
-    assert pipeline_evaluation.results["uncertain_classification"]["uncertain_classification_accuracy"] == None
+    assert pipeline_evaluation.results["confident_classification"]["multiclassaccuracy"] == 0
+    assert pipeline_evaluation.results["uncertain_classification"]["multiclassaccuracy"] == 0

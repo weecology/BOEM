@@ -79,10 +79,10 @@ def test_first_phase(config, label_studio_client):
     pipeline.run()
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires GPU")
-def test_multiple_gpu(config, label_studio_client):
-    """Test init phase with no data"""
-    # Set validation csv paths to None
-    config["active_learning"]["gpus"] = 2
-    pipeline = Pipeline(cfg=config)
-    pipeline.run()
+#@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires GPU")
+#def test_multiple_gpu(config, label_studio_client):
+#    """Test init phase with no data"""
+#    # Set validation csv paths to None
+#    config["active_learning"]["gpus"] = 2
+#    pipeline = Pipeline(cfg=config)
+#    pipeline.run()

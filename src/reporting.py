@@ -4,6 +4,7 @@ from datetime import datetime
 from src.visualization import PredictionVisualizer
 from src.detection import predict
 import geopandas as gpd
+from pytorch_lightning.loggers import CometLogger
 import glob
 
 class Reporting:
@@ -41,8 +42,8 @@ class Reporting:
         self.confident_predictions = confident_predictions
         self.metadata = metadata_csv
 
-        self.detection_experiment = model.trainer.logger.experiment
-        self.classification_experiment = classification_model.trainer.logger.experiment
+        self.detection_experiment = model.trainer.logger
+        self.classification_experiment = classification_model.trainer.logger
         
         # Check the dirs exist
         os.makedirs(self.report_dir, exist_ok=True)
@@ -172,19 +173,14 @@ class Reporting:
         }
 
         # If comet logger exists add model evaluation urls
-        try:
+        if type(self.detection_experiment) == CometLogger:
             report_data['detection_model_url'] = self.detection_experiment.url
             for metric in self.detection_experiment.metrics:
                 report_data[f"detection_{metric}"] = self.detection_experiment.metrics[metric]
-        except AttributeError:
-            report_data['detection_model_url'] = None
 
-        try:
             report_data['classification_model_url'] = self.classification_experiment.url
             for metric in self.classification_experiment.metrics:
                 report_data[f"classification_{metric}"] = self.classification_experiment.metrics[metric]
-        except AttributeError:
-            report_data['classification_model_url'] = None
 
         # Load existing or create new report file
         if os.path.exists(self.report_file):

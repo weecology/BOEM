@@ -126,11 +126,13 @@ class PredictionVisualizer:
             
         height, width = first_image.shape[:2]
         
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # Use H.264 codec and lower frame rate for better compatibility
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # Changed from mp4v to avc1
+        fps = 5  # Reduced from 30 to 5 for slower playback
         video_writer = cv2.VideoWriter(
             output_path,
             fourcc,
-            self.fps,
+            fps,
             (width, height)
         )
         
@@ -226,4 +228,4 @@ class PredictionVisualizer:
                 2
             )
         
-        return summary 
+        return summary

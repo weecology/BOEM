@@ -75,9 +75,9 @@ pipeline_evaluation:
   debug: False
 
 reporting:
-  report_dir: /blue/ewhite/b.weinstein/BOEM/reporting/reports
+  report_dir: /orange/ewhite/web/public/BOEM
   metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata/metadata.csv
-  thin_factor: 500
+  thin_factor: 100
 
 
 active_learning:

@@ -15,4 +15,4 @@
 source activate BOEM
 
 cd ~/BOEM/
-python main.py check_annotations=True active_learning.pool_limit=10000 active_testing.n_images=1 active_learning.n_images=100 pipeline_evaluation.debug=False
+python main.py check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 pipeline_evaluation.debug=True force_training=False

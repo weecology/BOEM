@@ -81,32 +81,31 @@ class Pipeline:
             detection_checkpoint_path = self.save_model(trained_detection_model,
                             self.config.detection_model.checkpoint_dir)
             classification_checkpoint_path = self.save_model(trained_classification_model,
-                            self.config.classification_model.checkpoint_dir)
-            
-            pipeline_monitor = PipelineEvaluation(
-                model=trained_detection_model,
-                crop_model=trained_classification_model,
-                **self.config.pipeline_evaluation)
-        
-            performance = pipeline_monitor.evaluate()
-
-            if pipeline_monitor.check_success():
-                print("Pipeline performance is satisfactory, exiting")
-                return None
+                            self.config.classification_model.checkpoint_dir)      
+ 
         else:
+            detection_checkpoint_path = self.config.detection_model.checkpoint
             trained_detection_model = detection.load(
                 checkpoint = self.config.detection_model.checkpoint)
             
-            if self.config.classification_model.checkpoint:
+            if self.config.classification_model.checkpoint is not None:
                 trained_classification_model = classification.load(
-                self.config.classification_model.checkpoint, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=None)
+                    self.config.classification_model.checkpoint, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=None)
             else:
-                trained_classification_model = None
-            
-            performance = None
-            pipeline_monitor = None
-            detection_checkpoint_path = None
+                annotations = label_studio.gather_data(self.config.classification_model.train_csv_folder)
+                trained_classification_model = classification.load(
+                    checkpoint = None, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=annotations)
+        
+        pipeline_monitor = PipelineEvaluation(
+            model=trained_detection_model,
+            crop_model=trained_classification_model,
+            **self.config.pipeline_evaluation)
 
+        performance = pipeline_monitor.evaluate()
+
+        if pipeline_monitor.check_success():
+            print("Pipeline performance is satisfactory, exiting")
+            return None
         if self.config.active_learning.gpus > 1:
             dask_client = start(gpus=self.config.active_learning.gpus, mem_size="70GB")
         else:

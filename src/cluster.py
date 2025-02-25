@@ -55,7 +55,7 @@ def start(cpus=0, gpus=0, mem_size="50GB"):
 
         print(cluster.job_script())
         cluster.scale(cpus)
-        cluster.wait_for_workers(cpus)
+        #cluster.wait_for_workers(cpus)
 
     if gpus:
         #job args

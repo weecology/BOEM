@@ -24,6 +24,7 @@ predict:
   patch_size: 2000
   patch_overlap: 0
   min_score: 0.4
+  batch_size: 48
 
 pipeline:
   confidence_threshold: 0.9
@@ -34,14 +35,14 @@ propagate:
   distance_threshold_pixels: 50
 
 detection_model:
-  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Annotations/checkpoints/5420a9c3f27d4299992094a7b9b49cb7.pl"
+  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/900710af16d9431aaef84bf74034a48c.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train/
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
   limit_empty_frac: 0.01
   labels:
-    - "Bird"
+    - "Object"
   trainer: 
     batch_size: 4
     train:
@@ -69,7 +70,6 @@ pipeline_evaluation:
   classify_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
   # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
   detection_true_positive_threshold: 0.8
-  detection_false_positive_threshold: 0.5
   classification_avg_score: 0.5
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   debug: False
@@ -78,7 +78,6 @@ reporting:
   report_dir: /orange/ewhite/web/public/BOEM
   metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata/metadata.csv
   thin_factor: 100
-
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
@@ -89,7 +88,7 @@ active_learning:
   min_score: 0.1
   model_checkpoint:
   target_labels:
-    - "Bird"
+    - "Object"
   
   # Optional parameters:
   evaluation: 

@@ -45,7 +45,8 @@ def config(tmpdir_factory):
         'ymin': [10, 300, 250],
         'xmax': [40, 250, 200],
         'ymax': [20, 350, 300],
-        'label': ['FalsePositive', 'Bird', 'Mammal'],
+        'label': ['Object', 'Object', 'Object'],
+        'cropmodel_label': ['Bird', 'Bird', 'Mammal'],
         'annotator': ['test_user', 'test_user', 'test_user']
     }
 
@@ -55,7 +56,8 @@ def config(tmpdir_factory):
         'ymin': [0,300, 250],
         'xmax': [0,250, 200],
         'ymax': [0,350, 300],
-        'label': ['Bird','Bird', 'Mammal'],
+        'label': ['Object','Object', 'Object'],
+        'cropmodel_label': ['Bird', 'Bird', 'Mammal'],
         'annotator': ['test_user','test_user', 'test_user'],
     }
 
@@ -84,14 +86,18 @@ def config(tmpdir_factory):
                                 'validation.csv')
     val_df.to_csv(val_csv_path, index=False)
 
-    # Save training data to CSV
+    # Save classification training data to CSV
     train_csv_path = os.path.join(cfg.classification_model.train_csv_folder,
                                   'training_data.csv')
-    train_df.to_csv(train_csv_path, index=False)
+    classification_train_df = train_df.copy(deep=True)
+    classification_train_df['label'] = classification_train_df['cropmodel_label']
+    classification_train_df.to_csv(train_csv_path, index=False)
 
-    # Save validation data to CSV
+    # Save classification validation data to CSV
     val_csv_path = os.path.join(cfg.classification_model.train_csv_folder,
                                 'validation.csv')
+    classification_val_df = val_df.copy(deep=True)
+    classification_val_df['label'] = classification_val_df['cropmodel_label']
     val_df.to_csv(val_csv_path, index=False)
 
     cfg.classification_model.trainer.fast_dev_run = True

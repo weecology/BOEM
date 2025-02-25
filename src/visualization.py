@@ -3,9 +3,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import List, Optional, Tuple
-import os
-from deepforest.model import CropModel
 from tqdm import tqdm
+import subprocess
 
 class PredictionVisualizer:
     def __init__(
@@ -127,18 +126,17 @@ class PredictionVisualizer:
         height, width = first_image.shape[:2]
         
         # Use H.264 codec and lower frame rate for better compatibility
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # Changed from mp4v to avc1
         fps = 5  # Reduced from 30 to 5 for slower playback
         video_writer = cv2.VideoWriter(
             output_path,
-            fourcc,
+            cv2.VideoWriter_fourcc(*'mp4v'),  # Use 'mp4v' codec for MP4 format
             fps,
             (width, height)
         )
         
         try:
             # Process each image
-            for img_path in tqdm(images[:1000], desc="Creating visualization"):
+            for img_path in tqdm(images, desc="Creating visualization"):
                 image = cv2.imread(img_path)
                 
                 if image is None:
@@ -163,69 +161,24 @@ class PredictionVisualizer:
             
         return output_path
 
-    def create_summary_image(
-        self,
-        predictions_list: List[pd.DataFrame],
-        image_size: Tuple[int, int] = (800, 600)
-    ) -> np.ndarray:
-        """
-        Create a summary image showing prediction statistics.
+def convert_codec(input_path: str, output_path: str) -> None:
+    """
+    Convert video codec using ffmpeg to a format that Streamlit can play.
+    
+    Args:
+        input_path: Path to the input video file
+        output_path: Path to the output video file
+    """
+    command = [
+        'ffmpeg',
+        '-i', input_path,
+        '-vcodec', 'libx264',
+        output_path
+    ]
+    
+    try:
+        subprocess.run(command, check=True)
+    except:
+        print("Error converting video codec. Make sure ffmpeg is installed and in your PATH.")
         
-        Args:
-            predictions_list: List of prediction DataFrames
-            image_size: Size of output image
-            
-        Returns:
-            Summary image as numpy array
-        """
-        # Create blank image
-        summary = np.ones((image_size[1], image_size[0], 3), dtype=np.uint8) * 255
-        
-        # Compile statistics
-        total_predictions = sum(len(preds) for preds in predictions_list)
-        class_counts = {}
-        confidence_scores = []
-        
-        for preds in predictions_list:
-            for _, pred in preds.iterrows():
-                class_counts[pred['label']] = class_counts.get(pred['label'], 0) + 1
-                confidence_scores.append(pred['score'])
-        
-        # Draw statistics
-        y_pos = 30
-        cv2.putText(
-            summary,
-            f"Total Predictions: {total_predictions}",
-            (20, y_pos),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 0, 0),
-            2
-        )
-        
-        y_pos += 40
-        for label, count in class_counts.items():
-            cv2.putText(
-                summary,
-                f"{label}: {count}",
-                (20, y_pos),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                self.colors.get(label, (0, 0, 0)),
-                2
-            )
-            y_pos += 40
-        
-        if confidence_scores:
-            avg_confidence = np.mean(confidence_scores)
-            cv2.putText(
-                summary,
-                f"Average Confidence: {avg_confidence:.2f}",
-                (20, y_pos),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 0, 0),
-                2
-            )
-        
-        return summary
+

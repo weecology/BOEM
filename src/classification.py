@@ -85,9 +85,6 @@ def train(model, train_dir, val_dir, comet_workspace=None, comet_project=None, f
     model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
     model.trainer.fit(model)
 
-    model.trainer.logger.experiment.end()
-    comet_logger.experiment.end()
-
     return model
 
 def preprocess_images(model, annotations, root_dir, save_dir):
@@ -100,7 +97,7 @@ def preprocess_images(model, annotations, root_dir, save_dir):
     labels = annotations["label"].values
     model.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
 
-def preprocess_and_train_classification(config, validation_df=None, num_classes=None):
+def preprocess_and_train_classification(config, validation_df=None):
     """Preprocess data and train a crop model.
     
     Args:
@@ -111,6 +108,7 @@ def preprocess_and_train_classification(config, validation_df=None, num_classes=
     """
     # Get and split annotations
     annotations = gather_data(config.classification_model.train_csv_folder)
+    num_classes = len(annotations["label"].unique())
 
     # Remove the empty frames
     annotations = annotations[~(annotations.label.astype(str)== "0")]
@@ -130,6 +128,9 @@ def preprocess_and_train_classification(config, validation_df=None, num_classes=
         lr=config.classification_model.trainer.lr,
         num_classes=num_classes
         )
+
+    # Force the label dict, DeepForest will update this soon
+    loaded_model.label_dict = {v:k for k,v in enumerate(annotations["label"].unique())}
 
     # Preprocess train and validation data
     preprocess_images(

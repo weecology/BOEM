@@ -34,7 +34,8 @@ def mock_deepforest_model(config):
                         'ymin': np.random.randint(0, 600, num_predictions),
                         'xmax': np.random.randint(800, 1000, num_predictions),
                         'ymax': np.random.randint(600, 800, num_predictions),
-                        'label': ['Bird'] * num_predictions,
+                        'label': ['Object'] * num_predictions,
+                        'cropmodel_label': ['Bird'] * num_predictions,
                         'score': np.random.uniform(0.1, 0.99, num_predictions),
                         'image_path': [os.path.basename(raster_path)] * num_predictions
                     })
@@ -50,16 +51,17 @@ def mock_deepforest_model(config):
 
                 return validation_df
               
-    return MockDeepForest(label_dict={"Bird": 0,"Mammal": 1})
+    return MockDeepForest(label_dict={"Object": 0})
 
 @pytest.fixture
 def random_model():
-    m = main.deepforest(label_dict={"Bird": 0,"Mammal": 1}, num_classes=2)
+    m = main.deepforest(label_dict={"Object": 0}, num_classes=1)
     return m
 
 @pytest.fixture
 def random_crop_model():
     m = CropModel()
+    m.label_dict = {"Bird": 0,"Mammal":1}
     return m
 
 def test_check_success(config, mock_deepforest_model, random_crop_model):

@@ -60,7 +60,10 @@ def load(checkpoint, annotations = None):
         num_labels = len(annotations.label.unique())
         if num_labels > len(snapshot.label_dict):
             snapshot = extract_backbone(snapshot, annotations)
-
+    
+    snapshot.label_dict  = {'Object': 0}
+    snapshot.numeric_to_label_dict = {0: 'Object'}
+    
     return snapshot
 
 def extract_backbone(snapshot, annotations):
@@ -197,15 +200,13 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
                 continue
             visualize.plot_results(prediction, savedir=tmpdir)
             comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
-
-    comet_logger.experiment.end()
-    model.trainer.logger.experiment.end()
     
     return model
 
 def fix_taxonomy(df):
-    df["label"] = df.label.replace('Turtle', 'Reptile')
-    df["label"] = df.label.replace('Cetacean', 'Mammal')
+    df["label"] = "Object"
+    #df["label"] = df.label.replace('Turtle', 'Reptile')
+    #df["label"] = df.label.replace('Cetacean', 'Mammal')
 
     return df
 
@@ -224,10 +225,11 @@ def preprocess_and_train(config):
     if config.detection_model.limit_empty_frac > 0:
         validation = limit_empty_frames(validation, config.detection_model.limit_empty_frac)
     
-    validation.loc[validation.label==0,"label"] = "Bird"
+    validation.loc[validation.label==0,"label"] = "Object"
 
     # Remove the empty frames, using hard mining instead
     train_df = train_df[~(train_df.label.astype(str)== "0")]
+
 
     # Preprocess train and validation data
     train_df = data_processing.preprocess_images(train_df,
@@ -238,8 +240,8 @@ def preprocess_and_train(config):
     
     non_empty = train_df[train_df.xmin!=0]
 
-    train_df.loc[train_df.label==0,"label"] = "Bird"
-    validation.loc[validation.label==0,"label"] = "Bird"
+    train_df.loc[train_df.label==0,"label"] = "Object"
+    validation.loc[validation.label==0,"label"] = "Object"
 
     if not validation.empty:
         validation_df = data_processing.preprocess_images(validation,
@@ -249,14 +251,17 @@ def preprocess_and_train(config):
                                     patch_overlap=config.predict.patch_overlap,
                                     allow_empty=True
                                     )
-        validation_df.loc[validation_df.label==0,"label"] = "Bird"
+        validation_df.loc[validation_df.label==0,"label"] = "Object"
         non_empty = validation_df[(validation_df.xmin!=0)]
         empty = validation_df[validation_df.xmin==0]
 
         # TO DO confirm empty frames here
         validation_df = non_empty
         
-    # Train model
+    # Train model is just a single class
+    validation_df["label"] = "Object"
+    train_df["label"] = "Object"
+
     # Load existing model
     if config.detection_model.checkpoint:
         loaded_model = load(config.detection_model.checkpoint, annotations=train_df)
@@ -344,7 +349,8 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
                                               patch_size=patch_size,
                                               patch_overlap=patch_overlap,
                                               model_path=model_path,
-                                              crop_model=crop_model)
+                                              crop_model=crop_model,
+                                              batch_size=batch_size)
             block_futures.append(block_future)
         # Get results
         predictions = []
@@ -352,6 +358,6 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
             block_result = block_result.result()
             predictions.append(pd.concat(block_result))
     else:
-        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=None, batch_size=batch_size)
+        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=crop_model, batch_size=batch_size)
 
     return predictions

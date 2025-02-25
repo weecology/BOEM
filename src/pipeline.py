@@ -25,6 +25,9 @@ class Pipeline:
             project_name=self.config.label_studio.project_name_validation)
         self.sftp_client = label_studio.create_sftp_client(
             **self.config.server)
+        
+        # Create reporting object
+        self.create_reporter()
 
     def save_model(self, model, directory):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -33,6 +36,17 @@ class Pipeline:
 
         return checkpoint_path
 
+    def create_reporter(self):
+        self.reporter = Reporting(
+                report_dir=self.config.reporting.report_dir,
+                image_dir=self.config.active_learning.image_dir,
+                thin_factor=self.config.reporting.thin_factor,
+                patch_overlap=self.config.active_learning.patch_overlap,
+                patch_size=self.config.active_learning.patch_size,
+                metadata_csv=self.config.reporting.metadata,
+                batch_size=self.config.predict.batch_size
+                )
+        
     def run(self):
         # Check for new annotations if the check_annotations flag is set
         if self.config.check_annotations:
@@ -74,17 +88,28 @@ class Pipeline:
         if self.config.force_training:
             trained_detection_model = detection.preprocess_and_train(
                 self.config)
+            
+            # No reason re-compute detection results later for validation
+            try:
+                detection_results = {"recall":trained_detection_model.trainer.logger.experiment.metrics["box_recall"],
+                                 "precision":trained_detection_model.trainer.logger.experiment.metrics["box_precision"]}
+            except:
+                detection_results = None
 
             trained_classification_model = classification.preprocess_and_train_classification(
-                self.config, num_classes=len(trained_detection_model.label_dict))
+                self.config)
 
             detection_checkpoint_path = self.save_model(trained_detection_model,
                             self.config.detection_model.checkpoint_dir)
             classification_checkpoint_path = self.save_model(trained_classification_model,
                             self.config.classification_model.checkpoint_dir)      
  
+            self.reporter.detection_checkpoint_path = detection_checkpoint_path
+            self.reporter.classification_checkpoint_path = classification_checkpoint_path
+
         else:
             detection_checkpoint_path = self.config.detection_model.checkpoint
+
             trained_detection_model = detection.load(
                 checkpoint = self.config.detection_model.checkpoint)
             
@@ -95,13 +120,19 @@ class Pipeline:
                 annotations = label_studio.gather_data(self.config.classification_model.train_csv_folder)
                 trained_classification_model = classification.load(
                     checkpoint = None, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=annotations)
-        
+
         pipeline_monitor = PipelineEvaluation(
             model=trained_detection_model,
             crop_model=trained_classification_model,
+            batch_size=self.config.predict.batch_size,
+            detection_results=detection_results,
             **self.config.pipeline_evaluation)
 
         performance = pipeline_monitor.evaluate()
+        self.reporter.detection_model = trained_detection_model
+        self.reporter.classification_model = trained_classification_model
+        self.reporter.pipeline_monitor = pipeline_monitor
+        self.reporter.performance = performance
 
         if pipeline_monitor.check_success():
             print("Pipeline performance is satisfactory, exiting")
@@ -111,16 +142,19 @@ class Pipeline:
         else:
             dask_client = None
             
-        test_images_to_annotate = choose_test_images(
+        test_images_to_annotate, testing_pool_predictions = choose_test_images(
             image_dir=self.config.active_testing.image_dir,
             model=trained_detection_model,
             strategy=self.config.active_testing.strategy,
             n=self.config.active_testing.n_images,
             patch_size=self.config.active_testing.patch_size,
             patch_overlap=self.config.active_testing.patch_overlap,
-            min_score=self.config.active_testing.min_score
+            min_score=self.config.active_testing.min_score,
+            batch_size=self.config.predict.batch_size
             )
         
+        self.reporter.testing_pool_predictions = testing_pool_predictions
+
         label_studio.upload_to_label_studio(images=test_images_to_annotate,
                                     sftp_client=self.sftp_client,
                                     label_studio_project=self.label_studio_project_validation,
@@ -128,7 +162,7 @@ class Pipeline:
                                     folder_name=self.config.label_studio.folder_name,
                                     preannotations=None)
 
-        train_images_to_annotate = choose_train_images(
+        train_images_to_annotate, training_pool_predictions = choose_train_images(
             evaluation=performance,
             image_dir=self.config.active_learning.image_dir,
             model_path=detection_checkpoint_path,
@@ -140,8 +174,11 @@ class Pipeline:
             min_score=self.config.active_learning.min_score,
             target_labels=self.config.active_learning.target_labels,
             pool_limit=self.config.active_learning.pool_limit,
-            dask_client=dask_client
+            dask_client=dask_client,
+            batch_size=self.config.predict.batch_size
         )
+
+        self.reporter.training_pool_predictions = training_pool_predictions
 
         if len(train_images_to_annotate) > 0:
             confident_predictions, uncertain_predictions = predict_and_divide(
@@ -151,7 +188,9 @@ class Pipeline:
                 patch_size=self.config.active_learning.patch_size,
                 patch_overlap=self.config.active_learning.patch_overlap,
                 confident_threshold=self.config.pipeline.confidence_threshold,
-                min_score=self.config.active_learning.min_score
+                min_score=self.config.active_learning.min_score,
+                batch_size=self.config.predict.batch_size,
+                existing_predictions=training_pool_predictions
             )
 
             print(f"Images requiring human review: {len(uncertain_predictions)}")
@@ -176,19 +215,5 @@ class Pipeline:
             confident_predictions = None
             uncertain_predictions = None
         
-        if pipeline_monitor:
-            reporter = Reporting(
-                report_dir=self.config.reporting.report_dir,
-                image_dir=self.config.active_learning.image_dir,
-                model=trained_detection_model,
-                classification_model=trained_classification_model,
-                thin_factor=self.config.reporting.thin_factor,
-                patch_overlap=self.config.active_learning.patch_overlap,
-                patch_size=self.config.active_learning.patch_size,
-                confident_predictions=confident_predictions,
-                uncertain_predictions=uncertain_predictions,
-                metadata_csv=self.config.reporting.metadata,
-                pipeline_monitor=pipeline_monitor)
-
-            reporter.generate_report(create_video=True)
+        self.reporter.generate_report(create_video=False)
 

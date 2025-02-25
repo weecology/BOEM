@@ -1,7 +1,8 @@
 from src.label_studio import gather_data
-from torchmetrics.detection import MeanAveragePrecision
 from torchmetrics.classification import Accuracy
+from deepforest.evaluate import evaluate_boxes
 from src.detection import predict, fix_taxonomy
+from deepforest.utilities import read_file
 import pandas as pd
 import torch
 from torchvision.ops.boxes import box_iou
@@ -10,7 +11,7 @@ from torchvision.models.detection._utils import Matcher
 import os
 
 class PipelineEvaluation:
-    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir, classify_ground_truth_dir, detection_true_positive_threshold=0.8, detection_false_positive_threshold=0.5, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5, debug=False):
+    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir, classify_ground_truth_dir, detection_true_positive_threshold=0.85, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5, debug=False, batch_size=16, detection_results=None):
         """Initialize pipeline evaluation.
         
         Args:
@@ -20,14 +21,14 @@ class PipelineEvaluation:
             detect_ground_truth_dir (str): Directory containing detection ground truth annotation CSV files
             classify_ground_truth_dir (str): Directory containing confident classification ground truth annotation CSV files
             detection_true_positive_threshold (float): IoU threshold for considering a detection a true positive
-            detection_false_positive_threshold (float): IoU threshold for considering a detection a false positive
             classification_threshold (float): Threshold for classification confidence score
             patch_size (int): Size of image patches for prediction
             patch_overlap (int): Overlap between patches
             min_score (float): Minimum confidence score threshold for predictions
+            batch_size (int): Batch size for prediction
+            detection_results (dict): Dictionary containing detection results, optional
         """
         self.detection_true_positive_threshold = detection_true_positive_threshold 
-        self.detection_false_positive_threshold = detection_false_positive_threshold
         self.classification_avg_score = classification_avg_score
         self.patch_size = patch_size
         self.patch_overlap = patch_overlap
@@ -38,6 +39,7 @@ class PipelineEvaluation:
         self.classification_model = crop_model
         self.model = model
         self.debug = debug
+        self.batch_size = batch_size
 
         # Gather data
         self.detection_annotations = gather_data(detect_ground_truth_dir)
@@ -89,51 +91,11 @@ class PipelineEvaluation:
                 targets["scores"] = torch.tensor([])
         else:
             targets["boxes"] = torch.tensor(annotations_df[["xmin", "ymin", "xmax","ymax"]].values.astype("float32"))
-            targets["labels"] = torch.tensor([self.model.label_dict[x] for x in annotations_df["label"].tolist()])
+            targets["labels"] = torch.tensor(annotations_df["label"].tolist())
             if "score" in annotations_df.columns:
                 targets["scores"] = torch.tensor(annotations_df["score"].tolist())
 
         return targets
-
-    def evaluate_detection(self):
-        """Evaluate detection performance"""
-        
-        # Metrics
-        self.mAP = MeanAveragePrecision(box_format="xyxy",extended_summary=True)
-
-        full_image_paths = [self.image_dir + "/" + image_path for image_path in self.detection_annotations.drop_duplicates("image_path").image_path.tolist()] 
-        
-        if self.debug:
-            full_image_paths = full_image_paths[:3]
-        
-        predictions = predict(
-            m=self.model,
-            image_paths=full_image_paths, 
-            patch_size=self.patch_size, 
-            patch_overlap=self.patch_overlap, 
-        )
-        
-        combined_predictions = pd.concat(predictions)
-        combined_predictions["workflow"] = "detection"
-        self.predictions.append(combined_predictions)
-
-        targets = []
-        preds = []
-        for image_predictions in predictions:
-            # Min score for predictions
-            image_targets = self.detection_annotations.loc[self.detection_annotations.image_path == image_predictions["image_path"].iloc[0]]
-            image_predictions = image_predictions[image_predictions.score > self.min_score]
-            target = self._format_targets(image_targets)
-            pred = self._format_targets(image_predictions)
-            targets.append(target)
-            preds.append(pred)
-        
-        # Minimum 
-        self.mAP.update(preds=preds, target=targets)
-
-        results = {"mAP": self.mAP.compute()}
-
-        return results
 
     def predict_classification(self):
         full_image_paths = [self.image_dir + "/" + image_path for image_path in self.classification_annotations.drop_duplicates("image_path").image_path.tolist()] 
@@ -147,10 +109,9 @@ class PipelineEvaluation:
             image_paths=full_image_paths, 
             patch_size=self.patch_size, 
             patch_overlap=self.patch_overlap, 
-            batch_size=16
+            batch_size=self.batch_size
         )
         combined_predictions = pd.concat(predictions)
-        self.predictions.append(combined_predictions)
 
         # Split into confident and uncertain based on average score
         average_score = combined_predictions.groupby("image_path").apply(lambda x: x["score"].mean())
@@ -216,23 +177,74 @@ class PipelineEvaluation:
         return self._evaluate_classification(self.uncertain_predictions, self.uncertain_classification_accuracy)
 
     def _evaluate_classification(self, predictions, accuracy_metric):
-        """Helper function to evaluate classification performance"""
+        """Helper function to evaluate classification performance.
+        
+        Args:
+            predictions (DataFrame): DataFrame containing the predictions.
+            accuracy_metric (torchmetrics.Metric): Metric to evaluate accuracy.
+        
+        Returns:
+            dict: Dictionary containing the computed accuracy metric.
+        """
         for image_path in predictions.drop_duplicates("image_path").image_path.tolist():
             image_targets = self.classification_annotations.loc[self.classification_annotations.image_path == os.path.basename(image_path)]
             image_predictions = predictions.loc[predictions.image_path == os.path.basename(image_path)]
             image_predictions = image_predictions[image_predictions.score > self.min_score]
+            
             if image_predictions.empty:
                 continue
+
+            # Labels as numeric
+            image_targets["label"] = image_targets.cropmodel_label.apply(lambda x: self.classification_model.label_dict[x])
+            image_predictions["label"] = image_predictions.cropmodel_label
+
             target = self._format_targets(image_targets)
             pred = self._format_targets(image_predictions)
             if len(pred["labels"]) == 0:
                 continue
             matches = self.match_predictions_and_targets(pred, target)
+            self.predictions.append(matches)
             if matches.empty:
                 continue
             accuracy_metric.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
         
         results = {f"{accuracy_metric.__class__.__name__.lower()}": accuracy_metric.compute()}
+        return results
+    
+    def evaluate_detection(self):
+        """Evaluate detection performance"""
+        
+        full_image_paths = [self.image_dir + "/" + image_path for image_path in self.detection_annotations.image_path.tolist()] 
+        
+        if self.debug:
+            full_image_paths = full_image_paths[:3]
+        
+        predictions = predict(
+            m=self.model,
+            image_paths=full_image_paths, 
+            patch_size=self.patch_size, 
+            patch_overlap=self.patch_overlap, 
+        )
+        
+        combined_predictions = pd.concat(predictions)
+        combined_predictions["workflow"] = "detection"
+        self.predictions.append(combined_predictions)
+        
+        # replace None with 0
+        combined_predictions = combined_predictions.fillna(0)
+        combined_predictions["label"] = "Object"
+
+        combined_predictions = read_file(combined_predictions, self.image_dir)
+        ground_truth = read_file(self.detection_annotations, self.image_dir)
+
+        iou_results = evaluate_boxes(
+            combined_predictions,
+            ground_truth,
+            iou_threshold=self.detection_true_positive_threshold,
+            root_dir=self.image_dir)
+        
+        results = {"recall": iou_results["box_recall"], "precision": iou_results["box_precision"]}
+
         return results
 
     def evaluate(self):
@@ -260,7 +272,7 @@ class PipelineEvaluation:
         if not hasattr(self, 'results') or not self.results:
             raise ValueError("No results found, run evaluate() first")
 
-        if self.results['detection']["mAP"]["map"] > self.detection_true_positive_threshold:
+        if self.results['detection']["recall"] > self.detection_true_positive_threshold:
             return True
         else:
             return False

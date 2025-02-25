@@ -1,14 +1,19 @@
 import pandas as pd
 import os
 from datetime import datetime
-from src.visualization import PredictionVisualizer
+from src.visualization import PredictionVisualizer, convert_codec
 from src.detection import predict
 import geopandas as gpd
 from pytorch_lightning.loggers import CometLogger
 import glob
+import zipfile
+import os
+import rasterio
+import numpy as np
+import cv2
 
 class Reporting:
-    def __init__(self, report_dir, image_dir, metadata_csv, pipeline_monitor=None, model=None, classification_model=None, confident_predictions=None, uncertain_predictions=None, thin_factor=10,patch_overlap=0.2, patch_size=300, min_score=0.3):
+    def __init__(self, report_dir, image_dir, metadata_csv, pipeline_monitor=None, model=None, classification_model=None, confident_predictions=None, uncertain_predictions=None, thin_factor=10,patch_overlap=0.2, patch_size=300, min_score=0.3, batch_size=16):
         """Initialize reporting class
         
         Args:
@@ -24,8 +29,9 @@ class Reporting:
             metadata_csv: Path to metadata csv for image location
             confident_predictions: Dataframe containing confident predictions
             uncertain_predictions: Dataframe containing uncertain predictions
-        """
+            batch_size: Batch size for detection model
 
+        """
         # Create timestamped report directory
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.report_dir = os.path.join(report_dir, timestamp)
@@ -40,22 +46,21 @@ class Reporting:
         self.uncertain_predictions = uncertain_predictions
         self.confident_predictions = confident_predictions
         self.metadata = metadata_csv
+        self.batch_size = batch_size
 
-        self.detection_experiment = model.trainer.logger
-        self.classification_experiment = classification_model.trainer.logger
+        try:
+            self.detection_experiment = model.trainer.logger
+        except:
+            self.detection_experiment = None
+        try:
+            self.classification_experiment = classification_model.trainer.logger
+        except:
+            self.classification_experiment = None
         
         # Check the dirs exist
         os.makedirs(self.report_dir, exist_ok=True)
 
         self.pipeline_monitor = pipeline_monitor
-
-    def concat_predictions(self):
-        """Concatenate predictions
-        
-        Args:
-            predictions: List of dataframes containing predictions
-        """
-        self.all_predictions = pd.concat(self.pipeline_monitor.predictions, ignore_index=True)
 
     def generate_report(self, create_video=False):
         """Generate a report and zip the contents
@@ -66,16 +71,21 @@ class Reporting:
         Returns:
             str: Path to the zipped report file
         """
-        import zipfile
-        import os
 
         # Generate report contents
         if self.pipeline_monitor:
-            self.concat_predictions()
-            self.write_predictions()
+            validation_predictions = pd.concat(self.pipeline_monitor.predictions, ignore_index=True)
+            self.write_predictions(validation_predictions, "validation_predictions")
+        if self.confident_predictions is not None:
+            self.write_predictions(self.confident_predictions, "confident_predictions")
+        if self.uncertain_predictions is not None:
+            self.write_predictions(self.uncertain_predictions, "uncertain_predictions")
+        
+
         self.write_metrics()
         if create_video:
-            self.generate_video()
+            video_path = self.generate_video()
+            convert_codec(video_path, video_path.replace(".mp4", "_converted.mp4"))
 
         # Create zip file path
         zip_path = f"{self.report_dir}.zip"
@@ -90,32 +100,62 @@ class Reporting:
         
         return zip_path
 
-    def write_predictions(self):
+    def write_predictions(self, annotations, basename):
         """Write predictions to a csv file"""
-        self.concat_predictions()
-        self.all_predictions['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.all_predictions["unique_image"] = self.all_predictions["image_path"].apply(lambda x: os.path.splitext(os.path.basename(x))[0])
+        annotations['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        annotations["unique_image"] = annotations["image_path"].apply(lambda x: os.path.splitext(os.path.basename(x))[0])
         
         # Connect with metadata on location
         metadata_df = pd.read_csv(self.metadata)
-        merged_predictions = self.all_predictions.merge(metadata_df[["unique_image", "flight_name","date","lat","long"]], on='unique_image')
-        merged_predictions.to_csv(f"{self.report_dir}/validation_predictions.csv", index=False)
+        merged_predictions = annotations.merge(metadata_df[["unique_image", "flight_name","date","lat","long"]], on='unique_image')
+        merged_predictions.to_csv(f"{self.report_dir}/{basename}.csv", index=False)
 
         # Create shapefile
-        gpd.GeoDataFrame(merged_predictions, geometry=gpd.points_from_xy(merged_predictions.long, merged_predictions.lat)).to_file(f"{self.report_dir}/predictions.shp")
+        gpd.GeoDataFrame(merged_predictions, geometry=gpd.points_from_xy(merged_predictions.long, merged_predictions.lat)).to_file(f"{self.report_dir}/{basename}.shp")
 
-        return f"{self.report_dir}/validation_predictions.csv"
     
-    @staticmethod
-    def crop_images(self, CropModel, annotations, root_dir, save_dir):
+    def write_crops(self, root_dir, images, boxes, labels, savedir):
+        """Write crops to disk.
+
+        Args:
+            root_dir (str): The root directory where the images are located.
+            images (list): A list of image filenames.
+            boxes (list): A list of bounding box coordinates in the format [xmin, ymin, xmax, ymax].
+            labels (list): A list of labels corresponding to each bounding box.
+            savedir (str): The directory where the cropped images will be saved.
+
+        Returns:
+            None
+        """
+
+        # Create a directory
+        os.makedirs(os.path.join(savedir), exist_ok=True)
+
+        # Use rasterio to read the image
+        for index, box in enumerate(boxes):
+            xmin, ymin, xmax, ymax = box
+            label = labels[index]
+            image = images[index]
+            basename = os.path.splitext(os.path.basename(image))[0]
+            with rasterio.open(os.path.join(root_dir, image)) as src:
+                # Crop the image using the bounding box coordinates
+                img = src.read(window=((ymin, ymax), (xmin, xmax)))
+                
+                # Save the cropped image as a PNG file using opencv
+                img_path = os.path.join(savedir, f"{basename}_{label}_{index}.png")
+                img = np.rollaxis(img, 0, 3)
+                cv2.imwrite(img_path, img)
+            
+    def crop_images(self, annotations, root_dir, save_dir):
         # Remove any annotations with empty boxes
         annotations = annotations[(annotations['xmin'] != 0) & (annotations['ymin'] != 0) & (annotations['xmax'] != 0) & (annotations['ymax'] != 0)]
+        
         # Remove any negative values
         annotations = annotations[(annotations['xmin'] >= 0) & (annotations['ymin'] >= 0) & (annotations['xmax'] >= 0) & (annotations['ymax'] >= 0)]
         boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
         images = annotations["image_path"].values
         labels = annotations["label"].values
-        CropModel.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
+        self.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir+"/crops")
 
     def select_images_for_video(self):
         all_images = glob.glob(self.image_dir + "/*.jpg")
@@ -133,6 +173,7 @@ class Reporting:
             crop_model=self.classification_model,
             patch_overlap=self.patch_overlap,
             patch_size=self.patch_size,
+            batch_size=self.batch_size,
             )
         
         predictions = pd.concat(predictions, ignore_index=True)
@@ -140,10 +181,10 @@ class Reporting:
         predictions = predictions[predictions.score > self.min_score]
         
         # Save predictions
-        predictions.to_csv(f"{self.report_dir}/video_predictions.csv", index=False)
+        self.write_predictions(predictions, "video_predictions")
 
         # Crop the images to the predictions
-        self.crop_images(CropModel=self.classification_model, annotations=predictions, root_dir=self.image_dir, save_dir=self.report_dir)
+        self.crop_images(annotations=predictions, root_dir=self.image_dir, save_dir=self.report_dir)
 
         return predictions
 

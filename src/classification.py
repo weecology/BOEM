@@ -60,7 +60,7 @@ def load(checkpoint=None, annotations=None, checkpoint_dir=None, lr=0.0001, num_
     
     return loaded_model
 
-def train(model, train_dir, val_dir, comet_workspace=None, comet_project=None, fast_dev_run=False, max_epochs=10):
+def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_epochs=10):
     """Train a model on labeled images.
     Args:
         model (CropModel): A CropModel object.
@@ -68,22 +68,18 @@ def train(model, train_dir, val_dir, comet_workspace=None, comet_project=None, f
         val_dir (str): The directory containing the validation images.
         fast_dev_run (bool): Whether to run a fast development run.
         max_epochs (int): The maximum number of epochs to train for.
+        comet_logger (CometLogger): A CometLogger object.
 
     Returns:
         main.deepforest: A trained deepforest model.
     """
-    
-    if comet_project:
-        comet_logger = CometLogger(project_name=comet_project, workspace=comet_workspace)
-        comet_logger.experiment.add_tags(["classification"])
-    else:
-        comet_logger = None
-
     model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs)
 
     # Get the data stored from the write_crops step above.
     model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
-    model.trainer.fit(model)
+    
+    with comet_logger.context_manager("classification"):
+        model.trainer.fit(model)
 
     return model
 
@@ -97,12 +93,13 @@ def preprocess_images(model, annotations, root_dir, save_dir):
     labels = annotations["label"].values
     model.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
 
-def preprocess_and_train_classification(config, validation_df=None):
+def preprocess_and_train_classification(config, validation_df=None, comet_logger=None):
     """Preprocess data and train a crop model.
     
     Args:
         config: Configuration object containing training parameters
         validation_df (pd.DataFrame): A DataFrame containing validation annotations.
+        comet_logger: CometLogger object for logging experiments
     Returns:
         trained_model: Trained model object
     """
@@ -153,6 +150,7 @@ def preprocess_and_train_classification(config, validation_df=None):
         comet_project=config.comet.project,
         fast_dev_run=config.classification_model.trainer.fast_dev_run,
         max_epochs=config.classification_model.trainer.max_epochs,
+        comet_logger=comet_logger
         )
 
     return trained_model

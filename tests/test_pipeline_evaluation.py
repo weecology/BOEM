@@ -35,7 +35,7 @@ def mock_deepforest_model(config):
                         'xmax': np.random.randint(800, 1000, num_predictions),
                         'ymax': np.random.randint(600, 800, num_predictions),
                         'label': ['Object'] * num_predictions,
-                        'cropmodel_label': ['Bird'] * num_predictions,
+                        'cropmodel_label': [0] * num_predictions,
                         'score': np.random.uniform(0.1, 0.99, num_predictions),
                         'image_path': [os.path.basename(raster_path)] * num_predictions
                     })

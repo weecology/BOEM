@@ -11,15 +11,22 @@ force_upload: False
 force_training: True
 
 label_studio:
-  project_name_train: "Bureau of Ocean Energy Management - Training"
-  project_name_validation: "Bureau of Ocean Energy Management - Validation"
   url: "https://labelstudio.naturecast.org/"
   folder_name: "/pgsql/retrieverdash/everglades-label-studio/everglades-data"
   images_to_annotate_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   annotated_images_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
   csv_dir_train: /blue/ewhite/b.weinstein/BOEM/annotations/train
   csv_dir_validation: /blue/ewhite/b.weinstein/BOEM/annotations/validation
-
+  instances:
+    train:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/train
+      project_name: "Bureau of Ocean Energy Management - Training"
+    validation:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
+      project_name: "Bureau of Ocean Energy Management - Validation"
+    review:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/review
+      project_name: "Bureau of Ocean Energy Management - Review"
 predict:
   patch_size: 2000
   patch_overlap: 0
@@ -35,7 +42,7 @@ propagate:
   distance_threshold_pixels: 50
 
 detection_model:
-  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/900710af16d9431aaef84bf74034a48c.pl"
+  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/d3a74b0852df4d3ba9a6503660fcc9f1.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train/
   train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
@@ -104,3 +111,6 @@ active_testing:
   patch_size: 2000
   patch_overlap: 0
   min_score: 0.2
+
+human_review: 
+  n_images: 10

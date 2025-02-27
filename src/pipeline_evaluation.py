@@ -91,7 +91,7 @@ class PipelineEvaluation:
                 targets["scores"] = torch.tensor([])
         else:
             targets["boxes"] = torch.tensor(annotations_df[["xmin", "ymin", "xmax","ymax"]].values.astype("float32"))
-            targets["labels"] = torch.tensor(annotations_df["label"].tolist())
+            targets["labels"] = torch.tensor(annotations_df["label"].astype(int).values)
             if "score" in annotations_df.columns:
                 targets["scores"] = torch.tensor(annotations_df["score"].tolist())
 
@@ -195,9 +195,14 @@ class PipelineEvaluation:
                 continue
 
             # Labels as numeric
-            image_targets["label"] = image_targets.cropmodel_label.apply(lambda x: self.classification_model.label_dict[x])
-            image_predictions["label"] = image_predictions.cropmodel_label
-
+            image_targets["label"] = image_targets.label.apply(lambda x: self.classification_model.label_dict[x])
+            if not pd.api.types.is_numeric_dtype(image_targets["label"]):
+                image_targets["label"] = image_targets["label"].apply(lambda x: self.classification_model.label_dict[x])
+            if not pd.api.types.is_numeric_dtype(image_predictions["cropmodel_label"]):
+                image_predictions["label"] = image_predictions["cropmodel_label"].apply(lambda x: self.classification_model.label_dict[x])
+            else:
+                image_predictions["label"] = image_predictions["cropmodel_label"]
+            
             target = self._format_targets(image_targets)
             pred = self._format_targets(image_predictions)
             if len(pred["labels"]) == 0:
@@ -208,7 +213,10 @@ class PipelineEvaluation:
                 continue
             accuracy_metric.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
         
-        results = {f"{accuracy_metric.__class__.__name__.lower()}": accuracy_metric.compute()}
+        # To do average score of true positive and false positive
+        results = {f"{accuracy_metric.__class__.__name__.lower()}": accuracy_metric.compute(), 
+                   "avg_score_true_positive": None, 
+                   "avg_score_false_positive": None}
         return results
     
     def evaluate_detection(self):
@@ -243,7 +251,15 @@ class PipelineEvaluation:
             iou_threshold=self.detection_true_positive_threshold,
             root_dir=self.image_dir)
         
-        results = {"recall": iou_results["box_recall"], "precision": iou_results["box_precision"]}
+        non_empty_results = iou_results["results"][~iou_results["results"]["score"].isna()]
+        if non_empty_results.empty:
+            return {"recall": None, "precision": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
+        else:
+            #Convert match to boolean
+            non_empty_results["match"] = non_empty_results["match"].astype(bool)
+            avg_score_true_positive = non_empty_results.loc[non_empty_results["match"]].score.mean()
+            avg_score_false_positive = non_empty_results.loc[~non_empty_results["match"]].score.mean()
+        results = {"recall": iou_results["box_recall"], "precision": iou_results["box_precision"], "avg_score_true_positive": avg_score_true_positive, "avg_score_false_positive": avg_score_false_positive}
 
         return results
 

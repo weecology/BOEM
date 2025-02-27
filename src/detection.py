@@ -121,15 +121,15 @@ def limit_empty_frames(crop_annotations, limit_empty_frac):
 
     return crop_annotations
 
-def train(model, train_annotations, test_annotations, train_image_dir, comet_project=None, comet_workspace=None, config_args=None):
+def train(model, train_annotations, test_annotations, train_image_dir, comet_logger=None, config_args=None):
     """Train a model on labeled images.
     Args:
         image_paths (list): A list of image paths.
         train_annotations (pd.DataFrame): A DataFrame containing annotations.
         test_annotations (pd.DataFrame): A DataFrame containing annotations.
         train_image_dir (str): The directory containing the training images.
-        comet_project (str): The comet project name for logging. Defaults to None.
-        comet_workspace (str): The comet workspace for logging. Defaults to None.
+        model (main.deepforest): A trained deepforest model.
+        comet_logger (CometLogger): A CometLogger instance for logging.
         config_args (dict): A dictionary of configuration arguments to update the model.config. Defaults to None.
     
     Returns:
@@ -161,13 +161,10 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
             else:
                 model.config[key] = value
 
-    if comet_project:
-        comet_logger = CometLogger(project_name=comet_project, workspace=comet_workspace)
-        comet_logger.experiment.add_tags(["detection"])
+    if comet_logger:
         comet_logger.experiment.log_parameters(model.config)
         comet_logger.experiment.log_table("train.csv", train_annotations)
         comet_logger.experiment.log_table("test.csv", test_annotations)
-
         model.create_trainer(logger=comet_logger)
     else:
         model.create_trainer()
@@ -191,7 +188,8 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_pro
             visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
             comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
 
-    model.trainer.fit(model)
+    with comet_logger.experiment.context_manager("detection"):
+        model.trainer.fit(model)
 
     with comet_logger.experiment.context_manager("post-training prediction"):
         for image_path in test_annotations.image_path.head(5):
@@ -210,11 +208,12 @@ def fix_taxonomy(df):
 
     return df
 
-def preprocess_and_train(config):
+def preprocess_and_train(config, comet_logger=None):
     """Preprocess data and train model.
     
     Args:
         config: Configuration object containing training parameters
+        comet_logger: CometLogger instance for logging.
     Returns:
         trained_model: Trained model object
     """
@@ -229,7 +228,6 @@ def preprocess_and_train(config):
 
     # Remove the empty frames, using hard mining instead
     train_df = train_df[~(train_df.label.astype(str)== "0")]
-
 
     # Preprocess train and validation data
     train_df = data_processing.preprocess_images(train_df,
@@ -277,8 +275,7 @@ def preprocess_and_train(config):
                             test_annotations=validation_df,
                             train_image_dir=config.detection_model.crop_image_dir,
                             model=loaded_model,
-                            comet_project=config.comet.project,
-                            comet_workspace=config.comet.workspace,
+                            comet_logger=comet_logger,
                             config_args=config.detection_model.trainer)
 
     return trained_model

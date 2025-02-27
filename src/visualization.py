@@ -1,20 +1,17 @@
+import os
+import glob
+import pandas as pd
+from src.detection import predict
 import cv2
 import numpy as np
-import pandas as pd
+import rasterio
 from pathlib import Path
 from typing import List, Optional, Tuple
 from tqdm import tqdm
 import subprocess
 
 class PredictionVisualizer:
-    def __init__(
-        self,
-        predictions: pd.DataFrame,
-        output_dir: str,
-        fps: int = 30,
-        frame_size: Tuple[int, int] = (1920, 1080),
-        thin_factor: int = 10
-    ):
+    def __init__(self, predictions: pd.DataFrame, output_dir: str, fps: int = 5, frame_size: Tuple[int, int] = (1920, 1080), thin_factor: int = 10, codec=None):
         """
         Initialize the prediction visualizer.
         
@@ -24,12 +21,14 @@ class PredictionVisualizer:
             fps: Frames per second for output video
             frame_size: Output video frame size (width, height)
             thin_factor: Take every nth image from sorted list
+            codec: Video codec to use for output video
         """
         self.output_dir = Path(output_dir)
         self.fps = fps
         self.frame_size = frame_size
         self.thin_factor = thin_factor
         self.predictions = predictions
+        self.codec = codec or cv2.VideoWriter_fourcc(*'avc1')  # Default to H.264
         # Create output directory
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -47,12 +46,7 @@ class PredictionVisualizer:
             
         self.colors = color_ramp
 
-    def draw_predictions(
-        self,
-        image: np.ndarray,
-        predictions: pd.DataFrame,
-        confidence_threshold: float = 0.5
-    ) -> np.ndarray:
+    def draw_predictions(self, image: np.ndarray, predictions: pd.DataFrame, confidence_threshold: float = 0.5) -> np.ndarray:
         """
         Draw bounding boxes and labels on image.
         
@@ -71,8 +65,7 @@ class PredictionVisualizer:
         
         for _, pred in confident_preds.iterrows():
             # Get coordinates
-            xmin, ymin = int(pred['xmin']), int(pred['ymin'])
-            xmax, ymax = int(pred['xmax']), int(pred['ymax'])
+            xmin, ymin, xmax, ymax = pred[['xmin', 'ymin', 'xmax', 'ymax']]
             
             # Get color for class
             color = self.colors.get(pred['label'], (255, 255, 255))
@@ -82,24 +75,11 @@ class PredictionVisualizer:
             
             # Draw label with confidence
             label = f"{pred['label']}: {pred['score']:.2f}"
-            cv2.putText(
-                img_with_boxes,
-                label,
-                (xmin, ymin - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                2
-            )
+            cv2.putText(img_with_boxes, label, (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
             
         return img_with_boxes
 
-    def create_visualization(
-        self,
-        images: list,
-        output_name: str = "predictions.mp4",
-        confidence_threshold: float = 0.5
-    ) -> str:
+    def create_visualization(self, images: list, output_name: str = "predictions.mp4", confidence_threshold: float = 0.5) -> str:
         """
         Create video visualization of predictions on image sequence.
         
@@ -125,14 +105,7 @@ class PredictionVisualizer:
             
         height, width = first_image.shape[:2]
         
-        # Use H.264 codec and lower frame rate for better compatibility
-        fps = 5  # Reduced from 30 to 5 for slower playback
-        video_writer = cv2.VideoWriter(
-            output_path,
-            cv2.VideoWriter_fourcc(*'mp4v'),  # Use 'mp4v' codec for MP4 format
-            fps,
-            (width, height)
-        )
+        video_writer = cv2.VideoWriter(output_path, self.codec, self.fps, (width, height))
         
         try:
             # Process each image
@@ -147,11 +120,7 @@ class PredictionVisualizer:
                 predictions = self.predictions[self.predictions.image_path == img_path]
                 
                 # Draw predictions
-                annotated_image = self.draw_predictions(
-                    image,
-                    predictions,
-                    confidence_threshold
-                )
+                annotated_image = self.draw_predictions(image, predictions, confidence_threshold)
                 
                 # Write frame
                 video_writer.write(annotated_image)
@@ -160,6 +129,38 @@ class PredictionVisualizer:
             video_writer.release()
             
         return output_path
+
+def select_images_for_video(image_dir, thin_factor):
+    all_images = glob.glob(image_dir + "/*.jpg")
+    # Thin by factor, select every nth image
+    thinned_images = all_images[::thin_factor]
+    return thinned_images
+
+def predict_video_images(images, model, classification_model, patch_overlap, patch_size, batch_size, min_score):
+    predictions = predict(
+        image_paths=images,
+        m=model,
+        crop_model=classification_model,
+        patch_overlap=patch_overlap,
+        patch_size=patch_size,
+        batch_size=batch_size,
+    )
+    
+    predictions = pd.concat(predictions, ignore_index=True)
+    predictions = predictions[predictions.score > min_score]
+    return predictions
+
+def generate_video(image_dir, report_dir, model, classification_model, patch_overlap, patch_size, batch_size, min_score, thin_factor):
+    images = select_images_for_video(image_dir, thin_factor)
+    video_predictions = predict_video_images(images, model, classification_model, patch_overlap, patch_size, batch_size, min_score)
+    visualizer = PredictionVisualizer(video_predictions, report_dir)
+    
+    # Give the flightname as the video name
+    flightname = image_dir.split("/")[-1]
+    output_path = f"{report_dir}/{flightname}.mp4"
+    output_path = visualizer.create_visualization(images=images)
+    
+    return output_path
 
 def convert_codec(input_path: str, output_path: str) -> None:
     """
@@ -180,5 +181,5 @@ def convert_codec(input_path: str, output_path: str) -> None:
         subprocess.run(command, check=True)
     except:
         print("Error converting video codec. Make sure ffmpeg is installed and in your PATH.")
-        
+
 

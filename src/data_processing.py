@@ -85,6 +85,9 @@ def preprocess_images(
     if not os.path.exists(root_dir):
         raise FileNotFoundError(f"Root directory not found: {root_dir}")
     
+    # Remove any annotations with xmin == xmax
+    annotations = annotations[annotations.xmin != annotations.xmax]
+    
     os.makedirs(save_dir, exist_ok=True)
     
     crop_annotations = []

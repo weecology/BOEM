@@ -57,7 +57,7 @@ class Pipeline:
             # Human review 
             new_review_annotations = self.check_new_annotations("review")
             self.review_annotations = label_studio.gather_data(self.config.label_studio.instances.review.csv_dir)
-            self.comet_logger.experiment.log_table(tabular_data=self.review_annotations, name="human_reviewed_annotations.csv")
+            self.comet_logger.experiment.log_table(tabular_data=self.review_annotations, filename="human_reviewed_annotations.csv")
             
             if new_val_annotations is None:
                 if self.config.force_upload:

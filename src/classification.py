@@ -58,7 +58,7 @@ def load(checkpoint=None, annotations=None, checkpoint_dir=None, lr=0.0001, num_
     
     return loaded_model
 
-def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_epochs=10):
+def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_size=4):
     """Train a model on labeled images.
     Args:
         model (CropModel): A CropModel object.
@@ -67,10 +67,12 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
         fast_dev_run (bool): Whether to run a fast development run.
         max_epochs (int): The maximum number of epochs to train for.
         comet_logger (CometLogger): A CometLogger object.
+        batch_size (int): The batch size for training.
 
     Returns:
         main.deepforest: A trained deepforest model.
     """
+    model.batch_size = batch_size
     model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs)
 
     # Get the data stored from the write_crops processing.
@@ -171,6 +173,7 @@ def preprocess_and_train_classification(config, train_df=None, validation_df=Non
         save_dir=config.classification_model.crop_image_dir)
 
     trained_model = train(
+        batch_size=config.classification_model.trainer.batch_size,
         train_dir=config.classification_model.crop_image_dir,
         val_dir=config.classification_model.crop_image_dir,
         model=loaded_model,

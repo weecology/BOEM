@@ -7,14 +7,19 @@ from src.classification import preprocess_and_train_classification
 import hydra
 from omegaconf import DictConfig
 
-@hydra.main(config_path="conf/classification_model", config_name="USGS")
+@hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):
-    classification_cfg = cfg.classification
-    savedir = classification_cfg.savedir
+    # Override the classification_model config with USGS.yaml
+    hydra.compose(config_name="config", overrides=["+classification_model=@conf/classification_model/USGS"])
+    
+    classification_cfg = cfg.classification_model
+    
+    # From the detection script
+    savedir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
     train = pd.read_csv(os.path.join(savedir, "train.csv"))
     test = pd.read_csv(os.path.join(savedir, "test.csv"))
 
-    comet_logger = CometLogger(project_name=classification_cfg.project_name, workspace=classification_cfg.workspace)
+    comet_logger = CometLogger(project_name=cfg.project, workspace=cfg.workspace)
     preprocess_and_train_classification(
         config=cfg,
         train_df=train,

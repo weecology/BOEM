@@ -17,5 +17,5 @@ source activate BOEM
 
 cd ~/BOEM/
 #python prepare_USGS.py
-srun python USGS_backbone.py --batch_size 12 --workers 16
+srun python USGS_classification.py
 

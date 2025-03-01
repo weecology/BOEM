@@ -1,14 +1,12 @@
-# Standard library imports
 import os
 import glob
 import warnings
-# Third party imports
-import pandas as pd
+from PIL import Image
+
 from deepforest.model import CropModel
 
 # Local imports
 from src.label_studio import gather_data
-from pytorch_lightning.loggers import CometLogger
 
 def create_train_test(annotations):
     return annotations.sample(frac=0.8, random_state=1), annotations.drop(
@@ -75,11 +73,37 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
     """
     model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs)
 
-    # Get the data stored from the write_crops step above.
+    # Get the data stored from the write_crops processing.
     model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
     
-    with comet_logger.context_manager("classification"):
+    # Log the validation dataset images
+    for image_path, label in model.val_ds.imgs:
+        label_name = model.numeric_to_label_dict[label]
+        image_name = os.path.basename(image_path)
+        comet_logger.experiment.log_image(image_path, name=f"{label_name}_{image_name}")
+
+    with comet_logger.experiment.context_manager("classification"):
         model.trainer.fit(model)
+
+    # Compute confusion matrix and upload to cometml
+    image_dataset = []
+    y_true = []
+    y_predicted = []
+    for index, (image,label) in enumerate(model.val_ds):
+        image_path, label = model.val_ds.imgs[index]
+        original_image = Image.open(image_path)
+        image_dataset += [original_image]
+        y_true += [label]
+        y_predicted += [model(image.unsqueeze(0)).argmax().item()]
+    labels = model.val_ds.classes
+
+    # Log the confusion matrix to Comet
+    comet_logger.experiment.log_confusion_matrix(
+        y_true=y_true,
+        y_predicted=y_predicted,
+        images=image_dataset,
+        labels=labels,
+    )
 
     return model
 
@@ -93,18 +117,21 @@ def preprocess_images(model, annotations, root_dir, save_dir):
     labels = annotations["label"].values
     model.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
 
-def preprocess_and_train_classification(config, validation_df=None, comet_logger=None):
+def preprocess_and_train_classification(config, train_df=None, validation_df=None, comet_logger=None):
     """Preprocess data and train a crop model.
     
     Args:
         config: Configuration object containing training parameters
+        train_df (pd.DataFrame): A DataFrame containing training annotations.
         validation_df (pd.DataFrame): A DataFrame containing validation annotations.
         comet_logger: CometLogger object for logging experiments
     Returns:
         trained_model: Trained model object
     """
     # Get and split annotations
-    annotations = gather_data(config.classification_model.train_csv_folder)
+    if train_df is not None:
+        annotations = gather_data(config.classification_model.train_csv_folder)
+
     num_classes = len(annotations["label"].unique())
 
     # Remove the empty frames
@@ -128,6 +155,7 @@ def preprocess_and_train_classification(config, validation_df=None, comet_logger
 
     # Force the label dict, DeepForest will update this soon
     loaded_model.label_dict = {v:k for k,v in enumerate(annotations["label"].unique())}
+    loaded_model.numeric_to_label_dict = {v:k for k,v in loaded_model.label_dict.items()}
 
     # Preprocess train and validation data
     preprocess_images(
@@ -146,8 +174,6 @@ def preprocess_and_train_classification(config, validation_df=None, comet_logger
         train_dir=config.classification_model.crop_image_dir,
         val_dir=config.classification_model.crop_image_dir,
         model=loaded_model,
-        comet_workspace=config.comet.workspace,
-        comet_project=config.comet.project,
         fast_dev_run=config.classification_model.trainer.fast_dev_run,
         max_epochs=config.classification_model.trainer.max_epochs,
         comet_logger=comet_logger

@@ -12,7 +12,6 @@ import dask.array as da
 import pandas as pd
 from deepforest import main, visualize
 from deepforest.utilities import read_file
-from pytorch_lightning.loggers import CometLogger
 
 # Local imports
 from src import data_processing

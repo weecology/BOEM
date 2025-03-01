@@ -200,54 +200,30 @@ def choose_test_images(image_dir, strategy, n=10, patch_size=512, patch_overlap=
     chosen_preannotations = preannotations[preannotations["image_path"].isin(chosen_images)]
     return chosen_images, chosen_preannotations
 
-def human_review(detection_model, classification_model, image_paths, patch_size, patch_overlap, confident_threshold, min_score, batch_size):
+def human_review(predictions, min_score=0.1, confident_threshold=0.5):
     """
     Predict on images and divide into confident and uncertain predictions.
     Args:
-        detection_model (deepforest.deepforest): A trained detection model.
-        classification_model (deepforest.deepforest): A trained classification model.
-        image_paths (list): A list of image paths.
-        patch_size (int): The size of the image patches to predict on.
-        patch_overlap (float): The amount of overlap between image patches.
         confident_threshold (float): The threshold for confident predictions.
-        min_score (float): The minimum score for a prediction to be included.
-        batch_size (int): The batch size for prediction.
-        existing_predictions (pd.DataFrame, optional): A DataFrame of existing predictions. Defaults to None.
+        min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.1.
+        predictions (pd.DataFrame, optional): A DataFrame of existing predictions. Defaults to None.
         Returns:
         tuple: A tuple of confident and uncertain predictions.
         """
-    # Check for existing predictions
-    if existing_predictions is not None:
-        image_basenames = [os.path.basename(image_path) for image_path in image_paths]
-        existing_predictions = existing_predictions[existing_predictions["image_path"].isin(image_basenames)]
-        image_paths = [image_path for image_path in image_paths if os.path.basename(image_path) not in existing_predictions["image_path"].unique()]
-    if len(image_paths) > 0:
-        predictions = detection.predict(
-            m=detection_model,
-            crop_model=classification_model,
-            image_paths=image_paths,
-            patch_size=patch_size,
-            patch_overlap=patch_overlap,
-            batch_size=batch_size
-        )
-        predictions = pd.concat(predictions)
-        combined_predictions = pd.concat([predictions, existing_predictions])
-    else:
-        combined_predictions = existing_predictions
-
-    combined_predictions[combined_predictions["score"] > min_score]
+    
+    predictions[predictions["score"] > min_score]
 
     # Split predictions into confident and uncertain
-    uncertain_predictions = combined_predictions[
-        combined_predictions["score"] <= confident_threshold]
+    uncertain_predictions = predictions[
+        predictions["score"] <= confident_threshold]
     
-    confident_predictions = combined_predictions[
-        ~combined_predictions["image_path"].isin(
+    confident_predictions = predictions[
+        ~predictions["image_path"].isin(
             uncertain_predictions["image_path"])]
     
     return confident_predictions, uncertain_predictions
 
-def generate_training_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, batch_size=16, comet_logger=None):
+def generate_training_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, batch_size=16, comet_logger=None, pool_limit=1000):
     """
     Generate predictions for the training pool.
     
@@ -261,6 +237,7 @@ def generate_training_pool_predictions(image_dir, patch_size=512, patch_overlap=
         dask_client (dask.distributed.Client, optional): A Dask client for parallel processing. Defaults to None.
         batch_size (int, optional): The batch size for prediction. Defaults to 16.
         comet_logger (CometLogger, optional): A CometLogger object. Defaults to None.
+        pool_limit (int, optional): The maximum number of images to consider. Defaults to 1000.
     
     Returns:
         pd.DataFrame: A DataFrame of predictions.
@@ -270,6 +247,10 @@ def generate_training_pool_predictions(image_dir, patch_size=512, patch_overlap=
     # Remove .csv files from the pool
     pool = [image for image in pool if not image.endswith('.csv')]
     
+    #subsample
+    if len(pool) > pool_limit:
+        pool = random.sample(pool, pool_limit)
+
     # Remove crop dir
     try:
         pool.remove(os.path.join(image_dir, "crops"))
@@ -301,7 +282,7 @@ def generate_training_pool_predictions(image_dir, patch_size=512, patch_overlap=
         preannotations = pd.concat(preannotations)
 
     if comet_logger:
-        comet_logger.log_table("active_training_pool", preannotations)
+        comet_logger.experiment.log_table("active_training_pool", preannotations)
 
     # Print the number of preannotations before removing min score
     preannotations = preannotations[preannotations["score"] >= min_score]

@@ -7,14 +7,15 @@ import glob
 import shutil
 from PIL import Image
 
-def upload_to_label_studio(images, sftp_client, label_studio_project, images_to_annotate_dir, folder_name, preannotations):
+def upload_to_label_studio(images, sftp_client, url, project_name, images_to_annotate_dir, folder_name, preannotations):
     """
     Upload images to Label Studio and import image tasks.
 
     Args:
         images (list): List of image paths to upload.
+        url (str): The URL of the Label Studio server.
         sftp_client (paramiko.SFTPClient): The SFTP client for uploading images.
-        label_studio_project (label_studio_sdk.Project): The Label Studio project instance.
+        project_name (str): The name of the Label Studio project.
         images_to_annotate_dir (str): The path to the directory of images to annotate.
         folder_name (str): The name of the folder to upload images to.
         preannotations (list): List of preannotations for the images.
@@ -22,6 +23,7 @@ def upload_to_label_studio(images, sftp_client, label_studio_project, images_to_
     Returns:
         None
     """
+    label_studio_project = connect_to_label_studio(url=url, project_name=project_name)
     upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
     import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
 
@@ -165,6 +167,9 @@ def gather_data(annotation_dir):
     df = []
     for x in csvs:
         df.append(pd.read_csv(x))
+    
+    if len(df) == 0:
+        return None
     df = pd.concat(df)
     df.drop_duplicates(inplace=True)
     df.reset_index(drop=True, inplace=True)
@@ -201,7 +206,6 @@ def connect_to_label_studio(url, project_name, label_config=None):
 
     if len(project) == 0:
         # Create a project with the specified title and labeling configuration
-
         project = ls.create_project(
             title=project_name,
             label_config=label_config
@@ -243,8 +247,6 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
     Returns:
         None
     """
-    import os
-
     tasks = []
     for index, image_name in enumerate(image_names):
         print(f"Importing {image_name} into Label Studio")
@@ -260,7 +262,8 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
         else:
             upload_dict = {"data": data_dict}
         tasks.append(upload_dict)
-    label_studio_project.import_tasks(tasks)
+    if len(tasks) > 0:
+        label_studio_project.import_tasks(tasks)
 
 def download_completed_tasks(label_studio_project, csv_dir):
     labeled_tasks = label_studio_project.get_labeled_tasks()

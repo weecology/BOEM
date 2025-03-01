@@ -129,6 +129,49 @@ class PredictionVisualizer:
             video_writer.release()
             
         return output_path
+    
+def write_crops(root_dir, images, boxes, labels, savedir):
+    """Write crops to disk.
+
+    Args:
+        root_dir (str): The root directory where the images are located.
+        images (list): A list of image filenames.
+        boxes (list): A list of bounding box coordinates in the format [xmin, ymin, xmax, ymax].
+        labels (list): A list of labels corresponding to each bounding box.
+        savedir (str): The directory where the cropped images will be saved.
+
+    Returns:
+        None
+    """
+
+    # Create a directory
+    os.makedirs(os.path.join(savedir), exist_ok=True)
+
+    # Use rasterio to read the image
+    for index, box in enumerate(boxes):
+        xmin, ymin, xmax, ymax = box
+        label = labels[index]
+        image = images[index]
+        basename = os.path.splitext(os.path.basename(image))[0]
+        with rasterio.open(os.path.join(root_dir, image)) as src:
+            # Crop the image using the bounding box coordinates
+            img = src.read(window=((ymin, ymax), (xmin, xmax)))
+            
+            # Save the cropped image as a PNG file using opencv
+            img_path = os.path.join(savedir, f"{basename}_{label}_{index}.png")
+            img = np.rollaxis(img, 0, 3)
+            cv2.imwrite(img_path, img)
+        
+def crop_images(annotations, root_dir, save_dir):
+    # Remove any annotations with empty boxes
+    annotations = annotations[(annotations['xmin'] != 0) & (annotations['ymin'] != 0) & (annotations['xmax'] != 0) & (annotations['ymax'] != 0)]
+    
+    # Remove any negative values
+    annotations = annotations[(annotations['xmin'] >= 0) & (annotations['ymin'] >= 0) & (annotations['xmax'] >= 0) & (annotations['ymax'] >= 0)]
+    boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
+    images = annotations["image_path"].values
+    labels = annotations["label"].values
+    write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir+"/crops")
 
 def select_images_for_video(image_dir, thin_factor):
     all_images = glob.glob(image_dir + "/*.jpg")

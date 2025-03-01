@@ -2,6 +2,7 @@ from src.label_studio import gather_data
 from torchmetrics.classification import Accuracy
 from deepforest.evaluate import evaluate_boxes
 from src.detection import predict, fix_taxonomy
+
 from deepforest.utilities import read_file
 import pandas as pd
 import torch
@@ -11,7 +12,7 @@ from torchvision.models.detection._utils import Matcher
 import os
 
 class PipelineEvaluation:
-    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir, classify_ground_truth_dir, detection_true_positive_threshold=0.85, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5, debug=False, batch_size=16, detection_results=None):
+    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir, classify_ground_truth_dir, detection_true_positive_threshold=0.85, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5, debug=False, batch_size=16, detection_results=None, comet_logger=None):
         """Initialize pipeline evaluation.
         
         Args:
@@ -40,6 +41,7 @@ class PipelineEvaluation:
         self.model = model
         self.debug = debug
         self.batch_size = batch_size
+        self.comet_logger = comet_logger
 
         # Gather data
         self.detection_annotations = gather_data(detect_ground_truth_dir)
@@ -122,6 +124,9 @@ class PipelineEvaluation:
         # Select the annotations for confident and uncertain
         confident_predictions = combined_predictions[combined_predictions.image_path.isin(confident_images)]
         uncertain_predictions = combined_predictions[~combined_predictions.image_path.isin(confident_images)]
+
+        self.comet_logger.experiment.log_table("validation_confident_predictions", confident_predictions)
+        self.comet_logger.experiment.log_table("validation_uncertain_predictions", uncertain_predictions)
 
         return confident_predictions, uncertain_predictions
     
@@ -217,6 +222,9 @@ class PipelineEvaluation:
         results = {f"{accuracy_metric.__class__.__name__.lower()}": accuracy_metric.compute(), 
                    "avg_score_true_positive": None, 
                    "avg_score_false_positive": None}
+        
+        self.comet_logger.experiment.log_metrics(results)
+
         return results
     
     def evaluate_detection(self):
@@ -259,7 +267,11 @@ class PipelineEvaluation:
             non_empty_results["match"] = non_empty_results["match"].astype(bool)
             avg_score_true_positive = non_empty_results.loc[non_empty_results["match"]].score.mean()
             avg_score_false_positive = non_empty_results.loc[~non_empty_results["match"]].score.mean()
+        
         results = {"recall": iou_results["box_recall"], "precision": iou_results["box_precision"], "avg_score_true_positive": avg_score_true_positive, "avg_score_false_positive": avg_score_false_positive}
+
+        with self.comet_logger.experiment.context_manager("detection"):
+            self.comet_logger.experiment.log_metrics(results)
 
         return results
 

@@ -1,3 +1,4 @@
+import comet_ml
 from datetime import datetime
 import os
 
@@ -8,7 +9,6 @@ from src import label_studio
 from src import detection
 from src import classification
 from src.pipeline_evaluation import PipelineEvaluation
-from src.reporting import Reporting
 from src.cluster import start
 from pytorch_lightning.loggers import CometLogger
 import glob
@@ -20,14 +20,11 @@ class Pipeline:
         self.config = cfg
         self.sftp_client = label_studio.create_sftp_client(
             **self.config.server)
-        
-        # Create reporting object
-        self.create_reporter()
 
         # Pool of all images
         self.all_images = glob.glob(os.path.join(self.config.active_learning.image_dir, "*.jpg"))
 
-        self.comet_logger = CometLogger(project_name=self.comet.project, workspace=self.comet.workspace)
+        self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
 
 
     def save_model(self, model, directory):
@@ -36,17 +33,6 @@ class Pipeline:
         model.trainer.save_checkpoint(checkpoint_path)
 
         return checkpoint_path
-    
-    def create_reporter(self):
-        self.reporter = Reporting(
-                report_dir=self.config.reporting.report_dir,
-                image_dir=self.config.active_learning.image_dir,
-                thin_factor=self.config.reporting.thin_factor,
-                patch_overlap=self.config.active_learning.patch_overlap,
-                patch_size=self.config.active_learning.patch_size,
-                metadata_csv=self.config.reporting.metadata,
-                batch_size=self.config.predict.batch_size
-                )
         
     def check_new_annotations(self, instance_name):
         instance_config = self.config.label_studio.instances[instance_name]
@@ -70,7 +56,8 @@ class Pipeline:
 
             # Human review 
             new_review_annotations = self.check_new_annotations("review")
-            self.review_annotations = label_studio.gather_data(self.label_studio.instances.review.csv_dir)
+            self.review_annotations = label_studio.gather_data(self.config.label_studio.instances.review.csv_dir)
+            self.comet_logger.experiment.log_table(tabular_data=self.review_annotations, name="human_reviewed_annotations.csv")
             
             if new_val_annotations is None:
                 if self.config.force_upload:
@@ -97,16 +84,15 @@ class Pipeline:
             except:
                 detection_results = None
 
-            trained_classification_model = classification.preprocess_and_train_classification(self.config, self.comet_logger)
+            trained_classification_model = classification.preprocess_and_train_classification(self.config, comet_logger=self.comet_logger)
 
             detection_checkpoint_path = self.save_model(trained_detection_model,
                             self.config.detection_model.checkpoint_dir)
             
             classification_checkpoint_path = self.save_model(trained_classification_model,
                             self.config.classification_model.checkpoint_dir)      
- 
-            self.reporter.detection_checkpoint_path = detection_checkpoint_path
-            self.reporter.classification_checkpoint_path = classification_checkpoint_path
+            self.comet_logger.experiment.log_asset(file_data=detection_checkpoint_path)
+            self.comet_logger.experiment.log_asset(file_data=classification_checkpoint_path)
 
         else:
             detection_checkpoint_path = self.config.detection_model.checkpoint
@@ -128,7 +114,8 @@ class Pipeline:
             batch_size=self.config.predict.batch_size,
             detection_results=detection_results,
             comet_logger=self.comet_logger,
-            **self.config.pipeline_evaluation)
+            **self.config.pipeline_evaluation,
+            debug=self.config.debug)
 
         performance = pipeline_monitor.evaluate()
 
@@ -152,11 +139,10 @@ class Pipeline:
             comet_logger=self.comet_logger
             )
         
-        
-        label_studio_project = label_studio.connect_to_label_studio(url=self.config.label_studio.url, project_name=self.config.label_studio.instances.validation.project_name)
         label_studio.upload_to_label_studio(images=test_images_to_annotate,
                                     sftp_client=self.sftp_client,
-                                    label_studio_project=label_studio_project,
+                                    url=self.config.label_studio.url,
+                                    project_name=self.config.label_studio.instances.validation.project_name,
                                     images_to_annotate_dir=self.config.active_testing.image_dir,
                                     folder_name=self.config.label_studio.folder_name,
                                     preannotations=None)
@@ -164,6 +150,7 @@ class Pipeline:
         # Generate predictions for the training pool
         training_pool_predictions = generate_training_pool_predictions(
             image_dir=self.config.active_learning.image_dir,
+            pool_limit=self.config.active_learning.pool_limit,
             patch_size=self.config.active_learning.patch_size,
             patch_overlap=self.config.active_learning.patch_overlap,
             min_score=self.config.active_learning.min_score,
@@ -173,6 +160,7 @@ class Pipeline:
             batch_size=self.config.predict.batch_size,
             comet_logger=self.comet_logger
         )
+        self.comet_logger.experiment.log_table(tabular_data=training_pool_predictions, filename="training_pool_predictions.csv")
 
         # Select images to annotate based on the strategy
         train_images_to_annotate, preannotations = select_train_images(
@@ -184,38 +172,36 @@ class Pipeline:
         
         # Training annotation pipeline
         full_image_paths = [os.path.join(self.config.active_learning.image_dir, image) for image in train_images_to_annotate]
+        preannotations_list = [group for _, group in preannotations.groupby("image_path")]
         label_studio.upload_to_label_studio(images=full_image_paths, 
+                                            url=self.config.label_studio.url,
                                             sftp_client=self.sftp_client, 
-                                            label_studio_project=self.label_studio_project_train, 
+                                            project_name=self.config.label_studio.instances.train.project_name, 
                                             images_to_annotate_dir=self.config.active_learning.image_dir, 
                                             folder_name=self.config.label_studio.folder_name, 
-                                            preannotations=preannotations)
+                                            preannotations=preannotations_list)
         
-        # Prediction annotation pipeline, choose images for humans to review
         confident_predictions, uncertain_predictions = human_review(
-            detection_model=trained_detection_model,
-            classification_model=trained_classification_model,
-            image_paths=train_images_to_annotate,
-            patch_size=self.config.active_learning.patch_size,
-            patch_overlap=self.config.active_learning.patch_overlap,
             confident_threshold=self.config.pipeline.confidence_threshold,
             min_score=self.config.active_learning.min_score,
-            batch_size=self.config.predict.batch_size,
-            existing_predictions=training_pool_predictions
+            predictions=training_pool_predictions,
         )
 
+        self.comet_logger.experiment.log_table(tabular_data=confident_predictions, filename="confident_predictions.csv")
+        self.comet_logger.experiment.log_table(tabular_data=uncertain_predictions, filename="uncertain_predictions.csv") 
 
         # Human review - to be replaced by AWS for NJ Audubon
         chosen_uncertain_images = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].tolist()
         chosen_preannotations = uncertain_predictions[uncertain_predictions.image_path.isin(chosen_uncertain_images)]
+        chosen_preannotations = [group for _, group in chosen_preannotations.groupby("image_path")]
         label_studio.upload_to_label_studio(images=chosen_uncertain_images, 
                                             sftp_client=self.sftp_client, 
-                                            label_studio_project=self.label_studio_project_review, 
+                                            url=self.config.label_studio.url,
+                                            project_name=self.config.label_studio.instances.review.project_name, 
                                             images_to_annotate_dir=self.config.active_learning.image_dir, 
                                             folder_name=self.config.label_studio.folder_name, 
                                             preannotations=chosen_preannotations)
 
         print(f"Images requiring human review: {len(uncertain_predictions)}")
         print(f"Images auto-annotated: {len(confident_predictions)}")
-        self.chosen_uncertain_images = chosen_preannotations 
-        self.reporter.generate_report(create_video=False)
+        self.chosen_uncertain_images = chosen_preannotations

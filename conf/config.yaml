@@ -1,6 +1,9 @@
 defaults:
   - server: serenity
-  
+  - classification_model: finetune.yaml
+
+debug: False
+
 comet:
   project: BOEM
   workspace: bw4sz
@@ -28,7 +31,7 @@ label_studio:
       csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/review
       project_name: "Bureau of Ocean Energy Management - Review"
 predict:
-  patch_size: 2000
+  patch_size: 1000
   patch_overlap: 0
   min_score: 0.4
   batch_size: 48
@@ -60,18 +63,6 @@ detection_model:
     validation:
       val_accuracy_interval: 3
 
-classification_model:
-  checkpoint: 
-  checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
-  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train
-  train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
-  crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/
-  under_sample_ratio: 0
-  trainer:
-    fast_dev_run: True
-    max_epochs: 1
-    lr: 0.00001
-
 pipeline_evaluation:
   detect_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
   classify_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
@@ -79,18 +70,12 @@ pipeline_evaluation:
   detection_true_positive_threshold: 0.8
   classification_avg_score: 0.5
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
-  debug: False
-
-reporting:
-  report_dir: /orange/ewhite/web/public/BOEM
-  metadata: /blue/ewhite/b.weinstein/BOEM/reporting/metadata/metadata.csv
-  thin_factor: 100
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: 'target-labels'
   n_images: 50
-  patch_size: 2000
+  patch_size: 1000
   patch_overlap: 0
   min_score: 0.1
   model_checkpoint:
@@ -108,9 +93,9 @@ active_testing:
   strategy: 'random'
   n_images: 1000
   m: 
-  patch_size: 2000
+  patch_size: 1000
   patch_overlap: 0
   min_score: 0.2
 
 human_review: 
-  n_images: 10
+  n: 10

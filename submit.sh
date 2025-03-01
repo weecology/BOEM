@@ -13,7 +13,6 @@
 #SBATCH --gpus=1
 
 source activate BOEM
-module load ffmpeg
 
 cd ~/BOEM/
-python main.py check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 pipeline_evaluation.debug=True force_training=True
+python main.py check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 

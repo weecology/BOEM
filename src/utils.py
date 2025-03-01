@@ -1,6 +1,7 @@
 # A python script to recursively read in a directory of images and rename them into a single directory with folder names added to file namesimport os
 import shutil
 import os
+import geopandas as gpd
 
 def rename_images(directory, rename_directory):
     """Flat a recursive directory of images into a single directory with folder names added to file names."""
@@ -23,6 +24,13 @@ def rename_images(directory, rename_directory):
             shutil.move(file_path, os.path.join(rename_directory, new_file_name))
 
     print("Images renamed successfully!")
+
+def geodataframe_to_dataframe(gdf):
+    """Convert a GeoDataFrame to a DataFrame with WKT geometry."""
+    df = gdf.copy()
+    df['geometry'] = df['geometry'].apply(lambda geom: geom.wkt)
+    return df
+
 
 if __name__ == "__main__":
     # Call the function with the directory path

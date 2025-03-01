@@ -10,7 +10,7 @@ from omegaconf import DictConfig
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     # Override the classification_model config with USGS.yaml
-    hydra.compose(config_name="config", overrides=["+classification_model=@conf/classification_model/USGS"])
+    cfg = hydra.compose(config_name="config", overrides=["classification_model=USGS"])
     
     classification_cfg = cfg.classification_model
     

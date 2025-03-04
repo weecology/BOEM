@@ -12,7 +12,7 @@ from torchvision.models.detection._utils import Matcher
 import os
 
 class PipelineEvaluation:
-    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir, classify_ground_truth_dir, detection_true_positive_threshold=0.85, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5, debug=False, batch_size=16, detection_results=None, comet_logger=None):
+    def __init__(self, model, crop_model, image_dir, detect_ground_truth_dir, classify_ground_truth_dir, comet_logger, detection_true_positive_threshold=0.85, classification_avg_score=0.5, patch_size=450, patch_overlap=0, min_score=0.5, debug=False, batch_size=16, detection_results=None):
         """Initialize pipeline evaluation.
         
         Args:
@@ -22,6 +22,7 @@ class PipelineEvaluation:
             detect_ground_truth_dir (str): Directory containing detection ground truth annotation CSV files
             classify_ground_truth_dir (str): Directory containing confident classification ground truth annotation CSV files
             detection_true_positive_threshold (float): IoU threshold for considering a detection a true positive
+            comet_logger: CometLogger object for logging
             classification_threshold (float): Threshold for classification confidence score
             patch_size (int): Size of image patches for prediction
             patch_overlap (int): Overlap between patches
@@ -246,12 +247,13 @@ class PipelineEvaluation:
         combined_predictions["workflow"] = "detection"
         self.predictions.append(combined_predictions)
         
-        # replace None with 0
-        combined_predictions = combined_predictions.fillna(0)
-        combined_predictions["label"] = "Object"
+        # Remove empty predictions, needs to be confirmed for edge cases
+        combined_predictions = combined_predictions[~combined_predictions["score"].isna()]
 
         combined_predictions = read_file(combined_predictions, self.image_dir)
-        ground_truth = read_file(self.detection_annotations, self.image_dir)
+        ground_truth = self.detection_annotations
+        if "geometry" not in ground_truth.columns:
+            ground_truth = read_file(ground_truth, self.image_dir)
 
         iou_results = evaluate_boxes(
             combined_predictions,

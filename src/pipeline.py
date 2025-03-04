@@ -25,7 +25,7 @@ class Pipeline:
         self.all_images = glob.glob(os.path.join(self.config.active_learning.image_dir, "*.jpg"))
 
         self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
-
+        self.comet_logger.experiment.add_tag("pipeline")
 
     def save_model(self, model, directory):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -194,7 +194,8 @@ class Pipeline:
         chosen_uncertain_images = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].tolist()
         chosen_preannotations = uncertain_predictions[uncertain_predictions.image_path.isin(chosen_uncertain_images)]
         chosen_preannotations = [group for _, group in chosen_preannotations.groupby("image_path")]
-        label_studio.upload_to_label_studio(images=chosen_uncertain_images, 
+        full_image_paths = [os.path.join(self.config.active_learning.image_dir, image) for image in chosen_uncertain_images]
+        label_studio.upload_to_label_studio(images=full_image_paths, 
                                             sftp_client=self.sftp_client, 
                                             url=self.config.label_studio.url,
                                             project_name=self.config.label_studio.instances.review.project_name, 

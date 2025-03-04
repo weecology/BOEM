@@ -34,7 +34,7 @@ predict:
   patch_size: 1000
   patch_overlap: 0
   min_score: 0.4
-  batch_size: 48
+  batch_size: 32
 
 pipeline:
   confidence_threshold: 0.9
@@ -54,14 +54,14 @@ detection_model:
   labels:
     - "Object"
   trainer: 
-    batch_size: 4
+    batch_size: 12
     train:
       fast_dev_run: False
-      epochs: 10
-      lr: 0.000001
-    workers: 0
+      epochs: 20
+      lr: 0.00001
+    workers: 10
     validation:
-      val_accuracy_interval: 3
+      val_accuracy_interval: 5
 
 pipeline_evaluation:
   detect_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation

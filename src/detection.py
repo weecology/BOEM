@@ -12,6 +12,7 @@ import dask.array as da
 import pandas as pd
 from deepforest import main, visualize
 from deepforest.utilities import read_file
+import torch
 
 # Local imports
 from src import data_processing
@@ -29,7 +30,8 @@ def evaluate(model, test_csv, image_root_dir):
         dict: A dictionary of evaluation metrics.
     """
     # create trainer
-    model.create_trainer()
+    devices = torch.cuda.device_count()
+    model.create_trainer(num_nodes=1, devices=devices)
     model.config["validation"]["csv_file"] = test_csv
     model.config["validation"]["root_dir"] = image_root_dir
     results = model.trainer.validate(model)
@@ -160,19 +162,20 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
             else:
                 model.config[key] = value
 
+    devices = torch.cuda.device_count()
     if comet_logger:
         comet_logger.experiment.log_parameters(model.config)
         comet_logger.experiment.log_table("train.csv", train_annotations)
         comet_logger.experiment.log_table("test.csv", test_annotations)
-        model.create_trainer(logger=comet_logger)
+        model.create_trainer(logger=comet_logger, num_nodes=1, devices=devices)
     else:
-        model.create_trainer()
+        model.create_trainer(num_nodes=1, devices=devices)
 
     with comet_logger.experiment.context_manager("train_images"):
         non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
         # Sanity check for debug
         n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
-        for filename in non_empty_train_annotations.image_path.sample():
+        for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
             sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
             sample_train_annotations_for_image.root_dir = train_image_dir
             visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
@@ -181,7 +184,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
     with comet_logger.experiment.context_manager("test_images"):
         non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
         n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
-        for filename in non_empty_validation_annotations.image_path.head(5):
+        for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
             sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
             sample_validation_annotations_for_image.root_dir = train_image_dir
             visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
@@ -191,7 +194,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
         model.trainer.fit(model)
 
     with comet_logger.experiment.context_manager("post-training prediction"):
-        for image_path in test_annotations.image_path.head(5):
+        for image_path in test_annotations.image_path.unique():
             prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
             if prediction is None:
                 continue
@@ -305,7 +308,7 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
         if m is None:
             raise ValueError("A model or model_path is required for prediction.")
 
-    m.create_trainer(fast_dev_run=False)
+    m.create_trainer(fast_dev_run=False, devices=1)
     m.config["batch_size"] = batch_size
     predictions = []
     for image_path in image_paths:

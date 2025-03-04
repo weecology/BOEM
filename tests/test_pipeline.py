@@ -15,7 +15,7 @@ get_api_key()
 def label_studio_client(config):
     """Initialize Label Studio client with API key from .comet.config"""
     api_key = get_api_key()
-    if api_key is None:
+    if (api_key is None):
         print("Warning: No Label Studio API key found in .comet.config")
         return None
 
@@ -65,11 +65,12 @@ def cleanup_label_studio(label_studio_client, request):
     yield
 
 @pytest.mark.integration
-def test_pipeline_run(config, label_studio_client):
-    """Test complete pipeline run"""
-    pipeline = Pipeline(cfg=config)
-    pipeline.run()
+def test_pipeline_run(config, comet_logger):
+    pipeline = Pipeline(config)
+    pipeline.run(comet_logger=comet_logger)
 
+    # Add assertions to verify the pipeline run
+    assert pipeline is not None
 
 @pytest.mark.integration
 def test_first_phase(config, label_studio_client):

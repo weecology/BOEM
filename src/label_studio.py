@@ -12,7 +12,7 @@ def upload_to_label_studio(images, sftp_client, url, project_name, images_to_ann
     Upload images to Label Studio and import image tasks.
 
     Args:
-        images (list): List of image paths to upload.
+        images (list): List of image paths to upload, full paths
         url (str): The URL of the Label Studio server.
         sftp_client (paramiko.SFTPClient): The SFTP client for uploading images.
         project_name (str): The name of the Label Studio project.

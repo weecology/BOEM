@@ -1,29 +1,59 @@
 from deepforest import model
 import pandas as pd
-import os
+import glob
 import comet_ml
 from pytorch_lightning.loggers import CometLogger
 from src.classification import preprocess_and_train_classification
 import hydra
 from omegaconf import DictConfig
 
+# Create train test split, split each class into 90% train and 10% test with a minimum of 10 images per class for test and a max of 100
+def train_test_split(df, test_size=0.1, min_test_images=10, max_test_images=100):
+    train_df = pd.DataFrame()
+    test_df = pd.DataFrame()
+    
+    for label in df['label'].unique():
+        class_df = df[df['label'] == label]
+        test_count = max(min_test_images, int(len(class_df) * test_size))
+        test_count = min(test_count, max_test_images)
+        
+        test_class_df = class_df.sample(n=test_count)
+        train_class_df = class_df.drop(test_class_df.index)
+        
+        train_df = pd.concat([train_df, train_class_df])
+        test_df = pd.concat([test_df, test_class_df])
+    
+    return train_df, test_df
+
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     # Override the classification_model config with USGS.yaml
     cfg = hydra.compose(config_name="config", overrides=["classification_model=USGS"])
-    
-    classification_cfg = cfg.classification_model
-    
+        
     # From the detection script
-    savedir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
-    train = pd.read_csv(os.path.join(savedir, "train.csv"))
-    test = pd.read_csv(os.path.join(savedir, "test.csv"))
+    crop_annotations = glob.glob("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops/*.csv")
+    crop_annotations = [pd.read_csv(x) for x in crop_annotations]
+    crop_annotations = pd.concat(crop_annotations)
+    
+    # Keep labels with more than 100 images
+    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 100)
 
-    comet_logger = CometLogger(project_name=cfg.project, workspace=cfg.workspace)
+    # Only keep two word labels
+    crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
+
+    # Expand bounding boxes by 30 pixels on all sides
+    crop_annotations["xmin"] -= 30
+    crop_annotations["ymin"] -= 30
+    crop_annotations["xmax"] += 30
+    crop_annotations["ymax"] += 30
+    
+    train_df, validation_df = train_test_split(crop_annotations)
+    
+    comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
     preprocess_and_train_classification(
         config=cfg,
-        train_df=train,
-        validation_df=test,
+        train_df=train_df,
+        validation_df=validation_df,
         comet_logger=comet_logger
     )
 

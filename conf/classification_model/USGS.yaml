@@ -1,12 +1,12 @@
-classification_model:
-  checkpoint: 
-  checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/
-  train_csv_folder: 
-  train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
-  crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/
-  under_sample_ratio: 0
-  trainer:
-    fast_dev_run: True
-    max_epochs: 1
-    lr: 0.00001
-    batch_size: 16
+checkpoint: 
+checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/
+train_csv_folder: 
+train_image_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops
+crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/
+under_sample_ratio: 0
+trainer:
+  fast_dev_run: False
+  max_epochs: 100
+  lr: 0.00001
+  batch_size: 16
+  workers: 10

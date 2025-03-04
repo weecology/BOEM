@@ -4,6 +4,7 @@ import warnings
 from PIL import Image
 
 from deepforest.model import CropModel
+import torch
 
 # Local imports
 from src.label_studio import gather_data
@@ -58,7 +59,7 @@ def load(checkpoint=None, annotations=None, checkpoint_dir=None, lr=0.0001, num_
     
     return loaded_model
 
-def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_size=4):
+def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_size=4, workers=0):
     """Train a model on labeled images.
     Args:
         model (CropModel): A CropModel object.
@@ -73,19 +74,32 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
         main.deepforest: A trained deepforest model.
     """
     model.batch_size = batch_size
-    model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs)
+    model.num_workers = workers
+
+    devices = torch.cuda.device_count()
+    model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices)
 
     # Get the data stored from the write_crops processing.
     model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
     
-    # Log the validation dataset images
-    for image_path, label in model.val_ds.imgs:
-        label_name = model.numeric_to_label_dict[label]
-        image_name = os.path.basename(image_path)
-        comet_logger.experiment.log_image(image_path, name=f"{label_name}_{image_name}")
+    model.label_dict = model.train_ds.class_to_idx
+    model.numeric_to_label = {v: k for k, v in model.train_ds.class_to_idx.items()}
 
-    with comet_logger.experiment.context_manager("classification"):
-        model.trainer.fit(model)
+    # Log the validation dataset images, max 10 per class
+    label_count = {}
+    numeric_to_label = {v: k for k, v in model.val_ds.class_to_idx.items()}
+    for image_path, label in model.val_ds.imgs:
+        label_name =numeric_to_label[label]
+        if label_name not in label_count:
+            label_count[label_name] = 0
+        if label_count[label_name] < 10:
+            image_name = os.path.basename(image_path)
+            comet_logger.experiment.log_image(image_path, name=f"{label_name}_{image_name}")
+            label_count[label_name] += 1
+    
+    #with comet_logger.experiment.context_manager("classification"):
+
+    model.trainer.fit(model)
 
     # Compute confusion matrix and upload to cometml
     image_dataset = []
@@ -112,6 +126,7 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
 def preprocess_images(model, annotations, root_dir, save_dir):
     # Remove any annotations with empty boxes
     annotations = annotations[(annotations['xmin'] != 0) & (annotations['ymin'] != 0) & (annotations['xmax'] != 0) & (annotations['ymax'] != 0)]
+    
     # Remove any negative values
     annotations = annotations[(annotations['xmin'] >= 0) & (annotations['ymin'] >= 0) & (annotations['xmax'] >= 0) & (annotations['ymax'] >= 0)]
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
@@ -131,9 +146,11 @@ def preprocess_and_train_classification(config, train_df=None, validation_df=Non
         trained_model: Trained model object
     """
     # Get and split annotations
-    if train_df is not None:
+    if train_df is None:
         annotations = gather_data(config.classification_model.train_csv_folder)
-
+    else:
+        annotations = train_df
+    
     num_classes = len(annotations["label"].unique())
 
     # Remove the empty frames
@@ -155,10 +172,6 @@ def preprocess_and_train_classification(config, train_df=None, validation_df=Non
         num_classes=num_classes
         )
 
-    # Force the label dict, DeepForest will update this soon
-    loaded_model.label_dict = {v:k for k,v in enumerate(annotations["label"].unique())}
-    loaded_model.numeric_to_label_dict = {v:k for k,v in loaded_model.label_dict.items()}
-
     # Preprocess train and validation data
     preprocess_images(
         model=loaded_model, 
@@ -179,7 +192,8 @@ def preprocess_and_train_classification(config, train_df=None, validation_df=Non
         model=loaded_model,
         fast_dev_run=config.classification_model.trainer.fast_dev_run,
         max_epochs=config.classification_model.trainer.max_epochs,
-        comet_logger=comet_logger
+        comet_logger=comet_logger,
+        workers=config.classification_model.trainer.workers
         )
 
     return trained_model

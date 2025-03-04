@@ -8,6 +8,7 @@ import pandas as pd
 import torch
 from torchvision.ops.boxes import box_iou
 from torchvision.models.detection._utils import Matcher
+import geopandas as gpd
 
 import os
 
@@ -63,11 +64,7 @@ class PipelineEvaluation:
             (self.classification_annotations.xmax == 0) &
             (self.classification_annotations.ymax == 0)
             )
-        ]
-
-        # Prediction container
-        self.predictions = []
-        
+        ]        
         self.confident_predictions, self.uncertain_predictions = self.predict_classification()
         self.num_classes = len(self.classification_annotations["label"].unique())
             
@@ -214,7 +211,6 @@ class PipelineEvaluation:
             if len(pred["labels"]) == 0:
                 continue
             matches = self.match_predictions_and_targets(pred, target)
-            self.predictions.append(matches)
             if matches.empty:
                 continue
             accuracy_metric.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
@@ -243,17 +239,14 @@ class PipelineEvaluation:
             patch_overlap=self.patch_overlap, 
         )
         
-        combined_predictions = pd.concat(predictions)
-        combined_predictions["workflow"] = "detection"
-        self.predictions.append(combined_predictions)
-        
-        # Remove empty predictions, needs to be confirmed for edge cases
+        combined_predictions = gpd.GeoDataFrame(pd.concat(predictions))
+
+        # When you concat geodataframes, you get pandas dataframes
         combined_predictions = combined_predictions[~combined_predictions["score"].isna()]
 
+        # Check if geometry is string or polygon
         combined_predictions = read_file(combined_predictions, self.image_dir)
-        ground_truth = self.detection_annotations
-        if "geometry" not in ground_truth.columns:
-            ground_truth = read_file(ground_truth, self.image_dir)
+        ground_truth = read_file(self.detection_annotations, self.image_dir)
 
         iou_results = evaluate_boxes(
             combined_predictions,

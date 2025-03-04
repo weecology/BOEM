@@ -1,6 +1,7 @@
 from src.pipeline_evaluation import PipelineEvaluation
 from deepforest import main
 from deepforest.model import CropModel
+from deepforest.utilities import read_file
 import pytest
 import pandas as pd
 import numpy as np
@@ -17,21 +18,13 @@ def mock_deepforest_model(config, comet_logger):
 
         def predict_tile(self, raster_path, patch_size=450, patch_overlap=0, return_plot=False, crop_model=None):
             # Return realistic predictions based on image name
-            if "empty" in raster_path.lower():
-                return pd.DataFrame({
-                    'xmin': [None],
-                    'ymin': [None],
-                    'xmax': [None],
-                    'ymax': [None],
-                    'label': [None],
-                    'score': [None],
-                    "image_path": [os.path.basename(raster_path)]
-                })
+            if "empty" in raster_path:
+                return None
                 
             # If random, Generate 1-3 random predictions for non-empty images
             if self.random:
                 num_predictions = np.random.randint(1, 4)
-                return pd.DataFrame({
+                df = pd.DataFrame({
                         'xmin': np.random.randint(0, 800, num_predictions),
                         'ymin': np.random.randint(0, 600, num_predictions),
                         'xmax': np.random.randint(800, 1000, num_predictions),
@@ -41,10 +34,13 @@ def mock_deepforest_model(config, comet_logger):
                         'score': np.random.uniform(0.1, 0.99, num_predictions),
                         'image_path': [os.path.basename(raster_path)] * num_predictions
                     })
+                df = read_file(df)
+                return df
             else:
                 # Return the validation data for perfect performance
                 val_csv_path = os.path.join(config.label_studio.csv_dir_validation, 'detection_annotations.csv')
-                validation_df = pd.read_csv(val_csv_path)
+                validation_df = read_file(val_csv_path)
+                
                 # Drop the empty image
                 validation_df = validation_df[validation_df['image_path'] != 'empty.jpg']
 
@@ -60,7 +56,6 @@ def random_crop_model():
     m = CropModel()
     m.label_dict = {"Bird": 0,"Mammal":1}
     return m
-
 
 def test_check_success(config, mock_deepforest_model, random_crop_model, comet_logger):
     """Test check success with mock model and perfect performance."""

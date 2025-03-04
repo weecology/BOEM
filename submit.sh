@@ -15,4 +15,4 @@
 source activate BOEM
 
 cd ~/BOEM/
-srun python main.py check_annotations=True active_learning.pool_limit=10000 active_testing.n_images=100 active_learning.n_images=200 
+srun python main.py check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 ++classification_model.trainer.fast_dev_run=True ++detection_model.trainer.train.fast_dev_run=True debug=True

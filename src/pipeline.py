@@ -26,6 +26,10 @@ class Pipeline:
 
         self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
         self.comet_logger.experiment.add_tag("pipeline")
+        flight_name = os.path.basename(self.config.label_studio.images_to_annotate_dir)
+        self.comet_logger.experiment.add_tag(flight_name)
+        self.comet_logger.experiment.log_parameters(self.config)
+        self.comet_logger.experiment.log_parameter("flight_name", flight_name)
 
     def save_model(self, model, directory):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

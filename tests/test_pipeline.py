@@ -3,6 +3,7 @@ from src.label_studio import get_api_key
 import pytest
 import os
 import torch
+from tests.conftest import config
 
 # Local imports
 from src import label_studio

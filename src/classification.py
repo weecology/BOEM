@@ -97,8 +97,6 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
             comet_logger.experiment.log_image(image_path, name=f"{label_name}_{image_name}")
             label_count[label_name] += 1
     
-    #with comet_logger.experiment.context_manager("classification"):
-
     model.trainer.fit(model)
 
     # Compute confusion matrix and upload to cometml

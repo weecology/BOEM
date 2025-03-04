@@ -4,7 +4,7 @@ import os
 
 from omegaconf import DictConfig
 
-from src.active_learning import generate_training_pool_predictions, select_train_images, choose_test_images, human_review
+from src.active_learning import generate_pool_predictions, select_images, choose_test_images, human_review
 from src import label_studio
 from src import detection
 from src import classification
@@ -148,7 +148,7 @@ class Pipeline:
                                     preannotations=None)
 
         # Generate predictions for the training pool
-        training_pool_predictions = generate_training_pool_predictions(
+        training_pool_predictions = generate_pool_predictions(
             image_dir=self.config.active_learning.image_dir,
             pool_limit=self.config.active_learning.pool_limit,
             patch_size=self.config.active_learning.patch_size,
@@ -163,7 +163,7 @@ class Pipeline:
         self.comet_logger.experiment.log_table(tabular_data=training_pool_predictions, filename="training_pool_predictions.csv")
 
         # Select images to annotate based on the strategy
-        train_images_to_annotate, preannotations = select_train_images(
+        train_images_to_annotate, preannotations = select_images(
             preannotations=training_pool_predictions,
             strategy=self.config.active_learning.strategy,
             n=self.config.active_learning.n_images,
@@ -191,7 +191,7 @@ class Pipeline:
         self.comet_logger.experiment.log_table(tabular_data=uncertain_predictions, filename="uncertain_predictions.csv") 
 
         # Human review - to be replaced by AWS for NJ Audubon
-        chosen_uncertain_images = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].tolist()
+        chosen_uncertain_images = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].unique()
         chosen_preannotations = uncertain_predictions[uncertain_predictions.image_path.isin(chosen_uncertain_images)]
         chosen_preannotations = [group for _, group in chosen_preannotations.groupby("image_path")]
         full_image_paths = [os.path.join(self.config.active_learning.image_dir, image) for image in chosen_uncertain_images]

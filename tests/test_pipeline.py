@@ -65,25 +65,9 @@ def cleanup_label_studio(label_studio_client, request):
     yield
 
 @pytest.mark.integration
-def test_pipeline_run(config, comet_logger):
+def test_pipeline_run(config, label_studio_client):
     pipeline = Pipeline(config)
-    pipeline.run(comet_logger=comet_logger)
+    pipeline.run()
 
     # Add assertions to verify the pipeline run
     assert pipeline is not None
-
-@pytest.mark.integration
-def test_first_phase(config, label_studio_client):
-    """Test init phase with no data"""
-    # Set validation csv paths to None
-    pipeline = Pipeline(cfg=config)
-    pipeline.run()
-
-
-#@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires GPU")
-#def test_multiple_gpu(config, label_studio_client):
-#    """Test init phase with no data"""
-#    # Set validation csv paths to None
-#    config["active_learning"]["gpus"] = 2
-#    pipeline = Pipeline(cfg=config)
-#    pipeline.run()

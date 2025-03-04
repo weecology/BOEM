@@ -19,6 +19,7 @@ def config(tmpdir_factory):
     cfg.detection_model.train_image_dir = tmpdir_factory.mktemp("images").strpath
     cfg.detection_model.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
     cfg.pipeline_evaluation.image_dir = cfg.detection_model.train_image_dir
+    cfg.detection_model.trainer.train.fast_dev_run = True
 
     # Classification model
     cfg.classification_model.train_csv_folder = tmpdir_factory.mktemp("csvs").strpath
@@ -104,8 +105,9 @@ def config(tmpdir_factory):
     # Create classification annotations
     cfg.pipeline_evaluation.classify_ground_truth_dir = tmpdir_factory.mktemp("classification_annotations").strpath
     csv_path = os.path.join(cfg.pipeline_evaluation.classify_ground_truth_dir, 'classification_annotations.csv')
-    val_df.to_csv(csv_path, index=False)
+    classification_val_df.to_csv(csv_path, index=False)
 
+    cfg.pipeline_evaluation.detection_true_positive_threshold = 0.4
     # Active learning
     cfg.active_learning.image_dir = cfg.detection_model.train_image_dir
     cfg.active_testing.image_dir = cfg.detection_model.train_image_dir

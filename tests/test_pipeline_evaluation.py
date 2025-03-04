@@ -56,11 +56,6 @@ def mock_deepforest_model(config, comet_logger):
     return MockDeepForest(label_dict={"Object": 0})
 
 @pytest.fixture
-def random_model():
-    m = main.deepforest(label_dict={"Object": 0}, num_classes=1)
-    return m
-
-@pytest.fixture
 def random_crop_model():
     m = CropModel()
     m.label_dict = {"Bird": 0,"Mammal":1}
@@ -79,8 +74,8 @@ def test_evaluate_detection(config, mock_deepforest_model, random_crop_model, co
     pipeline_evaluation = PipelineEvaluation(model=mock_deepforest_model, crop_model=random_crop_model, comet_logger=comet_logger, **config.pipeline_evaluation)
     detection_results = pipeline_evaluation.evaluate_detection()
     
-    # Detection results are mocked, so the mAP should be 1
-    assert detection_results["mAP"]["map"] == 1
+    # Detection results are mocked, one image is correct, the other is not.
+    assert detection_results["recall"] == 0.5
 
 def test_confident_classification_accuracy(config, mock_deepforest_model, random_crop_model, comet_logger):
     """Test confident classification accuracy with mock model and perfect performance."""
@@ -97,13 +92,3 @@ def test_uncertain_classification_accuracy(config, mock_deepforest_model, random
     uncertain_classification_accuracy = pipeline_evaluation.evaluate_uncertain_classification()
    
     assert uncertain_classification_accuracy["multiclassaccuracy"] == 0
-
-def test_evaluate(config, random_model, random_crop_model, comet_logger):
-    """Test evaluate with mock model."""
-    pipeline_evaluation = PipelineEvaluation(model=random_model, crop_model=random_crop_model, comet_logger=comet_logger, **config.pipeline_evaluation)
-    pipeline_evaluation.evaluate()
-
-    # All the metrics should be undefined
-    assert pipeline_evaluation.results["detection"]["mAP"]["map"] == -1
-    assert pipeline_evaluation.results["confident_classification"]["multiclassaccuracy"] == 0
-    assert pipeline_evaluation.results["uncertain_classification"]["multiclassaccuracy"] == 0

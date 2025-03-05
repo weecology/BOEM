@@ -31,7 +31,8 @@ def evaluate(model, test_csv, image_root_dir):
     """
     # create trainer
     devices = torch.cuda.device_count()
-    model.create_trainer(num_nodes=1, devices=devices)
+    strategy = "ddp" if devices > 1 else None
+    model.create_trainer(num_nodes=1, devices=devices, strategy=strategy)
     model.config["validation"]["csv_file"] = test_csv
     model.config["validation"]["root_dir"] = image_root_dir
     results = model.trainer.validate(model)
@@ -163,32 +164,28 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
                 model.config[key] = value
 
     devices = torch.cuda.device_count()
-    if comet_logger:
-        comet_logger.experiment.log_parameters(model.config)
-        comet_logger.experiment.log_table("train.csv", train_annotations)
-        comet_logger.experiment.log_table("test.csv", test_annotations)
-        model.create_trainer(logger=comet_logger, num_nodes=1, devices=devices)
-    else:
-        model.create_trainer(num_nodes=1, devices=devices)
+    strategy = "ddp" if devices > 1 else None
+    comet_logger.experiment.log_parameters(model.config)
+    comet_logger.experiment.log_table("train.csv", train_annotations)
+    comet_logger.experiment.log_table("test.csv", test_annotations)
+    model.create_trainer(logger=comet_logger, num_nodes=1, accelerator="gpu", strategy="ddp", devices=2)
 
-    with comet_logger.experiment.context_manager("train_images"):
-        non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
-        # Sanity check for debug
-        n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
-        for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
-            sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
-            sample_train_annotations_for_image.root_dir = train_image_dir
-            visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
-            comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
-    
-    with comet_logger.experiment.context_manager("test_images"):
-        non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
-        n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
-        for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
-            sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
-            sample_validation_annotations_for_image.root_dir = train_image_dir
-            visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
-            comet_logger.experiment.log_image(os.path.join(tmpdir, filename))
+    non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
+    # Sanity check for debug
+    n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
+    for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
+        sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
+        sample_train_annotations_for_image.root_dir = train_image_dir
+        visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
+        comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'train_images'})
+
+    non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
+    n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
+    for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
+        sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
+        sample_validation_annotations_for_image.root_dir = train_image_dir
+        visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
+        comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'validation_images'})
 
     with comet_logger.experiment.context_manager("detection"):
         model.trainer.fit(model)

@@ -122,7 +122,7 @@ def human_review(predictions, min_score=0.1, confident_threshold=0.5):
     
     return confident_predictions, uncertain_predictions
 
-def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, batch_size=16, comet_logger=None, pool_limit=1000):
+def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, batch_size=16, comet_logger=None, pool_limit=1000, crop_model=None):
     """
     Generate predictions for the training pool.
     
@@ -136,6 +136,7 @@ def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_
         dask_client (dask.distributed.Client, optional): A Dask client for parallel processing. Defaults to None.
         batch_size (int, optional): The batch size for prediction. Defaults to 16.
         comet_logger (CometLogger, optional): A CometLogger object. Defaults to None.
+        crop_model (bool, optional): A deepforest.model.CropModel object. Defaults to None.
         pool_limit (int, optional): The maximum number of images to consider. Defaults to 1000.
     
     Returns:
@@ -168,7 +169,7 @@ def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_
         blocks = dask_pool.to_delayed().ravel()
         block_futures = []
         for block in blocks:
-            block_future = dask_client.submit(detection.predict, image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path)
+            block_future = dask_client.submit(detection.predict, image_paths=block.compute(), patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, crop_model=crop_model)
             block_futures.append(block_future)
         # Get results
         dask_results = []
@@ -177,7 +178,7 @@ def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_
             dask_results.append(pd.concat(block_result))
         preannotations = pd.concat(dask_results)
     else:
-        preannotations = detection.predict(m=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, batch_size=batch_size)
+        preannotations = detection.predict(m=model, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, batch_size=batch_size, crop_model=crop_model)
         preannotations = pd.concat(preannotations)
 
     if comet_logger:

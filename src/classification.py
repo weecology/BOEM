@@ -128,8 +128,16 @@ def preprocess_images(model, annotations, root_dir, save_dir):
     # Remove any negative values
     annotations = annotations[(annotations['xmin'] >= 0) & (annotations['ymin'] >= 0) & (annotations['xmax'] >= 0) & (annotations['ymax'] >= 0)]
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
+
+    # Expand by 20 pixels on all sides
+    boxes = [[box[0]-20, box[1]-20, box[2]+20, box[3]+20] for box in boxes]
+    
+    # Make sure no negative values
+    boxes = [[max(0, box[0]), max(0, box[1]), max(0, box[2]), max(0, box[3])] for box in boxes]
+    
     images = annotations["image_path"].values
     labels = annotations["label"].values
+    
     model.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
 
 def preprocess_and_train_classification(config, train_df=None, validation_df=None, comet_logger=None):

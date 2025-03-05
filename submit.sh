@@ -10,9 +10,10 @@
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
 #SBATCH --partition=gpu
-#SBATCH --gpus=1
+#SBATCH --ntasks-per-node=2
+#SBATCH --gpus=2
 
 source activate BOEM
 
 cd ~/BOEM/
-srun python main.py check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 ++classification_model.trainer.fast_dev_run=True ++detection_model.trainer.train.fast_dev_run=True debug=True
+srun python main.py check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 debug=True

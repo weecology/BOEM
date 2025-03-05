@@ -162,7 +162,8 @@ class Pipeline:
             model_path=detection_checkpoint_path,
             dask_client=dask_client,
             batch_size=self.config.predict.batch_size,
-            comet_logger=self.comet_logger
+            comet_logger=self.comet_logger,
+            crop_model=trained_classification_model
         )
         self.comet_logger.experiment.log_table(tabular_data=training_pool_predictions, filename="training_pool_predictions.csv")
 

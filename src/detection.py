@@ -31,7 +31,7 @@ def evaluate(model, test_csv, image_root_dir):
     """
     # create trainer
     devices = torch.cuda.device_count()
-    strategy = "ddp" if devices > 1 else None
+    strategy = "ddp" if devices > 1 else "auto"
     model.create_trainer(num_nodes=1, devices=devices, strategy=strategy)
     model.config["validation"]["csv_file"] = test_csv
     model.config["validation"]["root_dir"] = image_root_dir
@@ -164,11 +164,11 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
                 model.config[key] = value
 
     devices = torch.cuda.device_count()
-    strategy = "ddp" if devices > 1 else None
+    strategy = "ddp" if devices > 1 else "auto"
     comet_logger.experiment.log_parameters(model.config)
     comet_logger.experiment.log_table("train.csv", train_annotations)
     comet_logger.experiment.log_table("test.csv", test_annotations)
-    model.create_trainer(logger=comet_logger, num_nodes=1, accelerator="gpu", strategy="ddp", devices=2)
+    model.create_trainer(logger=comet_logger, num_nodes=1, accelerator="gpu", strategy=strategy, devices=devices)
 
     non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
     # Sanity check for debug
@@ -187,23 +187,19 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
         visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
         comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'validation_images'})
 
-    with comet_logger.experiment.context_manager("detection"):
-        model.trainer.fit(model)
+    model.trainer.fit(model)
 
-    with comet_logger.experiment.context_manager("post-training prediction"):
-        for image_path in test_annotations.image_path.unique():
-            prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
-            if prediction is None:
-                continue
-            visualize.plot_results(prediction, savedir=tmpdir)
-            comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
-    
+    for image_path in test_annotations.image_path.unique():
+        prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
+        if prediction is None:
+            continue
+        visualize.plot_results(prediction, savedir=tmpdir)
+        comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
+
     return model
 
 def fix_taxonomy(df):
     df["label"] = "Object"
-    #df["label"] = df.label.replace('Turtle', 'Reptile')
-    #df["label"] = df.label.replace('Cetacean', 'Mammal')
 
     return df
 

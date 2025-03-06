@@ -4,7 +4,7 @@ import os
 
 from omegaconf import DictConfig
 
-from src.active_learning import generate_pool_predictions, select_images, choose_test_images, human_review
+from src.active_learning import generate_pool_predictions, select_images, human_review
 from src import label_studio
 from src import detection
 from src import classification
@@ -49,97 +49,113 @@ class Pipeline:
             images_to_annotate_dir=self.config.label_studio.images_to_annotate_dir,
             annotated_images_dir=self.config.label_studio.annotated_images_dir,
         )
+    def check_annotations(self):
+
+        if self.config.check_annotations:
+            new_train_annotations = self.check_new_annotations("train")
+            new_val_annotations = self.check_new_annotations("validation")
+            new_review_annotations = self.check_new_annotations("review")
+
+        self.existing_training = label_studio.gather_data(self.config.label_studio.instances.train.csv_dir)
+        self.existing_validation = label_studio.gather_data(self.config.label_studio.instances.validation.csv_dir)
+        self.existing_reviewed = label_studio.gather_data(self.config.label_studio.instances.review.csv_dir)
+        
+        self.comet_logger.experiment.log_table(tabular_data=self.existing_reviewed, filename="human_reviewed_annotations.csv")
+        self.comet_logger.experiment.log_table(tabular_data=self.existing_training, filename="training_annotations.csv")
+        self.comet_logger.experiment.log_table(tabular_data=self.existing_validation, filename="validation_annotations.csv")
+        
+        print(f"Training annotations shape: {self.existing_training.shape}")
+        print(f"Validation annotations shape: {self.existing_validation.shape}")
+        print(f"Reviewed annotations shape: {self.existing_reviewed.shape}")
+
+        self.existing_images = list(set(self.existing_training.image_path.tolist() + self.existing_validation.image_path.tolist() + self.existing_reviewed.image_path.tolist()))
 
     def run(self):
         # Check for new annotations if the check_annotations flag is set
-        if self.config.check_annotations:
-            new_train_annotations = self.check_new_annotations("train")
-
-            # Validation
-            new_val_annotations = self.check_new_annotations("validation")
-
-            # Human review 
-            new_review_annotations = self.check_new_annotations("review")
-            self.review_annotations = label_studio.gather_data(self.config.label_studio.instances.review.csv_dir)
-            self.comet_logger.experiment.log_table(tabular_data=self.review_annotations, filename="human_reviewed_annotations.csv")
-            
-            if new_val_annotations is None:
-                if self.config.force_upload:
-                    print("No new annotations, but force_upload is set to True, continuing")
-                elif not self.config.force_training:
-                    print("No new annotations, exiting")
-                    return None
-                else:
-                    print(f"No new annotations, but force training is {self.config.force_training} and force upload is {self.config.force_upload}, continuing")
-            else:   
-                try:
-                    print(f"New train annotations found: {len(new_train_annotations)}")
-                except:
-                    pass
-                print(f"New val annotations found: {len(new_val_annotations)}")
+        self.check_annotations()
+        
+        # Assert no train in test
+        #assert len(set(self.existing_training.image_path.tolist()).intersection(set(self.existing_validation.image_path.tolist()))) == 0
 
         if self.config.force_training:
             trained_detection_model = detection.preprocess_and_train(self.config, comet_logger=self.comet_logger)
-            
-            # No reason re-compute detection results later for validation
-            try:
-                detection_results = {"recall":trained_detection_model.trainer.logger.experiment.metrics["box_recall"],
-                                 "precision":trained_detection_model.trainer.logger.experiment.metrics["box_precision"]}
-            except:
-                detection_results = None
-
-            trained_classification_model = classification.preprocess_and_train_classification(self.config, comet_logger=self.comet_logger)
-
             detection_checkpoint_path = self.save_model(trained_detection_model,
                             self.config.detection_model.checkpoint_dir)
+
+            trained_classification_model = classification.preprocess_and_train_classification(self.config, comet_logger=self.comet_logger)            
+            classification_checkpoint_path = self.save_model(trained_classification_model, self.config.classification_model.checkpoint_dir)      
             
-            classification_checkpoint_path = self.save_model(trained_classification_model,
-                            self.config.classification_model.checkpoint_dir)      
             self.comet_logger.experiment.log_asset(file_data=detection_checkpoint_path)
             self.comet_logger.experiment.log_asset(file_data=classification_checkpoint_path)
 
         else:
             detection_checkpoint_path = self.config.detection_model.checkpoint
-
-            trained_detection_model = detection.load(
-                checkpoint = self.config.detection_model.checkpoint)
+            trained_detection_model = detection.load(checkpoint = self.config.detection_model.checkpoint)
             
             if self.config.classification_model.checkpoint is not None:
                 trained_classification_model = classification.load(
                     self.config.classification_model.checkpoint, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=None)
             else:
-                annotations = label_studio.gather_data(self.config.classification_model.train_csv_folder)
                 trained_classification_model = classification.load(
                     checkpoint = None, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=annotations)
 
-        pipeline_monitor = PipelineEvaluation(
+        if self.config.pipeline.gpus > 1:
+            dask_client = start(gpus=self.config.pipeline.gpus, mem_size="70GB")
+        else:
+            dask_client = None
+
+        # Predict entire flightline
+        flightline_predictions = generate_pool_predictions(
+            image_dir=self.config.active_learning.image_dir,
+            pool_limit=self.config.active_learning.pool_limit,
+            patch_size=self.config.active_learning.patch_size,
+            patch_overlap=self.config.active_learning.patch_overlap,
+            min_score=self.config.active_learning.min_score,
             model=trained_detection_model,
-            crop_model=trained_classification_model,
+            model_path=detection_checkpoint_path,
+            dask_client=dask_client,
             batch_size=self.config.predict.batch_size,
-            detection_results=detection_results,
+            crop_model=trained_classification_model
+        )
+
+        if self.pipeline.debug:
+            # To be a minimum images to debug the pipeline, get the first 5 evaluation images
+            image_paths = [os.path.join(self.config.active_learning.image_dir, x) for x in self.existing_validation.image_path.head().tolist()]
+            evaluation_predictions = detection.predict(
+                image_paths=image_paths,
+                m=trained_detection_model,
+                model_path=detection_checkpoint_path,
+                dask_client=dask_client,
+                crop_model=trained_classification_model,
+                patch_size=self.config.active_learning.patch_size,
+                patch_overlap=self.config.active_learning.patch_overlap,
+                batch_size=self.config.predict.batch_size
+            )
+        else:
+            evaluation_predictions = flightline_predictions[flightline_predictions.image_path.isin(self.existing_validation.image_path)]
+        
+        detection_annotations = self.existing_validation
+        classification_annotations = self.existing_training.copy(deep=True)
+        classification_annotations["label"] = classification_annotations["cropmodel_label"]
+
+        pipeline_monitor = PipelineEvaluation(
+            predictions=evaluation_predictions,
             comet_logger=self.comet_logger,
-            **self.config.pipeline_evaluation,
-            debug=self.config.debug)
+            detection_annotations=detection_annotations,
+            classification_annotations=classification_annotations,
+            **self.config.pipeline_evaluation)
 
         performance = pipeline_monitor.evaluate()
 
         if pipeline_monitor.check_success():
             print("Pipeline performance is satisfactory, exiting")
             return None
-        if self.config.active_learning.gpus > 1:
-            dask_client = start(gpus=self.config.active_learning.gpus, mem_size="70GB")
-        else:
-            dask_client = None
-            
-        test_images_to_annotate, preannotations = choose_test_images(
-            image_dir=self.config.active_testing.image_dir,
-            model=trained_detection_model,
+
+        test_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images)]
+        test_images_to_annotate, preannotations = select_images(
+            predictions=test_pool,
             strategy=self.config.active_testing.strategy,
             n=self.config.active_testing.n_images,
-            patch_size=self.config.active_testing.patch_size,
-            patch_overlap=self.config.active_testing.patch_overlap,
-            min_score=self.config.active_testing.min_score,
-            batch_size=self.config.predict.batch_size,
             comet_logger=self.comet_logger
             )
         
@@ -151,23 +167,11 @@ class Pipeline:
                                     folder_name=self.config.label_studio.folder_name,
                                     preannotations=None)
 
-        # Generate predictions for the training pool
-        training_pool_predictions = generate_pool_predictions(
-            image_dir=self.config.active_learning.image_dir,
-            pool_limit=self.config.active_learning.pool_limit,
-            patch_size=self.config.active_learning.patch_size,
-            patch_overlap=self.config.active_learning.patch_overlap,
-            min_score=self.config.active_learning.min_score,
-            model=trained_detection_model,
-            model_path=detection_checkpoint_path,
-            dask_client=dask_client,
-            batch_size=self.config.predict.batch_size,
-            comet_logger=self.comet_logger,
-            crop_model=trained_classification_model
-        )
+
         self.comet_logger.experiment.log_table(tabular_data=training_pool_predictions, filename="training_pool_predictions.csv")
 
         # Select images to annotate based on the strategy
+        training_pool_predictions = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate)]
         train_images_to_annotate, preannotations = select_images(
             preannotations=training_pool_predictions,
             strategy=self.config.active_learning.strategy,
@@ -186,10 +190,11 @@ class Pipeline:
                                             folder_name=self.config.label_studio.folder_name, 
                                             preannotations=preannotations_list)
         
+        human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]
         confident_predictions, uncertain_predictions = human_review(
             confident_threshold=self.config.pipeline.confidence_threshold,
             min_score=self.config.active_learning.min_score,
-            predictions=training_pool_predictions,
+            predictions=human_review_pool,
         )
 
         self.comet_logger.experiment.log_table(tabular_data=confident_predictions, filename="confident_predictions.csv")
@@ -210,4 +215,4 @@ class Pipeline:
 
         print(f"Images requiring human review: {len(uncertain_predictions)}")
         print(f"Images auto-annotated: {len(confident_predictions)}")
-        self.chosen_uncertain_images = chosen_preannotations
+        self.comet_logger.experiment.log_table(tabular_data=chosen_preannotations, filename="chosen_to_be_human_reviewed.csv") 

@@ -50,12 +50,15 @@ def main(cfg: DictConfig):
     train_df, validation_df = train_test_split(crop_annotations)
     
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
-    preprocess_and_train_classification(
+    trained_model = preprocess_and_train_classification(
         config=cfg,
         train_df=train_df,
         validation_df=validation_df,
         comet_logger=comet_logger
     )
+
+    comet_id = comet_logger.experiment.id
+    trained_model.trainer.save_checkpoint("{comet_id}.ckpt")
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,7 @@ from PIL import Image
 
 from deepforest.model import CropModel
 import torch
+from torch.nn import functional as F
 
 # Local imports
 from src.label_studio import gather_data
@@ -98,17 +99,25 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
             label_count[label_name] += 1
     
     model.trainer.fit(model)
-
-    # Compute confusion matrix and upload to cometml
-    image_dataset = []
+    
+    dl = model.predict_dataloader(model.val_ds)
+    
+    # Iterate over dl and get batched predictions
     y_true = []
     y_predicted = []
-    for index, (image,label) in enumerate(model.val_ds):
-        image_path, label = model.val_ds.imgs[index]
-        original_image = Image.open(image_path)
-        image_dataset += [original_image]
-        y_true += [label]
-        y_predicted += [model(image.unsqueeze(0)).argmax().item()]
+    image_dataset = []
+
+    for batch in dl:
+        images, labels = batch
+        outputs = model(images)
+        _, preds = torch.max(outputs, 1)
+        
+        y_true.extend(labels.cpu().numpy())
+        y_predicted.extend(preds.cpu().numpy())
+        
+        for image in images:
+            image_dataset.append(Image.fromarray(image.permute(1, 2, 0).cpu().numpy().astype('uint8')))
+
     labels = model.val_ds.classes
 
     # Log the confusion matrix to Comet
@@ -183,18 +192,18 @@ def preprocess_and_train_classification(config, train_df=None, validation_df=Non
         model=loaded_model, 
         annotations=train_df, 
         root_dir=config.classification_model.train_image_dir, 
-        save_dir=config.classification_model.crop_image_dir)    
+        save_dir=config.classification_model.train_crop_image_dir)    
     
     preprocess_images(
         model=loaded_model, 
         annotations=validation_df, 
         root_dir=config.classification_model.train_image_dir, 
-        save_dir=config.classification_model.crop_image_dir)
+        save_dir=config.classification_model.val_crop_image_dir)
 
     trained_model = train(
         batch_size=config.classification_model.trainer.batch_size,
-        train_dir=config.classification_model.crop_image_dir,
-        val_dir=config.classification_model.crop_image_dir,
+        train_dir=config.classification_model.train_crop_image_dir,
+        val_dir=config.classification_model.val_crop_image_dir,
         model=loaded_model,
         fast_dev_run=config.classification_model.trainer.fast_dev_run,
         max_epochs=config.classification_model.trainer.max_epochs,

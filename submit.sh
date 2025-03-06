@@ -5,7 +5,7 @@
 #SBATCH --account=ewhite
 #SBATCH --nodes=1                 # Number of MPI ran
 #SBATCH --cpus-per-task=10
-#SBATCH --mem=150GB
+#SBATCH --mem=200GB
 #SBATCH --time=48:00:00       #Time limit hrs:min:sec
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
@@ -16,4 +16,4 @@
 source activate BOEM
 
 cd ~/BOEM/
-srun python main.py check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 debug=True
+srun python main.py check_annotations=True active_learning.pool_limit=1000 active_testing.n_images=10 active_learning.n_images=10 debug=False

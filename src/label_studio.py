@@ -48,12 +48,6 @@ def check_for_new_annotations(sftp_client, url, project_name, csv_dir, images_to
    
    # Move annotated images out of local pool
     if new_annotations is not None:
-        move_images(src_dir=images_to_annotate_dir, dst_dir=annotated_images_dir, annotations=new_annotations)
-        # Get any images from the server that are not in the images_to_annotate_dir
-        for image in new_annotations["image_path"].unique():
-            if not os.path.exists(os.path.join(annotated_images_dir, image)):
-                download_images(sftp_client=sftp_client, image_names=[image], folder_name=folder_name, local_image_dir=annotated_images_dir)
-        
         delete_completed_tasks(label_studio_project=label_studio_project)
     
     else:

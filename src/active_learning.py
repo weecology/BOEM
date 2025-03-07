@@ -64,7 +64,8 @@ def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_
         pass
 
     preannotations = detection.predict(m=model, model_path=model_path, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, batch_size=batch_size, crop_model=crop_model)
-
+    preannotations = pd.concat(preannotations)
+    
     # Print the number of preannotations before removing min score
     preannotations = preannotations[preannotations["score"] >= min_score]
 

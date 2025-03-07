@@ -10,8 +10,8 @@
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
 #SBATCH --partition=gpu
-#SBATCH --ntasks-per-node=2
-#SBATCH --gpus=2
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus=1
 
 source activate BOEM
 

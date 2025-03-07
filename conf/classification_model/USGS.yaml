@@ -1,6 +1,5 @@
-checkpoint: 
+checkpoint:
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/
-train_csv_folder: 
 train_image_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops/
 train_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 val_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/val

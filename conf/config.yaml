@@ -38,7 +38,7 @@ predict:
 pipeline:
   confidence_threshold: 0.9
   limit_empty_frac: 0.01
-  gpus: 2
+  gpus: 1
 
 propagate:
   time_threshold_seconds: 5
@@ -64,12 +64,9 @@ detection_model:
       val_accuracy_interval: 5
 
 pipeline_evaluation:
-  detect_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
-  classify_ground_truth_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
   # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
   detection_true_positive_threshold: 0.8
   classification_avg_score: 0.5
-  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27

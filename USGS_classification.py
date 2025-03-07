@@ -58,7 +58,7 @@ def main(cfg: DictConfig):
     )
 
     comet_id = comet_logger.experiment.id
-    trained_model.trainer.save_checkpoint("{comet_id}.ckpt")
+    trained_model.trainer.save_checkpoint(f"{comet_id}.ckpt")
 
 if __name__ == "__main__":
     main()

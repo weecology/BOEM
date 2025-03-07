@@ -12,6 +12,7 @@ from src.pipeline_evaluation import PipelineEvaluation
 from src.cluster import start
 from pytorch_lightning.loggers import CometLogger
 import glob
+import pandas as pd
 
 class Pipeline:
     """Pipeline for training and evaluating a detection and classification model"""
@@ -79,25 +80,33 @@ class Pipeline:
 
         if self.config.force_training:
             trained_detection_model = detection.preprocess_and_train(self.config, comet_logger=self.comet_logger)
-            detection_checkpoint_path = self.save_model(trained_detection_model,
-                            self.config.detection_model.checkpoint_dir)
-
-            trained_classification_model = classification.preprocess_and_train_classification(self.config, comet_logger=self.comet_logger)            
-            classification_checkpoint_path = self.save_model(trained_classification_model, self.config.classification_model.checkpoint_dir)      
             
-            self.comet_logger.experiment.log_asset(file_data=detection_checkpoint_path)
-            self.comet_logger.experiment.log_asset(file_data=classification_checkpoint_path)
+            # Remove the empty frames and object only labels
+            classification_train = self.existing_training[~self.existing_training.label.isin(["FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal"])]
+            classification_val = self.existing_validation[~self.existing_validation.label.isin(["FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal"])]
+            
+            classification_train = classification_train[classification_train.xmin != 0]
+            classification_val = classification_val[classification_val.xmin != 0]
+            
+            trained_classification_model = classification.preprocess_and_train(
+                train_df=classification_train,
+                validation_df=classification_val,
+                **self.config.classification_model,
+                comet_logger=self.comet_logger)            
 
         else:
-            detection_checkpoint_path = self.config.detection_model.checkpoint
             trained_detection_model = detection.load(checkpoint = self.config.detection_model.checkpoint)
-            
-            if self.config.classification_model.checkpoint is not None:
-                trained_classification_model = classification.load(
-                    self.config.classification_model.checkpoint, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=None)
-            else:
-                trained_classification_model = classification.load(
-                    checkpoint = None, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=annotations)
+            trained_classification_model = classification.load(
+                self.config.classification_model.checkpoint, checkpoint_dir=self.config.classification_model.checkpoint_dir, annotations=self.existing_traiing)
+                
+        if not os.path.exists(detection_checkpoint_path):
+            detection_checkpoint_path = self.save_model(trained_detection_model, self.config.detection_model.checkpoint_dir)
+        
+        if not os.path.exists(self.config.detection_model.checkpoint_dir):
+            classification_checkpoint_path = self.save_model(trained_classification_model, self.config.classification_model.checkpoint_dir)      
+
+        self.comet_logger.experiment.log_asset(file_data=detection_checkpoint_path)
+        self.comet_logger.experiment.log_asset(file_data=classification_checkpoint_path)
 
         if self.config.pipeline.gpus > 1:
             dask_client = start(gpus=self.config.pipeline.gpus, mem_size="70GB")
@@ -118,7 +127,7 @@ class Pipeline:
             crop_model=trained_classification_model
         )
 
-        if self.pipeline.debug:
+        if self.config.debug:
             # To be a minimum images to debug the pipeline, get the first 5 evaluation images
             image_paths = [os.path.join(self.config.active_learning.image_dir, x) for x in self.existing_validation.image_path.head().tolist()]
             evaluation_predictions = detection.predict(
@@ -131,16 +140,16 @@ class Pipeline:
                 patch_overlap=self.config.active_learning.patch_overlap,
                 batch_size=self.config.predict.batch_size
             )
+            evaluation_predictions = pd.concat(evaluation_predictions)
+
         else:
             evaluation_predictions = flightline_predictions[flightline_predictions.image_path.isin(self.existing_validation.image_path)]
         
         detection_annotations = self.existing_validation
         classification_annotations = self.existing_training.copy(deep=True)
-        classification_annotations["label"] = classification_annotations["cropmodel_label"]
 
         pipeline_monitor = PipelineEvaluation(
             predictions=evaluation_predictions,
-            comet_logger=self.comet_logger,
             detection_annotations=detection_annotations,
             classification_annotations=classification_annotations,
             **self.config.pipeline_evaluation)
@@ -216,3 +225,13 @@ class Pipeline:
         print(f"Images requiring human review: {len(uncertain_predictions)}")
         print(f"Images auto-annotated: {len(confident_predictions)}")
         self.comet_logger.experiment.log_table(tabular_data=chosen_preannotations, filename="chosen_to_be_human_reviewed.csv") 
+
+        # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
+        final_predictions = flightline_predictions.copy(deep=True)
+        final_predictions["set"] = "prediction"
+        for dataset, label in [("existing_training", "train"), ("existing_validation", "validation"), ("existing_reviewed", "review")]:
+            final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "cropmodel_label"] = getattr(self, dataset)["label"]
+            final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "score"] = None
+            final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "set"] = label
+
+        self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")

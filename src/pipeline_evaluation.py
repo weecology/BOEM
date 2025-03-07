@@ -11,21 +11,18 @@ import geopandas as gpd
 import os
 
 class PipelineEvaluation:
-    def __init__(self, predictions, detection_annotations, classification_annotations, comet_logger, detection_true_positive_threshold=0.85, classification_avg_score=0.5):
+    def __init__(self, predictions, detection_annotations, classification_annotations, detection_true_positive_threshold=0.85, classification_avg_score=0.5):
         """Initialize pipeline evaluation.
         
         Args:
             detect_ground_truth_dir (str): Directory containing detection ground truth annotation CSV files
             predictions: DataFrame containing the predictions
-            classify_ground_truth_dir (str): Directory containing confident classification ground truth annotation CSV files
             detection_true_positive_threshold (float): IoU threshold for considering a detection a true positive
-            comet_logger: CometLogger object for logging
             classification_threshold (float): Threshold for classification confidence score
 
         """
         self.detection_true_positive_threshold = detection_true_positive_threshold 
         self.classification_avg_score = classification_avg_score
-        self.comet_logger = comet_logger
         self.predictions = predictions
         self.detection_annotations = detection_annotations
         self.classification_annotations = classification_annotations
@@ -63,7 +60,6 @@ class PipelineEvaluation:
         return targets
 
     def split_predictions(self):
-
         # Split into confident and uncertain based on average score
         average_score = self.predictions.groupby("image_path").apply(lambda x: x["score"].mean())
 
@@ -73,9 +69,6 @@ class PipelineEvaluation:
         # Select the annotations for confident and uncertain
         confident_predictions = self.predictions[self.predictions.image_path.isin(confident_images)]
         uncertain_predictions = self.predictions[~ self.predictions.image_path.isin(confident_images)]
-
-        self.comet_logger.experiment.log_table("validation_confident_predictions", confident_predictions)
-        self.comet_logger.experiment.log_table("validation_uncertain_predictions", uncertain_predictions)
 
         return confident_predictions, uncertain_predictions
     
@@ -177,7 +170,7 @@ class PipelineEvaluation:
     
     def evaluate_detection(self):
         """Evaluate detection performance"""
-        detection_predictions = self.predictions[self.predictions.isin(self.detection_validation_images)]
+        detection_predictions = self.predictions[self.predictions.image_path.isin(self.detection_annotations.image_path)]
         combined_predictions = gpd.GeoDataFrame(pd.concat(detection_predictions))
 
         # When you concat geodataframes, you get pandas dataframes

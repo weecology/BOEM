@@ -1,6 +1,5 @@
-checkpoint: 
+checkpoint: c1d69941aa5a4308bf1a75fda12ac6ec
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
-train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train
 train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train
 val_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/val

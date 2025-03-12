@@ -3,8 +3,8 @@ import os
 from omegaconf import DictConfig
 from src.pipeline import Pipeline
 from src.label_studio import get_api_key
+import cProfile
 
-@hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     """Main entry point for the application"""
     api_key = get_api_key()
@@ -17,5 +17,12 @@ def main(cfg: DictConfig):
     pipeline = Pipeline(cfg=cfg)
     results = pipeline.run()
 
+@hydra.main(config_path="conf", config_name="config")
+def application(cfg):
+    main(cfg)
+
 if __name__ == "__main__":
-    main()
+    profiler = cProfile.Profile()
+    profiler.run('application()')
+    profiler.dump_stats("profile_output.prof")
+    #main()

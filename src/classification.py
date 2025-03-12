@@ -1,64 +1,48 @@
 import os
 import glob
-import warnings
 from PIL import Image
 
 from deepforest.model import CropModel
 import torch
 from torch.nn import functional as F
 
-def get_latest_checkpoint(checkpoint_dir, annotations, lr=0.0001, num_classes=None):
+def get_latest_checkpoint(checkpoint_dir, num_classes):
     #Get model with latest checkpoint dir, if none exist make a new model
     if os.path.exists(checkpoint_dir):
         checkpoints = glob.glob(os.path.join(checkpoint_dir,"*.ckpt"))
         if len(checkpoints) > 0:
             checkpoints.sort()
             checkpoint = checkpoints[-1]
-            try:
-                m = CropModel.load_from_checkpoint(checkpoint)
-            except Exception as e:
-                warnings.warn("Could not load model from checkpoint, {}".format(e))
-                if num_classes:
-                    m = CropModel(num_classes=num_classes, lr=lr)
-                else:
-                    m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
+            m = CropModel.load_from_checkpoint(checkpoint, num_classes=num_classes)
+            return m
         else:
-            warnings.warn("No checkpoints found in {}".format(checkpoint_dir))
-            if num_classes:
-                m = CropModel(num_classes=num_classes, lr=lr)
-            else:
-                m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
+            return None
     else:
-        os.makedirs(checkpoint_dir)
-        if num_classes:
-            m = CropModel(num_classes=num_classes, lr=lr)
-        else:
-            m = CropModel(num_classes=len(annotations["label"].unique()), lr=lr)
+        return None
 
-    return m
-
-def load(checkpoint=None, annotations=None, checkpoint_dir=None, num_classes=None):
+def load(checkpoint=None, annotations=None, checkpoint_dir=None, num_classes=None, checkpoint_num_classes=None, checkpoint_train_dir=None):
     if checkpoint: 
-        loaded_model = CropModel.load_from_checkpoint(checkpoint)
+        loaded_model = CropModel.load_from_checkpoint(
+            checkpoint,
+            num_classes=checkpoint_num_classes)
         num_classes = loaded_model.num_classes
+        # This is a workaround for a bug in Deepforest, where the class_to_idx is not saved in the checkpoint
+        loaded_model.load_from_disk(train_dir=checkpoint_train_dir, val_dir=checkpoint_train_dir)
+        loaded_model.label_dict = loaded_model.train_ds.class_to_idx
+        loaded_model.numeric_to_label_dict = {v: k for k, v in loaded_model.train_ds.class_to_idx.items()}
+
     elif checkpoint_dir:
             loaded_model = get_latest_checkpoint(
-                checkpoint_dir,
-                num_classes=num_classes,
-                annotations=annotations)
+                num_classes = checkpoint_num_classes,
+                checkpoint_dir=checkpoint_dir)
+
+            if loaded_model is None:
+                loaded_model = CropModel(num_classes=num_classes)
             num_classes = loaded_model.num_classes
     else:
         loaded_model = CropModel(num_classes=num_classes)
     
-    if annotations is not None:
-        if annotations.label.unique().tolist() != num_classes:
-            finetune_model = CropModel(num_classes=len(annotations.label.unique()))
-
-            # Strip the last layer off the checkout model and replace with new layer
-            num_ftrs = loaded_model.model.fc.in_features
-            loaded_model.model.fc = torch.nn.Linear(num_ftrs, len(annotations["label"].unique()))
-            finetune_model.model = loaded_model.model
-            loaded_model = finetune_model
+    loaded_model.create_trainer()
 
     return loaded_model
 
@@ -84,17 +68,30 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
     devices = torch.cuda.device_count()
     model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices)
 
-    # Get the data stored from the write_crops processing.
+    classes_in_checkpoint = model.label_dict.keys()
     model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
-    
-    model.label_dict = model.train_ds.class_to_idx
-    model.numeric_to_label = {v: k for k, v in model.train_ds.class_to_idx.items()}
+    classes_in_new_data = model.train_ds.class_to_idx.keys()
+
+    # If there are new classes in the training data, update the model
+    if set(classes_in_new_data) != set(classes_in_checkpoint):
+        combined_classes = set(classes_in_new_data).union(set(classes_in_checkpoint))
+        finetune_model = CropModel(num_classes=len(combined_classes))
+
+        # Strip the last layer off the checkout model and replace with new layer
+        num_ftrs = model.model.fc.in_features
+        model.model.fc = torch.nn.Linear(num_ftrs, len(combined_classes))
+        finetune_model.model = model.model
+
+        finetune_model.label_dict = model.train_ds.class_to_idx
+        finetune_model.numeric_to_label_dict = {v: k for k, v in model.train_ds.class_to_idx.items()}
+    else:
+        finetune_model = model
 
     # Log the validation dataset images, max 10 per class
     label_count = {}
-    numeric_to_label = {v: k for k, v in model.val_ds.class_to_idx.items()}
+    numeric_to_label_dict = {v: k for k, v in model.val_ds.class_to_idx.items()}
     for image_path, label in model.val_ds.imgs:
-        label_name =numeric_to_label[label]
+        label_name =numeric_to_label_dict[label]
         if label_name not in label_count:
             label_count[label_name] = 0
         if label_count[label_name] < 10:
@@ -103,9 +100,10 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
                 comet_logger.experiment.log_image(image_path, name=f"{label_name}_{image_name}")
             label_count[label_name] += 1
     
-    model.trainer.fit(model)
+    # If rank 0, set the if model.trainer.global_rank == 0:
+    finetune_model.trainer.fit(finetune_model)
     
-    dl = model.predict_dataloader(model.val_ds)
+    dl = finetune_model.predict_dataloader(finetune_model.val_ds)
     
     # Iterate over dl and get batched predictions
     y_true = []
@@ -114,14 +112,14 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
 
     for batch in dl:
         images, labels = batch
-        outputs = model(images)
+        outputs = finetune_model(images)
         _, preds = torch.max(outputs, 1)
         
         y_true.extend(labels.cpu().numpy())
         y_predicted.extend(preds.cpu().numpy())
         
-    labels = model.val_ds.classes
-    images = [model.val_ds.imgs[i][0] for i in range(len(model.val_ds.imgs))]
+    labels = finetune_model.val_ds.classes
+    images = [finetune_model.val_ds.imgs[i][0] for i in range(len(finetune_model.val_ds.imgs))]
     image_dataset = [Image.open(image) for image in images]
 
     # Log the confusion matrix to Comet
@@ -133,7 +131,7 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
             labels=labels,
         )
 
-    return model
+    return finetune_model
 
 def preprocess_images(model, annotations, root_dir, save_dir):
     # Remove any annotations with empty boxes
@@ -161,18 +159,21 @@ def preprocess_and_train(
     checkpoint_dir,
     train_image_dir,
     train_crop_image_dir,
-    val_crop_image_dir,
+    val_crop_image_dir, 
     lr=0.0001,
     batch_size=4,
     fast_dev_run=False,
     max_epochs=10,
     workers=0,
-    comet_logger=None
+    comet_logger=None,
+    checkpoint_num_classes=None,
+    checkpoint_train_dir=None
 ):
     """Preprocess data and train a crop model.
     
     Args:
         checkpoint (str): Path to the checkpoint file.
+        checkpoint_num_classes (int): Number of classes in the checkpoint model. To be removed in DeepForest 1.6
         checkpoint_dir (str): Directory containing checkpoint files.
         image_dir (str): Directory containing images to be cropped.
         train_crop_image_dir (str): Directory to save cropped training images.
@@ -184,11 +185,17 @@ def preprocess_and_train(
         workers (int): Number of workers for data loading.
         train_df (pd.DataFrame): DataFrame containing training annotations.
         validation_df (pd.DataFrame): DataFrame containing validation annotations.
+        checkpoint_train_dir: Directory containing training images for the checkpoint model.
         comet_logger: CometLogger object for logging experiments.
         
     Returns:
         trained_model: Trained model object.
     """
+
+    if checkpoint:
+        if checkpoint_num_classes is None:
+            raise ValueError("checkpoint_num_classes must be provided if checkpoint is passed.")
+    
     # Get and split annotations
     num_classes = len(train_df["label"].unique())
 
@@ -198,6 +205,8 @@ def preprocess_and_train(
             checkpoint=checkpoint,
             checkpoint_dir=checkpoint_dir,
             num_classes=num_classes,
+            checkpoint_train_dir=checkpoint_train_dir,
+            checkpoint_num_classes=checkpoint_num_classes,
         )
         return loaded_model
         
@@ -207,12 +216,10 @@ def preprocess_and_train(
         checkpoint_dir=checkpoint_dir,
         annotations=train_df,
         num_classes=num_classes,
+        checkpoint_num_classes=checkpoint_num_classes,
+        checkpoint_train_dir=checkpoint_train_dir,
     )
 
-    if train_df.empty:
-        print("No annotations found.")
-        return loaded_model
-    
     # Preprocess train and validation data
     preprocess_images(
         model=loaded_model, 
@@ -230,6 +237,7 @@ def preprocess_and_train(
 
     trained_model = train(
         batch_size=batch_size,
+        lr=lr,
         train_dir=train_crop_image_dir,
         val_dir=val_crop_image_dir,
         model=loaded_model,

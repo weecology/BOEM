@@ -16,7 +16,6 @@ import torch
 
 # Local imports
 from src import data_processing
-from src.label_studio import gather_data
 from omegaconf import OmegaConf
 
 def evaluate(model, test_csv, image_root_dir):
@@ -139,10 +138,6 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
     """
     tmpdir = tempfile.gettempdir()
 
-   # Fix taxonomy
-    train_annotations = fix_taxonomy(train_annotations)
-    test_annotations = fix_taxonomy(test_annotations)
-
     train_annotations.to_csv(os.path.join(tmpdir,"train.csv"), index=False)
     test_annotations.to_csv(os.path.join(tmpdir,"test.csv"), index=False)
 
@@ -165,83 +160,87 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
 
     devices = torch.cuda.device_count()
     strategy = "ddp" if devices > 1 else "auto"
-    comet_logger.experiment.log_parameters(model.config)
-    comet_logger.experiment.log_table("train.csv", train_annotations)
-    comet_logger.experiment.log_table("test.csv", test_annotations)
+    if comet_logger:
+        comet_logger.experiment.log_parameters(model.config)
+        comet_logger.experiment.log_table("train.csv", train_annotations)
+        comet_logger.experiment.log_table("test.csv", test_annotations)
+        
     model.create_trainer(logger=comet_logger, num_nodes=1, accelerator="gpu", strategy=strategy, devices=devices)
 
     non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
-    # Sanity check for debug
-    n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
-    for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
-        sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
-        sample_train_annotations_for_image.root_dir = train_image_dir
-        visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
-        comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'train_images'})
+    
+    # Skip for fast_dev run
+    if not model.trainer.fast_dev_run:
+        if comet_logger:
+            n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
+            for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
+                sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
+                sample_train_annotations_for_image.root_dir = train_image_dir
+                visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
+                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'train_images'})
 
-    non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
-    n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
-    for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
-        sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
-        sample_validation_annotations_for_image.root_dir = train_image_dir
-        visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
-        comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'validation_images'})
+            non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
+            n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
+            for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
+                sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
+                sample_validation_annotations_for_image.root_dir = train_image_dir
+                visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
+                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'validation_images'})
 
     model.trainer.fit(model)
 
-    for image_path in test_annotations.image_path.unique():
-        prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
-        if prediction is None:
-            continue
-        visualize.plot_results(prediction, savedir=tmpdir)
-        comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
+    if not model.trainer.fast_dev_run:
+        for image_path in test_annotations.head().image_path.unique():
+            prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
+            if prediction is None:
+                continue
+            visualize.plot_results(prediction, savedir=tmpdir)
+            comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
 
     return model
 
-def fix_taxonomy(df):
-    df["label"] = "Object"
-
-    return df
-
-def preprocess_and_train(config, comet_logger=None):
+def preprocess_and_train(train_annotations, validation_annotations, train_image_dir, crop_image_dir, patch_size, patch_overlap, limit_empty_frac, checkpoint, checkpoint_dir, trainer_config, comet_logger=None):
     """Preprocess data and train model.
     
     Args:
-        config: Configuration object containing training parameters
+        train_annotations: DataFrame containing training annotations
+        validation_annotations: DataFrame containing validation annotations
+        train_image_dir: Directory containing training images
+        crop_image_dir: Directory to save cropped images
+        patch_size: Size of the patches for preprocessing
+        patch_overlap: Overlap between patches for preprocessing
+        limit_empty_frac: Fraction to limit empty frames
+        checkpoint: Path to model checkpoint
+        checkpoint_dir: Directory containing model checkpoints
+        trainer_config: Configuration dictionary for training parameters
         comet_logger: CometLogger instance for logging.
     Returns:
         trained_model: Trained model object
     """
-    # Get and split annotations
-    train_df = gather_data(config.detection_model.train_csv_folder)
-    validation = gather_data(config.label_studio.csv_dir_validation)
-
-    if config.detection_model.limit_empty_frac > 0:
-        validation = limit_empty_frames(validation, config.detection_model.limit_empty_frac)
+    if limit_empty_frac > 0:
+        validation_annotations = limit_empty_frames(validation_annotations, limit_empty_frac)
     
-    validation.loc[validation.label==0,"label"] = "Object"
+    validation_annotations.loc[validation_annotations.label==0,"label"] = "Object"
 
     # Remove the empty frames, using hard mining instead
-    train_df = train_df[~(train_df.label.astype(str)== "0")]
+    train_annotations = train_annotations[~(train_annotations.label.astype(str)== "0")]
 
     # Preprocess train and validation data
-    train_df = data_processing.preprocess_images(train_df,
-                               root_dir=config.detection_model.train_image_dir,
-                               save_dir=config.detection_model.crop_image_dir,
-                               patch_size=config.predict.patch_size,
-                               patch_overlap=config.predict.patch_overlap)
+    train_df = data_processing.preprocess_images(train_annotations,
+                               root_dir=train_image_dir,
+                               save_dir=crop_image_dir,
+                               patch_size=patch_size,
+                               patch_overlap=patch_overlap)
     
-    non_empty = train_df[train_df.xmin!=0]
-
     train_df.loc[train_df.label==0,"label"] = "Object"
-    validation.loc[validation.label==0,"label"] = "Object"
+    validation_annotations.loc[validation_annotations.label==0,"label"] = "Object"
 
-    if not validation.empty:
-        validation_df = data_processing.preprocess_images(validation,
-                                    root_dir=config.detection_model.train_image_dir,
-                                    save_dir=config.detection_model.crop_image_dir,
-                                    patch_size=config.predict.patch_size,
-                                    patch_overlap=config.predict.patch_overlap,
+    if not validation_annotations.empty:
+        validation_df = data_processing.preprocess_images(validation_annotations,
+                                    root_dir=train_image_dir,
+                                    save_dir=crop_image_dir,
+                                    patch_size=patch_size,
+                                    patch_overlap=patch_overlap,
                                     allow_empty=True
                                     )
         validation_df.loc[validation_df.label==0,"label"] = "Object"
@@ -256,43 +255,42 @@ def preprocess_and_train(config, comet_logger=None):
     train_df["label"] = "Object"
 
     # Load existing model
-    if config.detection_model.checkpoint:
-        loaded_model = load(config.detection_model.checkpoint, annotations=train_df)
-    elif os.path.exists(config.detection_model.checkpoint_dir):
-        loaded_model = get_latest_checkpoint(config.detection_model.checkpoint_dir, train_df)
+    if checkpoint:
+        loaded_model = load(checkpoint)
+    elif os.path.exists(checkpoint_dir):
+        loaded_model = get_latest_checkpoint(checkpoint_dir)
+        if loaded_model is None:
+            label_dict = {value: index for index, value in enumerate(train_df.label.unique())}
+            loaded_model = main.deepforest(label_dict=label_dict)
     else:
-        raise ValueError("No checkpoint or checkpoint directory found.")
+        label_dict = {value: index for index, value in enumerate(train_df.label.unique())}
+        loaded_model = main.deepforest(label_dict=label_dict)
 
     # Assert no FalsePositive label in train
     assert "FalsePositive" not in train_df.label.unique(), "FalsePositive label found in training data."
 
     trained_model = train(train_annotations=train_df,
                             test_annotations=validation_df,
-                            train_image_dir=config.detection_model.crop_image_dir,
+                            train_image_dir=crop_image_dir,
                             model=loaded_model,
                             comet_logger=comet_logger,
-                            config_args=config.detection_model.trainer)
+                            config_args=trainer_config)
 
     return trained_model
 
-def get_latest_checkpoint(checkpoint_dir, annotations):
+def get_latest_checkpoint(checkpoint_dir):
     #Get model with latest checkpoint dir, if none exist make a new model
     if os.path.exists(checkpoint_dir):
         checkpoints = glob.glob(os.path.join(checkpoint_dir,"*.ckpt"))
         if len(checkpoints) > 0:
             checkpoints.sort()
             checkpoint = checkpoints[-1]
-            m = load(checkpoint)
+            m = main.load_from_checkpoint(checkpoint)
+            return m
         else:
-            warn("No checkpoints found in {}".format(checkpoint_dir))
-            label_dict = {value: index for index, value in enumerate(annotations.label.unique())}
-            m = main.deepforest(label_dict=label_dict)
+            return None
     else:
-        os.makedirs(checkpoint_dir)
-        label_dict = {value: index for index, value in enumerate(annotations.label.unique())}
-        m = main.deepforest(label_dict=label_dict)
-
-    return m
+        return None
 
 def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None, batch_size=16):
     if model_path:
@@ -307,7 +305,9 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
     for image_path in image_paths:
         prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
         if prediction is None:
-            prediction = pd.DataFrame({"image_path": image_path, "xmin": [None], "ymin": [None], "xmax": [None], "ymax": [None], "label": [None], "score": [None]})
+            prediction = pd.DataFrame(
+                {"image_path": image_path,
+                  "xmin": [None], "ymin": [None], "xmax": [None], "ymax": [None], "label": [None], "score": [None],"geometry": [None],"cropmodel_score": [None],"cropmodel_label": [None]})
         predictions.append(prediction)
 
     return predictions

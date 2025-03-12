@@ -6,6 +6,7 @@ from label_studio_sdk import Client
 import glob
 import shutil
 from PIL import Image
+from deepforest.utilities import read_file
 
 def upload_to_label_studio(images, sftp_client, url, project_name, images_to_annotate_dir, folder_name, preannotations):
     """
@@ -27,18 +28,15 @@ def upload_to_label_studio(images, sftp_client, url, project_name, images_to_ann
     upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
     import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
 
-def check_for_new_annotations(sftp_client, url, project_name, csv_dir, images_to_annotate_dir, annotated_images_dir, folder_name):
+def check_for_new_annotations(url, project_name, csv_dir, image_dir):
     """
     Check for new annotations from Label Studio, move annotated images, and gather new images to annotate.
 
     Args:
-        sftp_client (paramiko.SFTPClient): The SFTP client for downloading images.
         url (str): The URL of the Label Studio server.
         project_name (str): The name of the Label Studio project.
         csv_dir (str): The path to the folder containing CSV files.
-        images_to_annotate_dir (str): The path to the directory of images to annotate.
-        annotated_images_dir (str): The path to the directory of annotated images.
-        folder_name (str): The name of the folder to upload images to.
+        image_dir (str): The path to the folder containing images.
 
     Returns:
         DataFrame: A DataFrame containing the gathered annotations.
@@ -55,7 +53,7 @@ def check_for_new_annotations(sftp_client, url, project_name, csv_dir, images_to
         return None
 
     # Choose new images to annotate
-    label_studio_annotations = gather_data(csv_dir)
+    label_studio_annotations = gather_data(csv_dir, image_dir)
 
     return label_studio_annotations
  
@@ -68,7 +66,8 @@ def label_studio_bbox_format(local_image_dir, preannotations):
     original_height = Image.open(os.path.join(local_image_dir,os.path.basename(preannotations.image_path.unique()[0]))).size[1]
 
     for index, row in preannotations.iterrows():
-        result = {
+        region_id = "region" + str(index)
+        box_result = {
             "value":{
                 "x": row['xmin']/original_width*100,
                 "y": row['ymin']/original_height*100,
@@ -77,6 +76,7 @@ def label_studio_bbox_format(local_image_dir, preannotations):
                 "rotation": 0,
                 "rectanglelabels": [row["label"]]
             },
+            'id': region_id,
             "score": row["score"],
             "to_name": "image",
             "type": "rectanglelabels",
@@ -84,7 +84,21 @@ def label_studio_bbox_format(local_image_dir, preannotations):
             "original_width": original_width,
             "original_height": original_height
         }
-        predictions.append(result)
+        predictions.append(box_result)
+
+        class_results = {
+            "value":{
+                "taxonomy": [[row["cropmodel_label"]]]
+            },
+            'id': region_id,
+            "to_name": "image",
+            "type": "taxonomy",
+            "from_name": "taxonomy",
+            "original_width": original_width,
+            "original_height": original_height
+        }            
+        predictions.append(class_results)
+    
     # As a dict
     return {"result": predictions}
 
@@ -112,7 +126,11 @@ def convert_json_to_dataframe(x):
         ymin = annotation["value"]["y"]/100 * annotation["original_height"]
         xmax = (annotation["value"]["width"]/100 + annotation["value"]["x"]/100 ) * annotation["original_width"]
         ymax = (annotation["value"]["height"]/100 + annotation["value"]["y"]/100) * annotation["original_height"]
-        label = annotation["value"]["rectanglelabels"][0]
+        
+        if "taxonomy" in annotation["value"]:
+            label = annotation["value"]["taxonomy"][0][0]
+        else:
+            label = annotation["value"]["rectanglelabels"][0]
 
         # Create dictionary
         result = {
@@ -125,7 +143,11 @@ def convert_json_to_dataframe(x):
 
         # Append to list
         results.append(result)
+
     df = pd.DataFrame(results)
+
+    # Drop the 'Object' labels for the taxonomy row
+    df = df[~(df.label == "Object")]
         
     return df
         
@@ -149,10 +171,11 @@ def move_images(annotations, src_dir, dst_dir):
         except FileNotFoundError:
             continue
 
-def gather_data(annotation_dir):
+def gather_data(annotation_dir, image_dir):
     """Gather data from a directory of CSV files.
     Args:
         annotation_dir (str): The directory containing the CSV files.
+        image_dir: Location of images on disk
     
     Returns:
         pd.DataFrame: A DataFrame containing the data.
@@ -168,6 +191,8 @@ def gather_data(annotation_dir):
     df.drop_duplicates(inplace=True)
     df.reset_index(drop=True, inplace=True)
     
+    df = read_file(df, image_dir)
+
     return df
 
 def get_api_key():

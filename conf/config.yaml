@@ -33,7 +33,7 @@ predict:
   patch_size: 1000
   patch_overlap: 0
   min_score: 0.4
-  batch_size: 32
+  batch_size: 28
 
 pipeline:
   confidence_threshold: 0.9
@@ -47,8 +47,8 @@ propagate:
 detection_model:
   checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/d3a74b0852df4d3ba9a6503660fcc9f1.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
-  train_csv_folder: /blue/ewhite/b.weinstein/BOEM/annotations/train/
-  train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27/annotated
+  patch_size: 1000
+  patch_overlap: 0
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
   limit_empty_frac: 0.01
   labels:
@@ -66,7 +66,7 @@ detection_model:
 pipeline_evaluation:
   # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
   detection_true_positive_threshold: 0.8
-  classification_avg_score: 0.5
+  classification_threshold: 0.5
 
 active_learning:
   image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
@@ -74,7 +74,7 @@ active_learning:
   n_images: 50
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0.2
+  min_score: 0.7
   model_checkpoint:
   target_labels:
     - "Object"
@@ -91,7 +91,7 @@ active_testing:
   m: 
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0.2
+  min_score: 0.5
 
 human_review: 
   n: 10

@@ -1,13 +1,12 @@
-checkpoint: c1d69941aa5a4308bf1a75fda12ac6ec
+checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/d004bf3171c74f47977de4746a60de6f.ckpt
+checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
+checkpoint_num_classes: 40
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
 train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train
 val_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/val
-
-under_sample_ratio: 0
-trainer:
-  fast_dev_run: False
-  max_epochs: 10
-  lr: 0.00001
-  batch_size: 16
-  workers: 10
+fast_dev_run: False
+max_epochs: 10
+lr: 0.00001
+batch_size: 16
+workers: 10

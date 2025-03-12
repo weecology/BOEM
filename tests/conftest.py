@@ -13,25 +13,27 @@ def config(tmpdir_factory):
     with initialize(version_base=None, config_path="../conf"):
         cfg = compose(config_name="config", overrides=["classification_model=USGS"])
 
+    # Label studio instances
+    cfg.label_studio.instances.validation.csv_dir = tmpdir_factory.mktemp("validation_csvs").strpath
+    cfg.label_studio.instances.train.csv_dir = tmpdir_factory.mktemp("train_csvs").strpath
+    cfg.label_studio.instances.review.csv_dir = tmpdir_factory.mktemp("review_csvs").strpath
+
     # Detection model
-    cfg.detection_model.train_csv_folder = tmpdir_factory.mktemp("train_csvs").strpath
-    cfg.label_studio.instances.validation.csv_dir = tmpdir_factory.mktemp("test_csvs").strpath
-    cfg.detection_model.train_image_dir = tmpdir_factory.mktemp("images").strpath
     cfg.detection_model.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
-    cfg.pipeline_evaluation.image_dir = cfg.detection_model.train_image_dir
     cfg.detection_model.trainer.train.fast_dev_run = True
+    cfg.detection_model.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
+    cfg.detection_model.checkpoint = "bird"
 
     # Classification model
-    cfg.classification_model.train_csv_folder = tmpdir_factory.mktemp("csvs").strpath
-    cfg.classification_model.train_image_dir = tmpdir_factory.mktemp("images").strpath
-    cfg.classification_model.crop_image_dir = tmpdir_factory.mktemp("crops").strpath
+    cfg.classification_model.train_crop_image_dir = tmpdir_factory.mktemp("crops").strpath
+    cfg.classification_model.val_crop_image_dir = tmpdir_factory.mktemp("crops").strpath
     cfg.classification_model.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
+    cfg.classification_model.fast_dev_run = True
 
     # Put images from tests/data into the image directory
     for f in os.listdir("tests/data/"):
         if f != '.DS_Store':
-            shutil.copy("tests/data/" + f, cfg.detection_model.train_image_dir)
-            shutil.copy("tests/data/" + f, cfg.classification_model.train_image_dir)
+            shutil.copy("tests/data/" + f, cfg.label_studio.images_to_annotate_dir)
 
     # Create sample bounding box annotations
     train_data = {
@@ -70,51 +72,24 @@ def config(tmpdir_factory):
     val_df = pd.DataFrame(val_data)
 
     # Save training data to CSV
-    train_csv_path = os.path.join(cfg.detection_model.train_csv_folder, 'training_data.csv')
+    train_csv_path = os.path.join(cfg.label_studio.instances.train.csv_dir, 'training_data.csv')
     train_df.to_csv(train_csv_path, index=False)
 
     # Save validation data to CSV
     val_csv_path = os.path.join(cfg.label_studio.instances.validation.csv_dir, 'validation.csv')
     val_df.to_csv(val_csv_path, index=False)
 
-    # Save classification training data to CSV
-    train_csv_path = os.path.join(cfg.classification_model.train_csv_folder, 'training_data.csv')
-    classification_train_df = train_df.copy(deep=True)
-    classification_train_df['label'] = classification_train_df['cropmodel_label']
-    classification_train_df.to_csv(train_csv_path, index=False)
-
-    # Save classification validation data to CSV
-    val_csv_path = os.path.join(cfg.classification_model.train_csv_folder, 'validation.csv')
-    classification_val_df = val_df.copy(deep=True)
-    classification_val_df['label'] = classification_val_df['cropmodel_label']
-    classification_val_df.to_csv(val_csv_path, index=False)
-
-    cfg.classification_model.trainer.fast_dev_run = True
-    cfg.detection_model.checkpoint = "bird"
-    cfg.detection_model.checkpoint_dir = tmpdir_factory.mktemp("checkpoints").strpath
-
-    # Create detection annotations
-    cfg.pipeline_evaluation.detect_ground_truth_dir = tmpdir_factory.mktemp("detection_annotations").strpath
-    csv_path = os.path.join(cfg.pipeline_evaluation.detect_ground_truth_dir, 'detection_annotations.csv')
-    val_df.to_csv(csv_path, index=False)
-
-    cfg.label_studio.csv_dir_validation = cfg.pipeline_evaluation.detect_ground_truth_dir
-    csv_path = os.path.join(cfg.pipeline_evaluation.detect_ground_truth_dir, 'validation.csv')
-    val_df.to_csv(csv_path, index=False)
-
-    # Create classification annotations
-    cfg.pipeline_evaluation.classify_ground_truth_dir = tmpdir_factory.mktemp("classification_annotations").strpath
-    csv_path = os.path.join(cfg.pipeline_evaluation.classify_ground_truth_dir, 'classification_annotations.csv')
-    classification_val_df.to_csv(csv_path, index=False)
+    # Save review data to CSV
+    review_csv_path = os.path.join(cfg.label_studio.instances.review.csv_dir, 'review.csv')
+    val_df.to_csv(review_csv_path, index=False)
 
     cfg.pipeline_evaluation.detection_true_positive_threshold = 0.4
+   
     # Active learning
-    cfg.active_learning.image_dir = cfg.detection_model.train_image_dir
-    cfg.active_testing.image_dir = cfg.detection_model.train_image_dir
+    cfg.active_learning.image_dir = cfg.label_studio.images_to_annotate_dir
     cfg.active_learning.n_images = 1
     cfg.active_testing.n_images = 1
     cfg.active_learning.min_score = 0.01
-    cfg.active_learning.gpus = 1
 
     # Labelstudio
     cfg.label_studio.instances.train.project_name = "test_BOEM"

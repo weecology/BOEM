@@ -1,13 +1,11 @@
 checkpoint:
-checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/
+checkpoint_num_classes: 
+checkpoint_dir: 
 train_image_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops/
 train_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 val_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/val
-
-under_sample_ratio: 0
-trainer:
-  fast_dev_run: False
-  max_epochs: 100
-  lr: 0.0001
-  batch_size: 12
-  workers: 12
+fast_dev_run: False
+max_epochs: 100
+lr: 0.0001
+batch_size: 12
+workers: 12

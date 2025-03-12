@@ -87,7 +87,8 @@ def test_preprocess_and_train(sample_annotations, tmp_path):
         fast_dev_run=True,
         max_epochs=1,
         workers=0,
-        comet_logger=comet_logger
+        comet_logger=comet_logger,
+        checkpoint_num_classes=None
     )
     
     # Check if the model is trained
@@ -122,7 +123,8 @@ def test_preprocess_and_train_classification_with_additional_class(sample_annota
         fast_dev_run=True,
         max_epochs=1,
         workers=0,
-        comet_logger=comet_logger
+        comet_logger=comet_logger,
+        checkpoint_num_classes=None
     )
 
     trained_model.trainer.save_checkpoint(f"{checkpoint_dir}/model.ckpt")
@@ -162,7 +164,8 @@ def test_preprocess_and_train_classification_with_additional_class(sample_annota
         fast_dev_run=True,
         max_epochs=1,
         workers=0,
-        comet_logger=comet_logger
+        comet_logger=comet_logger,
+        checkpoint_num_classes=2
     )
     
     # Check if the model is trained and has all classes

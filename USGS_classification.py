@@ -3,9 +3,10 @@ import pandas as pd
 import glob
 import comet_ml
 from pytorch_lightning.loggers import CometLogger
-from src.classification import preprocess_and_train_classification
+from src.classification import preprocess_and_train
 import hydra
 from omegaconf import DictConfig
+import os
 
 # Create train test split, split each class into 90% train and 10% test with a minimum of 10 images per class for test and a max of 100
 def train_test_split(df, test_size=0.1, min_test_images=10, max_test_images=100):
@@ -50,15 +51,19 @@ def main(cfg: DictConfig):
     train_df, validation_df = train_test_split(crop_annotations)
     
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
-    trained_model = preprocess_and_train_classification(
-        config=cfg,
+    trained_model = preprocess_and_train(
         train_df=train_df,
         validation_df=validation_df,
-        comet_logger=comet_logger
+        comet_logger=comet_logger,
+        **cfg.classification_model
     )
 
     comet_id = comet_logger.experiment.id
-    trained_model.trainer.save_checkpoint(f"{comet_id}.ckpt")
+    checkpoint_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/"
+    trained_model.trainer.save_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
+
+    # Confirm it can be loaded
+    confirmed_load = model.CropModel.load_from_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"), num_classes=trained_model.num_classes)
 
 if __name__ == "__main__":
     main()

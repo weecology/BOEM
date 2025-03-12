@@ -11,7 +11,7 @@ import geopandas as gpd
 import os
 
 class PipelineEvaluation:
-    def __init__(self, predictions, detection_annotations, classification_annotations, detection_true_positive_threshold=0.85, classification_avg_score=0.5):
+    def __init__(self, predictions, detection_annotations, classification_annotations, detection_true_positive_threshold=0.85, classification_threshold=0.5):
         """Initialize pipeline evaluation.
         
         Args:
@@ -22,7 +22,7 @@ class PipelineEvaluation:
 
         """
         self.detection_true_positive_threshold = detection_true_positive_threshold 
-        self.classification_avg_score = classification_avg_score
+        self.classification_threshold = classification_threshold 
         self.predictions = predictions
         self.detection_annotations = detection_annotations
         self.classification_annotations = classification_annotations
@@ -37,7 +37,7 @@ class PipelineEvaluation:
         self.confident_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=self.num_classes)
         self.uncertain_classification_accuracy = Accuracy(average="micro", task="multiclass", num_classes=self.num_classes)
 
-    def _format_targets(self, annotations_df):
+    def _format_targets(self, annotations_df, label_column="cropmodel_label"):
         targets = {}
         
         if annotations_df.empty:
@@ -53,22 +53,16 @@ class PipelineEvaluation:
                 targets["scores"] = torch.tensor([])
         else:
             targets["boxes"] = torch.tensor(annotations_df[["xmin", "ymin", "xmax","ymax"]].values.astype("float32"))
-            targets["labels"] = torch.tensor(annotations_df["label"].astype(int).values)
+            targets["labels"] = torch.tensor(annotations_df[label_column].astype(int).values)
             if "score" in annotations_df.columns:
                 targets["scores"] = torch.tensor(annotations_df["score"].tolist())
 
         return targets
 
     def split_predictions(self):
-        # Split into confident and uncertain based on average score
-        average_score = self.predictions.groupby("image_path").apply(lambda x: x["score"].mean())
-
-        # Which images have a score above the average
-        confident_images = average_score[average_score > self.classification_avg_score].index
-
-        # Select the annotations for confident and uncertain
-        confident_predictions = self.predictions[self.predictions.image_path.isin(confident_images)]
-        uncertain_predictions = self.predictions[~ self.predictions.image_path.isin(confident_images)]
+        # Split into confident and uncertain based on classification threshold
+        confident_predictions = self.predictions[self.predictions.cropmodel_score > self.classification_threshold]
+        uncertain_predictions = self.predictions[self.predictions.cropmodel_score <= self.classification_threshold]
 
         return confident_predictions, uncertain_predictions
     
@@ -135,24 +129,13 @@ class PipelineEvaluation:
         """
         for image_path in predictions.drop_duplicates("image_path").image_path.tolist():
             image_targets = self.classification_annotations.loc[self.classification_annotations.image_path == os.path.basename(image_path)]
-            image_predictions = predictions.loc[predictions.image_path == os.path.basename(image_path)]
-            image_predictions = image_predictions[image_predictions.score > self.min_score]
-            
+            image_predictions = predictions.loc[predictions.image_path == os.path.basename(image_path)]            
             if image_predictions.empty:
                 continue
-
-            # Labels as numeric
-            image_targets["label"] = image_targets.label.apply(lambda x: self.classification_model.label_dict[x])
-            if not pd.api.types.is_numeric_dtype(image_targets["label"]):
-                image_targets["label"] = image_targets["label"].apply(lambda x: self.classification_model.label_dict[x])
-            if not pd.api.types.is_numeric_dtype(image_predictions["cropmodel_label"]):
-                image_predictions["label"] = image_predictions["cropmodel_label"].apply(lambda x: self.classification_model.label_dict[x])
-            else:
-                image_predictions["label"] = image_predictions["cropmodel_label"]
             
-            target = self._format_targets(image_targets)
-            pred = self._format_targets(image_predictions)
-            if len(pred["labels"]) == 0:
+            target = self._format_targets(image_targets, label_column="label")
+            pred = self._format_targets(image_predictions, label_column="cropmodel_label")
+            if len(target["labels"]) == 0:
                 continue
             matches = self.match_predictions_and_targets(pred, target)
             if matches.empty:
@@ -164,27 +147,25 @@ class PipelineEvaluation:
                    "avg_score_true_positive": None, 
                    "avg_score_false_positive": None}
         
-        self.comet_logger.experiment.log_metrics(results)
-
         return results
     
     def evaluate_detection(self):
         """Evaluate detection performance"""
         detection_predictions = self.predictions[self.predictions.image_path.isin(self.detection_annotations.image_path)]
-        combined_predictions = gpd.GeoDataFrame(pd.concat(detection_predictions))
+        combined_predictions = gpd.GeoDataFrame(detection_predictions)
 
         # When you concat geodataframes, you get pandas dataframes
         combined_predictions = combined_predictions[~combined_predictions["score"].isna()]
 
         # Check if geometry is string or polygon
-        combined_predictions = read_file(combined_predictions, self.image_dir)
-        ground_truth = read_file(self.detection_annotations, self.image_dir)
+        combined_predictions = combined_predictions
+        ground_truth = self.detection_annotations
 
         iou_results = evaluate_boxes(
             combined_predictions,
             ground_truth,
             iou_threshold=self.detection_true_positive_threshold,
-            root_dir=self.image_dir)
+            root_dir=None)
         
         non_empty_results = iou_results["results"][~iou_results["results"]["score"].isna()]
         if non_empty_results.empty:
@@ -196,9 +177,6 @@ class PipelineEvaluation:
             avg_score_false_positive = non_empty_results.loc[~non_empty_results["match"]].score.mean()
         
         results = {"recall": iou_results["box_recall"], "precision": iou_results["box_precision"], "avg_score_true_positive": avg_score_true_positive, "avg_score_false_positive": avg_score_false_positive}
-
-        with self.comet_logger.experiment.context_manager("detection"):
-            self.comet_logger.experiment.log_metrics(results)
 
         return results
 

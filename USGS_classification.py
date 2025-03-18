@@ -7,6 +7,7 @@ from src.classification import preprocess_and_train
 import hydra
 from omegaconf import DictConfig
 import os
+import torch.nn.functional as F
 
 # Create train test split, split each class into 90% train and 10% test with a minimum of 10 images per class for test and a max of 100
 def train_test_split(df, test_size=0.1, min_test_images=10, max_test_images=100):
@@ -47,9 +48,11 @@ def main(cfg: DictConfig):
     crop_annotations["ymin"] -= 30
     crop_annotations["xmax"] += 30
     crop_annotations["ymax"] += 30
-    
-    train_df, validation_df = train_test_split(crop_annotations)
-    
+
+    #train_df, validation_df = train_test_split(crop_annotations)
+    train_df = None
+    validation_df = None
+
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
     trained_model = preprocess_and_train(
         train_df=train_df,
@@ -63,7 +66,26 @@ def main(cfg: DictConfig):
     trained_model.trainer.save_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
 
     # Confirm it can be loaded
-    confirmed_load = model.CropModel.load_from_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"), num_classes=trained_model.num_classes)
+    if trained_model.trainer.global_rank == 0:
+        confirmed_load = model.CropModel.load_from_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"), num_classes=trained_model.num_classes)
+
+        trained_model.model.eval()
+        predicted_class = []
+        predicted_prob = []
+        for batch in trained_model.val_dataloader():
+            x, y = batch
+            outputs = trained_model.model(x)
+            yhat = F.softmax(outputs, dim=1)
+            for i in range(len(yhat)):
+                predicted_class.append(yhat[i].argmax().item())
+                predicted_prob.append(yhat[i].max().item())
+
+        predicted_frame = pd.DataFrame({"predicted_class":predicted_class, "predicted_prob":predicted_prob})
+        comet_logger.experiment.log_asset_data(predicted_frame, name="predictions.csv")
+
+        trained_model.create_trainer()
+        trained_model.trainer.validate(trained_model)
+            
 
 if __name__ == "__main__":
     main()

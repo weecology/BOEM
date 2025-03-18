@@ -68,37 +68,30 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
     devices = torch.cuda.device_count()
     model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices)
 
-    classes_in_checkpoint = model.label_dict.keys()
-    model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
-    classes_in_new_data = model.train_ds.class_to_idx.keys()
+    # Check if the model has been trained on a different set of classes
+    if model.label_dict is not None:
+        classes_in_checkpoint = model.label_dict.keys()
+        model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
+        classes_in_new_data = model.train_ds.class_to_idx.keys()
 
-    # If there are new classes in the training data, update the model
-    if set(classes_in_new_data) != set(classes_in_checkpoint):
-        combined_classes = set(classes_in_new_data).union(set(classes_in_checkpoint))
-        finetune_model = CropModel(num_classes=len(combined_classes))
+        # If there are new classes in the training data, update the model
+        if set(classes_in_new_data) != set(classes_in_checkpoint):
+            combined_classes = set(classes_in_new_data).union(set(classes_in_checkpoint))
+            finetune_model = CropModel(num_classes=len(combined_classes))
 
-        # Strip the last layer off the checkout model and replace with new layer
-        num_ftrs = model.model.fc.in_features
-        model.model.fc = torch.nn.Linear(num_ftrs, len(combined_classes))
-        finetune_model.model = model.model
+            # Strip the last layer off the checkout model and replace with new layer
+            num_ftrs = model.model.fc.in_features
+            model.model.fc = torch.nn.Linear(num_ftrs, len(combined_classes))
+            finetune_model.model = model.model
 
-        finetune_model.label_dict = model.train_ds.class_to_idx
-        finetune_model.numeric_to_label_dict = {v: k for k, v in model.train_ds.class_to_idx.items()}
+            finetune_model.label_dict = model.train_ds.class_to_idx
+            finetune_model.numeric_to_label_dict = {v: k for k, v in model.train_ds.class_to_idx.items()}
+            finetune_model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices)
+        else:
+            finetune_model = model
     else:
         finetune_model = model
-
-    # Log the validation dataset images, max 10 per class
-    label_count = {}
-    numeric_to_label_dict = {v: k for k, v in model.val_ds.class_to_idx.items()}
-    for image_path, label in model.val_ds.imgs:
-        label_name =numeric_to_label_dict[label]
-        if label_name not in label_count:
-            label_count[label_name] = 0
-        if label_count[label_name] < 10:
-            image_name = os.path.basename(image_path)
-            if comet_logger:
-                comet_logger.experiment.log_image(image_path, name=f"{label_name}_{image_name}")
-            label_count[label_name] += 1
+        finetune_model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
     
     # If rank 0, set the if model.trainer.global_rank == 0:
     finetune_model.trainer.fit(finetune_model)
@@ -183,8 +176,8 @@ def preprocess_and_train(
         fast_dev_run (bool): Whether to run a fast development run.
         max_epochs (int): Maximum number of epochs for training.
         workers (int): Number of workers for data loading.
-        train_df (pd.DataFrame): DataFrame containing training annotations.
-        validation_df (pd.DataFrame): DataFrame containing validation annotations.
+        train_df (pd.DataFrame): DataFrame containing training annotations. If none, load from existing dir
+        validation_df (pd.DataFrame): DataFrame containing validation annotations. If none, load from existing dir
         checkpoint_train_dir: Directory containing training images for the checkpoint model.
         comet_logger: CometLogger object for logging experiments.
         
@@ -197,9 +190,9 @@ def preprocess_and_train(
             raise ValueError("checkpoint_num_classes must be provided if checkpoint is passed.")
     
     # Get and split annotations
-    num_classes = len(train_df["label"].unique())
 
-    if train_df.empty:
+    if train_df is None:
+        num_classes = checkpoint_num_classes
         # Load existing model
         loaded_model = load(
             checkpoint=checkpoint,
@@ -208,32 +201,36 @@ def preprocess_and_train(
             checkpoint_train_dir=checkpoint_train_dir,
             checkpoint_num_classes=checkpoint_num_classes,
         )
-        return loaded_model
-        
-    # Load existing model
-    loaded_model = load(
-        checkpoint=checkpoint,
-        checkpoint_dir=checkpoint_dir,
-        annotations=train_df,
-        num_classes=num_classes,
-        checkpoint_num_classes=checkpoint_num_classes,
-        checkpoint_train_dir=checkpoint_train_dir,
-    )
+    else:
+        num_classes = len(train_df["label"].unique())
+
+        # Load existing model
+        loaded_model = load(
+            checkpoint=checkpoint,
+            checkpoint_dir=checkpoint_dir,
+            annotations=train_df,
+            num_classes=num_classes,
+            checkpoint_num_classes=checkpoint_num_classes,
+            checkpoint_train_dir=checkpoint_train_dir,
+        )
 
     # Preprocess train and validation data
-    preprocess_images(
-        model=loaded_model, 
-        annotations=train_df, 
-        root_dir=train_image_dir, 
-        save_dir=train_crop_image_dir
-    )    
+    if train_df is not None:
+        preprocess_images(
+            model=loaded_model, 
+            annotations=train_df, 
+            root_dir=train_image_dir, 
+            save_dir=train_crop_image_dir
+        )    
     
-    preprocess_images(
-        model=loaded_model, 
-        annotations=validation_df, 
-        root_dir=train_image_dir, 
-        save_dir=val_crop_image_dir
-    )
+    if validation_df is not None:
+         # Preprocess validation data
+        preprocess_images(
+            model=loaded_model, 
+            annotations=validation_df, 
+            root_dir=train_image_dir, 
+            save_dir=val_crop_image_dir
+        )
 
     trained_model = train(
         batch_size=batch_size,

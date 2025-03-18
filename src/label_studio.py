@@ -77,6 +77,7 @@ def label_studio_bbox_format(local_image_dir, preannotations):
                 "rectanglelabels": [row["label"]]
             },
             'id': region_id,
+            "model_version": row["comet_id"],
             "score": row["score"],
             "to_name": "image",
             "type": "rectanglelabels",
@@ -261,17 +262,18 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
         label_studio_project (LabelStudioProject): The Label Studio project to import tasks into.
         image_names (list): List of image names to import as tasks.
         local_image_dir (str): The local directory where the images are stored.
-        predictions (list, optional): List of predictions for each image. Defaults to None.
+        predictions (dict, optional): Dictionary of predictions with image basename as keys. Defaults to None.
 
     Returns:
         None
     """
     tasks = []
-    for index, image_name in enumerate(image_names):
+    for image_name in image_names:
         print(f"Importing {image_name} into Label Studio")
-        data_dict = {'image': os.path.join("/data/local-files/?d=input/", os.path.basename(image_name))}
+        basename = os.path.basename(image_name)
+        data_dict = {'image': os.path.join("/data/local-files/?d=input/", basename)}
         if predictions is not None:
-            prediction = predictions[index]
+            prediction = predictions[basename]
             # Skip predictions if there are none
             if prediction.empty:
                 result_dict = []

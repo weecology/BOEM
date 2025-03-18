@@ -130,7 +130,7 @@ class PredictionVisualizer:
             
         return output_path
     
-def write_crops(root_dir, images, boxes, labels, savedir):
+def write_crops(root_dir, images, boxes, labels, savedir=None, experiment=None, expand=10, context=None):
     """Write crops to disk.
 
     Args:
@@ -139,30 +139,55 @@ def write_crops(root_dir, images, boxes, labels, savedir):
         boxes (list): A list of bounding box coordinates in the format [xmin, ymin, xmax, ymax].
         labels (list): A list of labels corresponding to each bounding box.
         savedir (str): The directory where the cropped images will be saved.
+        experiment (Experiment): The experiment object to log images to.
+        expand (int): The number of pixels to expand the bounding box on all sides.
+        context (str): a list of str to be used as metadata.
 
     Returns:
         None
     """
+    if savedir is None and experiment is None:
+        raise ValueError("Either savedir or experiment must be provided")
 
     # Create a directory
-    os.makedirs(os.path.join(savedir), exist_ok=True)
+    if savedir:
+        os.makedirs(os.path.join(savedir), exist_ok=True)
 
+
+    locations = []
     # Use rasterio to read the image
     for index, box in enumerate(boxes):
         xmin, ymin, xmax, ymax = box
+
+        # Expand by variable on all sides
+        xmin = max(0, xmin - expand)
+        ymin = max(0, ymin - expand)
+        xmax = max(0, xmax + expand)
+        ymax = max(0, ymax + expand)
+
         label = labels[index]
         image = images[index]
         basename = os.path.splitext(os.path.basename(image))[0]
+        
         with rasterio.open(os.path.join(root_dir, image)) as src:
             # Crop the image using the bounding box coordinates
             img = src.read(window=((ymin, ymax), (xmin, xmax)))
             
             # Save the cropped image as a PNG file using opencv
-            img_path = os.path.join(savedir, f"{basename}_{label}_{index}.png")
             img = np.rollaxis(img, 0, 3)
-            cv2.imwrite(img_path, img)
-        
-def crop_images(annotations, root_dir, save_dir):
+            if savedir:
+                img_path = os.path.join(savedir, f"{basename}_{label}_{index}.png")
+                cv2.imwrite(img_path, img)
+                locations.append(img_path)
+            else:
+                url = experiment.log_image(image_data=img,name=f"{basename}_{label}_{index}.png", metadata={"label": label, "context": context})
+                locations.append(url["api"])
+
+    return locations
+    
+def crop_images(annotations, root_dir, savedir=None, experiment=None, expand=30):
+    """Crop images based on bounding boxes and save them to disk."""
+
     # Remove any annotations with empty boxes
     annotations = annotations[(annotations['xmin'] != 0) & (annotations['ymin'] != 0) & (annotations['xmax'] != 0) & (annotations['ymax'] != 0)]
     
@@ -170,8 +195,13 @@ def crop_images(annotations, root_dir, save_dir):
     annotations = annotations[(annotations['xmin'] >= 0) & (annotations['ymin'] >= 0) & (annotations['xmax'] >= 0) & (annotations['ymax'] >= 0)]
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
     images = annotations["image_path"].values
-    labels = annotations["label"].values
-    write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir+"/crops")
+    labels = annotations["cropmodel_label"].values
+    context = annotations["set"].values
+
+    # Write crops to disk or log to experiment, location is the path
+    locations = write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=savedir, experiment=experiment, context=context)
+    
+    return locations
 
 def select_images_for_video(image_dir, thin_factor):
     all_images = glob.glob(image_dir + "/*.jpg")

@@ -17,7 +17,7 @@ def human_review(predictions, min_score=0.2, confident_threshold=0.5):
         tuple: A tuple of confident and uncertain predictions.
         """
     
-    predictions[predictions["cropmodel_score"] > min_score]
+    predictions = predictions[predictions["cropmodel_score"] > min_score]
 
     # Split predictions into confident and uncertain
     uncertain_predictions = predictions[
@@ -64,16 +64,23 @@ def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_
     except ValueError:
         pass
 
-    preannotations = detection.predict(m=model, model_path=model_path, image_paths=pool, patch_size=patch_size, patch_overlap=patch_overlap, batch_size=batch_size, crop_model=crop_model)
+    preannotations = detection.predict(
+        m=model,
+        model_path=model_path,
+        image_paths=pool,
+        patch_size=patch_size,
+        patch_overlap=patch_overlap,
+        batch_size=batch_size,
+        crop_model=crop_model,
+        dask_client=dask_client)
     preannotations = pd.concat(preannotations)
 
     if preannotations.empty:
         return None
     
-    try:
-        preannotations = read_file(preannotations, image_dir)
-    except TypeError:
-        preannotations = gpd.GeoDataFrame(preannotations, geometry="geometry")
+    preannotations = gpd.GeoDataFrame(preannotations, geometry="geometry")
+
+    preannotations = preannotations[preannotations["score"] >= min_score]
 
     return preannotations
 
@@ -109,11 +116,19 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
         if target_labels is None:
             raise ValueError("Target labels are required for the 'target-labels' strategy.")
         # Filter images by target labels
-        chosen_images = preannotations[preannotations.label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
+        chosen_images = preannotations[preannotations.cropmodel_label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
+    elif strategy == "rarest":
+        # Sort images by least common label
+        label_counts = preannotations.groupby("cropmodel_label").size().sort_values(ascending=True)
+        # Sort preannoations by least common label
+        preannotations["label_count"] = preannotations["cropmodel_label"].map(label_counts)
+        preannotations.sort_values("label_count", ascending=True, inplace=True)
+        chosen_images = preannotations.drop_duplicates(subset=["image_path"], keep="first").head(n)["image_path"].tolist()
     else:
         raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', or 'target-labels'.")
 
     # Get preannotations for chosen images
     chosen_preannotations = preannotations[preannotations["image_path"].isin(chosen_images)]
 
+    # Chosen preannotations is a dict with image_path as the key
     return chosen_images, chosen_preannotations

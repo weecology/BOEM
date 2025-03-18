@@ -78,9 +78,10 @@ def start(cpus=0, gpus=0, mem_size="50GB"):
         print(cluster.job_script())
         cluster.scale(gpus)
         # Wait for atleast half the workers
-        cluster.wait_for_workers(2)
+        cluster.wait_for_workers(gpus)
 
-    dask_client = Client(cluster)
+    dask_client = Client(cluster)    
+
 
     #Start dask
     dask_client.run_on_scheduler(start_tunnel)

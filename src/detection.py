@@ -6,9 +6,13 @@ import tempfile
 import warnings
 from logging import warn
 import math
+import contextlib
+import io
 
 # Third party imports
+import dask
 import dask.array as da
+from dask.distributed import Client
 import pandas as pd
 from deepforest import main, visualize
 from deepforest.utilities import read_file
@@ -17,6 +21,10 @@ import torch
 # Local imports
 from src import data_processing
 from omegaconf import OmegaConf
+import rasterio
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+from PIL import Image
 
 def evaluate(model, test_csv, image_root_dir):
     """Evaluate a model on labeled images.
@@ -177,7 +185,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
                 sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
                 sample_train_annotations_for_image.root_dir = train_image_dir
                 visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
-                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'train_images'})
+                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_train'})
 
             non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
             n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
@@ -185,7 +193,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
                 sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
                 sample_validation_annotations_for_image.root_dir = train_image_dir
                 visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
-                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'validation_images'})
+                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_validation'})
 
     model.trainer.fit(model)
 
@@ -299,16 +307,15 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
         if m is None:
             raise ValueError("A model or model_path is required for prediction.")
 
-    m.create_trainer(fast_dev_run=False, devices=1)
+    m.create_trainer(fast_dev_run=False, devices=1, logger=None)
     m.config["batch_size"] = batch_size
+    m.config["workers"] = 0
+    
     predictions = []
     for image_path in image_paths:
-        prediction = m.predict_tile(raster_path=image_path, return_plot=False, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
-        if prediction is None:
-            prediction = pd.DataFrame(
-                {"image_path": image_path,
-                  "xmin": [None], "ymin": [None], "xmax": [None], "ymax": [None], "label": [None], "score": [None],"geometry": [None],"cropmodel_score": [None],"cropmodel_label": [None]})
-        predictions.append(prediction)
+        prediction = m.predict_tile(raster_path=image_path, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
+        if prediction is not None:
+            predictions.append(prediction)
 
     return predictions
 
@@ -325,12 +332,6 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
         list: A list of image predictions.
     """
     if dask_client:
-        # load model on each client
-        def update_sys_path():
-            import sys
-            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        dask_client.run(update_sys_path)
-
         # Load model on each client
         dask_pool = da.from_array(image_paths, chunks=len(image_paths)//len(dask_client.ncores()))
         blocks = dask_pool.to_delayed().ravel()
@@ -348,8 +349,19 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
         predictions = []
         for block_result in block_futures:
             block_result = block_result.result()
-            predictions.append(pd.concat(block_result))
+            if len(block_result) > 0:
+                predictions.append(pd.concat(block_result))
     else:
-        predictions = _predict_list_(image_paths=image_paths, patch_size=patch_size, patch_overlap=patch_overlap, model_path=model_path, m=m, crop_model=crop_model, batch_size=batch_size)
+        # Suppress stdout
+        with contextlib.redirect_stdout(io.StringIO()):
+            predictions = _predict_list_(
+                image_paths=image_paths,
+                patch_size=patch_size,
+                patch_overlap=patch_overlap,
+                model_path=model_path,
+                m=m,
+                crop_model=crop_model,
+                batch_size=batch_size)
 
     return predictions
+

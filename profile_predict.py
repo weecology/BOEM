@@ -1,29 +1,17 @@
 import cProfile
 import pstats
 import time
-from src.label_studio import gather_data
 from src.detection import predict
 import hydra
 from deepforest import main
-from deepforest.model import CropModel
-from deepforest.visualize import format_boxes
 import glob
 import torch
 from PIL import Image
 import numpy as np
 from dask.distributed import Client, LocalCluster
-from src.cluster import start
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning.loggers import CometLogger
-import os
-import warnings
-import numpy as np
-import torch
-import rasterio as rio
-from deepforest import utilities, predict
-from deepforest.model import CropModel
-from deepforest import dataset
-
+from tabulate import tabulate
 
 class JpgDataset_parallel(Dataset):
     def __init__(self, image_paths, patch_size, patch_overlap):
@@ -113,7 +101,7 @@ def create_dataloader(ds, batch_size, num_workers=0, collate_fn=None, **kwargs):
     
     return dataloader
 
-def option1(m, image_paths, dask_client, batch_size=48):
+def load_images_with_dask(m, image_paths, dask_client, batch_size=48):
     # Load images in parallel using Dask
     images = load_images_in_parallel(image_paths, dask_client)
 
@@ -122,18 +110,18 @@ def option1(m, image_paths, dask_client, batch_size=48):
     dl = create_dataloader(ds, batch_size=48, num_workers=0)
     results = m.trainer.predict(m, dl)
 
-def option2(m, image_paths, batch_size=48, workers=0):
+def load_images_serially(m, image_paths, batch_size=48, workers=0):
     m.config["workers"] = workers
-    results = predict(m=m,image_paths=image_paths, batch_size=batch_size, patch_size=1000, patch_overlap=0)
+    results = predict(m=m, image_paths=image_paths, batch_size=batch_size, patch_size=1000, patch_overlap=0)
 
-def option3(m, image_paths, batch_size=1, workers=10):
+def load_images_with_parallel_patches(m, image_paths, batch_size=2, workers=10):
     m.config["workers"] = workers
     ds = JpgDataset_parallel(image_paths=image_paths, patch_size=1000, patch_overlap=0)
 
     def collate_fn(batch):
         return torch.cat(batch, dim=0)
 
-    dl = create_dataloader(ds, batch_size=batch_size, num_workers=workers, collate_fn=collate_fn, prefetch_factor=3, pin_memory=True)
+    dl = create_dataloader(ds, batch_size=batch_size, num_workers=workers, collate_fn=collate_fn)
     results = m.trainer.predict(m, dl)
 
 @hydra.main(config_path="/home/b.weinstein/BOEM/conf", config_name="config")
@@ -141,44 +129,47 @@ def profile_predict(config):
 
     comet_logger = CometLogger(project_name=config.comet.project, workspace=config.comet.workspace)
     
-    # Start the timer
-    start_time = time.time()
-    
     # Profile the function
     profiler = cProfile.Profile()
     profiler.enable()
 
     m = main.deepforest.load_from_checkpoint(config.detection_model.checkpoint)
-    m.config["workers"] = 0
     m.create_trainer(profiler="simple")
 
     # Get csv files from crop image dir
-    images_paths = glob.glob(config.label_studio.images_to_annotate_dir + "/*")[:50]
-
-    cm = CropModel.load_from_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/d004bf3171c74f47977de4746a60de6f.ckpt", num_classes=40)
+    images_paths = glob.glob(config.label_studio.images_to_annotate_dir + "/*")[:100]
     
     # Create a Dask client
-    #dask_client = start(cpus=10)
+    #dask_client = Client(LocalCluster(n_workers=5, processes=False, memory_limit='20GB'))
 
-    #dask_client = Client(LocalCluster(n_workers=20, processes=False, memory_limit='20GB'))
+    timings = []
 
-    #option1(m, images_paths, dask_client)
+    # Load images with Dask
+    #start_time = time.time()
+    #load_images_with_dask(m, images_paths, dask_client)
+    #end_time = time.time()
+    #timings.append(["Load Images with Dask", end_time - start_time])
 
-    #option2(m, images_paths)
+    # Load images serially
+    start_time = time.time()
+    load_images_serially(m, images_paths)
+    end_time = time.time()
+    timings.append(["Load Images Serially", end_time - start_time])
 
-    option3(m=m, image_paths=images_paths)
+    # Load images with parallel patches
+    start_time = time.time()
+    load_images_with_parallel_patches(m=m, image_paths=images_paths)
+    end_time = time.time()
+    timings.append(["Load Images with Parallel Patches", end_time - start_time])
 
     profiler.disable()
-    
-    # Stop the timer
-    end_time = time.time()
     
     # Print the profiling results
     stats = pstats.Stats(profiler).sort_stats('cumulative')
     stats.print_stats(20)
     
     # Print the time taken
-    print(f"Time taken: {end_time - start_time} seconds")
+    print(tabulate(timings, headers=["Option", "Time (seconds)"]))
 
     # Save .prof file
     profiler.dump_stats("profile_predict.prof")

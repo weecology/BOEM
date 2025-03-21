@@ -2,7 +2,6 @@ checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/class
 checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 checkpoint_num_classes: 40
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
-train_image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train
 val_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/val
 fast_dev_run: False

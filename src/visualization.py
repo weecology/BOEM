@@ -130,7 +130,7 @@ class PredictionVisualizer:
             
         return output_path
     
-def write_crops(root_dir, images, boxes, labels, savedir=None, experiment=None, expand=10, context=None):
+def write_crops(root_dir, images, boxes, labels, savedir=None, experiment=None, expand=30, context=None):
     """Write crops to disk.
 
     Args:
@@ -157,42 +157,41 @@ def write_crops(root_dir, images, boxes, labels, savedir=None, experiment=None, 
     locations = []
     # Use rasterio to read the image
     for index, box in enumerate(boxes):
-        xmin, ymin, xmax, ymax = box
+        try:
+            xmin, ymin, xmax, ymax = box
 
-        # Expand by variable on all sides
-        xmin = max(0, xmin - expand)
-        ymin = max(0, ymin - expand)
-        xmax = max(0, xmax + expand)
-        ymax = max(0, ymax + expand)
+            # Expand by variable on all sides
+            xmin = max(0, xmin - expand)
+            ymin = max(0, ymin - expand)
+            xmax = max(0, xmax + expand)
+            ymax = max(0, ymax + expand)
 
-        label = labels[index]
-        image = images[index]
-        basename = os.path.splitext(os.path.basename(image))[0]
-        
-        with rasterio.open(os.path.join(root_dir, image)) as src:
-            # Crop the image using the bounding box coordinates
-            img = src.read(window=((ymin, ymax), (xmin, xmax)))
+            label = labels[index]
+            image = images[index]
+            basename = os.path.splitext(os.path.basename(image))[0]
             
-            # Save the cropped image as a PNG file using opencv
-            img = np.rollaxis(img, 0, 3)
-            if savedir:
-                img_path = os.path.join(savedir, f"{basename}_{label}_{index}.png")
-                cv2.imwrite(img_path, img)
-                locations.append(img_path)
-            else:
-                url = experiment.log_image(image_data=img,name=f"{basename}_{label}_{index}.png", metadata={"label": label, "context": context})
-                locations.append(url["api"])
+            with rasterio.open(os.path.join(root_dir, image)) as src:
+                # Crop the image using the bounding box coordinates
+                img = src.read(window=((ymin, ymax), (xmin, xmax)))
+                
+                # Save the cropped image as a PNG file using opencv
+                img = np.rollaxis(img, 0, 3)
+                if savedir:
+                    img_path = os.path.join(savedir, f"{basename}_{label}_{index}.png")
+                    cv2.imwrite(img_path, img)
+                    locations.append(img_path)
+                else:
+                    url = experiment.log_image(image_data=img,name=f"{basename}_{label}_{index}.png", metadata={"label": label, "context": context})
+                    locations.append(url["web"])
+        except Exception as e:
+            print(f"Error processing image {image}: {e}")
+            locations.append(None)
 
     return locations
     
 def crop_images(annotations, root_dir, savedir=None, experiment=None, expand=30):
     """Crop images based on bounding boxes and save them to disk."""
-
-    # Remove any annotations with empty boxes
-    annotations = annotations[(annotations['xmin'] != 0) & (annotations['ymin'] != 0) & (annotations['xmax'] != 0) & (annotations['ymax'] != 0)]
-    
-    # Remove any negative values
-    annotations = annotations[(annotations['xmin'] >= 0) & (annotations['ymin'] >= 0) & (annotations['xmax'] >= 0) & (annotations['ymax'] >= 0)]
+    # Get the bounding boxes, images, and labels
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
     images = annotations["image_path"].values
     labels = annotations["cropmodel_label"].values

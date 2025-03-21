@@ -102,11 +102,12 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
         list: A list of image paths.
         pd.DataFrame: A DataFrame of preannotations for the chosen images.
     """
-    preannotations = preannotations[preannotations["score"] >= min_score]
     
     if preannotations.empty:
         return [], None
     
+    preannotations = preannotations[preannotations["score"] >= min_score]
+
     if strategy == "random":
         chosen_images = random.sample(preannotations["image_path"].unique().tolist(), n)
     elif strategy == "most-detections":

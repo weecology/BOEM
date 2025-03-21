@@ -86,7 +86,7 @@ def preprocess_images(
         raise FileNotFoundError(f"Root directory not found: {root_dir}")
     
     # Remove any annotations with xmin == xmax
-    annotations = annotations[annotations.xmin != annotations.xmax]
+    #annotations = annotations[annotations.xmin != annotations.xmax]
     
     os.makedirs(save_dir, exist_ok=True)
     

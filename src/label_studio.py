@@ -317,12 +317,11 @@ def download_completed_tasks(label_studio_project, csv_dir):
 
     annotations =  pd.concat(labels) 
     print("There are {} new annotations".format(annotations.shape[0]))
-    annotations = annotations[~(annotations.label=="Help me!")]
-    annotations.loc[annotations.label=="Unidentified White","label"] = "Unknown White"
+
 
     # Save csv in dir with timestamp
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    train_path = os.path.join(csv_dir, "train_{}.csv".format(timestamp))
+    train_path = os.path.join(csv_dir, "{}.csv".format(timestamp))
     annotations.to_csv(train_path, index=False)
 
     return annotations

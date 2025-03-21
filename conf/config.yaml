@@ -13,12 +13,11 @@ check_annotations: true
 force_upload: False
 force_training: True
 
+image_dir: /blue/ewhite/b.weinstein/BOEM/JPG_20241219_165600
+
 label_studio:
   url: "https://labelstudio.naturecast.org/"
   folder_name: "/pgsql/retrieverdash/everglades-label-studio/everglades-data"
-  images_to_annotate_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
-  csv_dir_train: /blue/ewhite/b.weinstein/BOEM/annotations/train
-  csv_dir_validation: /blue/ewhite/b.weinstein/BOEM/annotations/validation
   instances:
     train:
       csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/train
@@ -54,12 +53,12 @@ detection_model:
   labels:
     - "Object"
   trainer: 
-    batch_size: 16
+    batch_size: 12
     train:
       fast_dev_run: False
       epochs: 10
       lr: 0.00001
-    workers: 10
+    workers: 0
     validation:
       val_accuracy_interval: 5
 
@@ -69,7 +68,6 @@ pipeline_evaluation:
   classification_threshold: 0.5
 
 active_learning:
-  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: rarest
   n_images: 50
   patch_size: 1000
@@ -85,7 +83,6 @@ active_learning:
   pool_limit: 500
 
 active_testing:
-  image_dir: /blue/ewhite/b.weinstein/BOEM/sample_flight/JPG_2024_Jan27
   strategy: random
   n_images: 1000
   m: 

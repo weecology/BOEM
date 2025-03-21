@@ -16,7 +16,7 @@ def main(cfg: DictConfig):
         return None
     
     if cfg.pipeline.gpus > 1:
-        dask_client = start(gpus=cfg.pipeline.gpus, mem_size="70GB")
+        dask_client = start(gpus=cfg.pipeline.gpus, mem_size="100GB")
 
         def test_path():
             import sys
@@ -25,8 +25,6 @@ def main(cfg: DictConfig):
             sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
             
             return sys.path
-        
-
         
         print("dask response for path {}".format(dask_client.run(test_path)))
         

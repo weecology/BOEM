@@ -8,14 +8,14 @@ def sample_predictions(tmp_path):
     # Create sample predictions
     data = {
         "image_path": ["birds.jpg", "birds.jpg"],
-        "xmin": [10, 20],
-        "ymin": [10, 20],
-        "xmax": [50, 60],
-        "ymax": [50, 60],
+        "xmin": [10, 60],
+        "ymin": [10, 60],
+        "xmax": [50, 100],
+        "ymax": [50, 100],
         "score": [0.9, 0.8],
-        'label': ['label1', 'label2'],
-        'cropmodel_label': [0, 1],
-        'cropmodel_score': [0.9, 0.8]
+        'label': ['label1', 'label1'],
+        'cropmodel_label': ['genus species1', 'genus species2'],
+        'cropmodel_score': [0.75, 0.45]
     }
     df = pd.DataFrame(data)
     gdf = read_file(df, tmp_path)
@@ -23,85 +23,58 @@ def sample_predictions(tmp_path):
     return gdf
 
 @pytest.fixture
-def sample_detection_annotations(tmp_path):
+def sample_annotations(tmp_path):
     # Create sample detection annotations
     data = {
-        "image_path": ["birds.jpg", "birds.jpg"],
-        "label": ["label1", "label2"],
-        "xmin": [10, 20],
-        "ymin": [10, 20],
-        "xmax": [50, 60],
-        "ymax": [50, 60]
+        "image_path": ["birds.jpg", "birds.jpg", "birds.jpg"],
+        "label": ["genus species2", "genus species2", "genus species1"],
+        "xmin": [10, 60, 200],
+        "ymin": [10, 60, 200],
+        "xmax": [50, 100, 210],
+        "ymax": [50, 100, 210]
     }
     df = pd.DataFrame(data)
     gdf = read_file(df, tmp_path)
     
     return gdf
-
 @pytest.fixture
-def sample_classification_annotations(tmp_path):
-    # Create sample classification annotations
-    data = {
-        "image_path": ["birds.jpg", "birds.jpg"],
-        "label": ["label1", "label2"],
-        "xmin": [10, 20],
-        "ymin": [10, 20],
-        "xmax": [50, 60],
-        "ymax": [50, 60]
-        
-    }
-    df = pd.DataFrame(data)
-    
-    return df
+def classification_label_dict():
+    return {"genus species1": 0, "genus species2": 1}
 
-def test_check_success(config, sample_predictions, sample_detection_annotations, sample_classification_annotations, comet_logger):
+def test_check_success(sample_predictions, sample_annotations, classification_label_dict):
     """Test check success with sample data and perfect performance."""
     pipeline_evaluation = PipelineEvaluation(
         predictions=sample_predictions,
-        detection_annotations=sample_detection_annotations,
-        classification_annotations=sample_classification_annotations,
+        annotations=sample_annotations,
+        classification_label_dict=classification_label_dict,
         detection_true_positive_threshold=0.85,
         classification_threshold=0.5
     )
     pipeline_evaluation.evaluate()
-    assert pipeline_evaluation.check_success() is True
+    assert pipeline_evaluation.check_success() is False
 
-def test_evaluate_detection(config, sample_predictions, sample_detection_annotations, sample_classification_annotations, comet_logger):
-    """Test evaluate detection with sample data."""
-    pipeline_evaluation = PipelineEvaluation(
-        predictions=sample_predictions,
-        detection_annotations=sample_detection_annotations,
-        classification_annotations=sample_classification_annotations,
-        detection_true_positive_threshold=0.85,
-        classification_threshold=0.5
-    )
-    detection_results = pipeline_evaluation.evaluate_detection()
-    
-    # Detection results are mocked, one image is correct, the other is not.
-    assert detection_results["recall"] == 1.0
-
-def test_confident_classification_accuracy(config, sample_predictions, sample_detection_annotations, sample_classification_annotations, comet_logger):
+def test_evaluate(sample_predictions, sample_annotations, classification_label_dict):
     """Test confident classification accuracy with sample data and perfect performance."""
     pipeline_evaluation = PipelineEvaluation(
         predictions=sample_predictions,
-        detection_annotations=sample_detection_annotations,
-        classification_annotations=sample_classification_annotations,
+        annotations=sample_annotations,
+        classification_label_dict=classification_label_dict,
         detection_true_positive_threshold=0.85,
         classification_threshold=0.5
     )
-    confident_classification_accuracy = pipeline_evaluation.evaluate_confident_classification()
-   
-    assert confident_classification_accuracy["multiclassaccuracy"] == 1.0
+    results = pipeline_evaluation.evaluate()
 
-def test_uncertain_classification_accuracy(config, sample_predictions, sample_detection_annotations, sample_classification_annotations):
-    """Test uncertain classification accuracy with sample data and perfect performance."""
-    pipeline_evaluation = PipelineEvaluation(
-        predictions=sample_predictions,
-        detection_annotations=sample_detection_annotations,
-        classification_annotations=sample_classification_annotations,
-        detection_true_positive_threshold=0.85,
-        classification_threshold=0.5
-    )
-    uncertain_classification_accuracy = pipeline_evaluation.evaluate_uncertain_classification()
-    list(uncertain_classification_accuracy.keys()) == ['multiclassaccuracy', 'avg_score_true_positive', 'avg_score_false_positive']
-    assert uncertain_classification_accuracy["multiclassaccuracy"] == 0
+    # Two of three ground-truth are matched
+    assert results["detection"]["recall"] == 2/3
+    
+    # All predictions match
+    assert results["detection"]["precision"] == 1
+
+    # None of matched classifications are correct for confident predictions
+    assert results["classification"]["confident"]["micro_accuracy"] == 0.0
+    assert results["classification"]["confident"]["avg_false_classification_score"] == 0.9
+    
+    # The matched classifications is correct for uncertain predictions
+    assert results["classification"]["uncertain"]["micro_accuracy"] == 1.0
+    assert results["classification"]["uncertain"]["avg_true_classification_score"] == 0.8
+    

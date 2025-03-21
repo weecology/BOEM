@@ -225,42 +225,50 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
     Returns:
         trained_model: Trained model object
     """
-    if limit_empty_frac > 0:
-        validation_annotations = limit_empty_frames(validation_annotations, limit_empty_frac)
-    
-    validation_annotations.loc[validation_annotations.label==0,"label"] = "Object"
 
-    # Remove the empty frames, using hard mining instead
-    train_annotations = train_annotations[~(train_annotations.label.astype(str)== "0")]
-
-    # Preprocess train and validation data
-    train_df = data_processing.preprocess_images(train_annotations,
-                               root_dir=train_image_dir,
-                               save_dir=crop_image_dir,
-                               patch_size=patch_size,
-                               patch_overlap=patch_overlap)
-    
-    train_df.loc[train_df.label==0,"label"] = "Object"
-    validation_annotations.loc[validation_annotations.label==0,"label"] = "Object"
-
-    if not validation_annotations.empty:
-        validation_df = data_processing.preprocess_images(validation_annotations,
+    if train_annotations is not None:
+        # Remove the empty frames, using hard mining instead
+        
+        train_annotations = train_annotations[~(train_annotations.label.astype(str)== "0")]
+        if train_annotations.empty:
+            train_annotations = None
+        else:
+            # Preprocess train and validation data
+            train_df = data_processing.preprocess_images(train_annotations,
                                     root_dir=train_image_dir,
                                     save_dir=crop_image_dir,
                                     patch_size=patch_size,
-                                    patch_overlap=patch_overlap,
-                                    allow_empty=True
-                                    )
-        validation_df.loc[validation_df.label==0,"label"] = "Object"
-        non_empty = validation_df[(validation_df.xmin!=0)]
-        empty = validation_df[validation_df.xmin==0]
+                                    patch_overlap=patch_overlap)
+            
+            train_df.loc[train_df.label==0,"label"] = "Object"
+            train_df["label"] = "Object"
+            
+            # Assert no FalsePositive label in train
+            assert "FalsePositive" not in train_df.label.unique(), "FalsePositive label found in training data."
 
-        # TO DO confirm empty frames here
-        validation_df = non_empty
+    if validation_annotations is not None:
+        validation_annotations.loc[validation_annotations.label==0,"label"] = "Object"
+
+        if limit_empty_frac > 0:
+            validation_annotations = limit_empty_frames(validation_annotations, limit_empty_frac)
         
-    # Train model is just a single class
-    validation_df["label"] = "Object"
-    train_df["label"] = "Object"
+        if not validation_annotations.empty:
+            validation_df = data_processing.preprocess_images(validation_annotations,
+                                        root_dir=train_image_dir,
+                                        save_dir=crop_image_dir,
+                                        patch_size=patch_size,
+                                        patch_overlap=patch_overlap,
+                                        allow_empty=True
+                                        )
+            validation_df.loc[validation_df.label==0,"label"] = "Object"
+            non_empty = validation_df[(validation_df.xmin!=0)]
+            #empty = validation_df[validation_df.xmin==0]
+
+            # TO DO confirm empty frames here
+            validation_df = non_empty
+                
+            # Train model is just a single class
+            validation_df["label"] = "Object"
 
     # Load existing model
     if checkpoint:
@@ -274,15 +282,21 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
         label_dict = {value: index for index, value in enumerate(train_df.label.unique())}
         loaded_model = main.deepforest(label_dict=label_dict)
 
-    # Assert no FalsePositive label in train
-    assert "FalsePositive" not in train_df.label.unique(), "FalsePositive label found in training data."
+    if train_annotations is not None:
+        # Train model
+        trained_model = train(train_annotations=train_df,
+                                test_annotations=validation_df,
+                                train_image_dir=crop_image_dir,
+                                model=loaded_model,
+                                comet_logger=comet_logger,
+                                config_args=trainer_config)
 
-    trained_model = train(train_annotations=train_df,
-                            test_annotations=validation_df,
-                            train_image_dir=crop_image_dir,
-                            model=loaded_model,
-                            comet_logger=comet_logger,
-                            config_args=trainer_config)
+        detection_checkpoint_path = save_model(trained_model, checkpoint_dir, basename=comet_logger.experiment.id)
+        comet_logger.experiment.log_asset(file_data=detection_checkpoint_path, file_name="detection_model.ckpt")
+        comet_logger.experiment.log_parameter("detection_checkpoint_path", detection_checkpoint_path)
+    else:
+        trained_model = loaded_model
+        comet_logger.experiment.log_parameter("detection_checkpoint_path", checkpoint)
 
     return trained_model
 
@@ -307,7 +321,7 @@ def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, c
         if m is None:
             raise ValueError("A model or model_path is required for prediction.")
 
-    m.create_trainer(fast_dev_run=False, devices=1, logger=None)
+    m.create_trainer(fast_dev_run=False, devices=1)
     m.config["batch_size"] = batch_size
     m.config["workers"] = 0
     
@@ -353,8 +367,8 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
                 predictions.append(pd.concat(block_result))
     else:
         # Suppress stdout
-        with contextlib.redirect_stdout(io.StringIO()):
-            predictions = _predict_list_(
+        #with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        predictions = _predict_list_(
                 image_paths=image_paths,
                 patch_size=patch_size,
                 patch_overlap=patch_overlap,
@@ -364,4 +378,11 @@ def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, das
                 batch_size=batch_size)
 
     return predictions
+
+def save_model(model, directory, basename):
+    checkpoint_path = os.path.join(directory, f"{basename}.ckpt")
+    if not os.path.exists(checkpoint_path):
+        model.trainer.save_checkpoint(checkpoint_path)
+
+    return checkpoint_path
 

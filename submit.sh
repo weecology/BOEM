@@ -17,5 +17,6 @@ source activate BOEM
 
 cd ~/BOEM/
 
+export GDAL_ERROR_ON_LIBJPEG_WARNING=FALSE
 export PYTHONPATH=/home/b.weinstein/BOEM:$PYTHONPATH
-srun python main.py check_annotations=True active_learning.pool_limit=5000 active_testing.n_images=1 active_learning.n_images=20 debug=False
+srun python main.py check_annotations=True active_learning.pool_limit=100 active_testing.n_images=1 active_learning.n_images=1 debug=False pipeline.gpus=1

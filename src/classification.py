@@ -66,29 +66,29 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
     model.lr = lr
 
     devices = torch.cuda.device_count()
-    model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices)
+    model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices, enable_checkpointing=False)
 
     # Check if the model has been trained on a different set of classes
     if model.label_dict is not None:
-        classes_in_checkpoint = model.label_dict.keys()
+        classes_in_checkpoint = list(model.label_dict.keys())
         model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
-        classes_in_new_data = model.train_ds.class_to_idx.keys()
+        classes_in_new_data = list(model.train_ds.class_to_idx.keys())
 
         # If there are new classes in the training data, update the model
-        if set(classes_in_new_data) != set(classes_in_checkpoint):
+        if set(classes_in_new_data).issubset(set(classes_in_checkpoint)):
+            finetune_model = model
+        else:
             combined_classes = set(classes_in_new_data).union(set(classes_in_checkpoint))
             finetune_model = CropModel(num_classes=len(combined_classes))
 
-            # Strip the last layer off the checkout model and replace with new layer
+            # Strip the last layer off the checkpoint model and replace with new layer
             num_ftrs = model.model.fc.in_features
             model.model.fc = torch.nn.Linear(num_ftrs, len(combined_classes))
             finetune_model.model = model.model
-
             finetune_model.label_dict = model.train_ds.class_to_idx
             finetune_model.numeric_to_label_dict = {v: k for k, v in model.train_ds.class_to_idx.items()}
-            finetune_model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices)
-        else:
-            finetune_model = model
+            finetune_model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices, enable_checkpointing=False)
+            finetune_model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
     else:
         finetune_model = model
         finetune_model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
@@ -127,6 +127,14 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
     return finetune_model
 
 def preprocess_images(model, annotations, root_dir, save_dir):
+    annotations = annotations[~annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]
+    if annotations.empty:
+        return None
+    
+    # Two word labels
+    annotations["label"] = annotations["label"].apply(lambda x: ' '.join(x.split()[:2]))
+    annotations = annotations[annotations["label"].apply(lambda x: len(x.split()) == 2)]
+
     # Remove any annotations with empty boxes
     annotations = annotations[(annotations['xmin'] != 0) & (annotations['ymin'] != 0) & (annotations['xmax'] != 0) & (annotations['ymax'] != 0)]
     
@@ -150,7 +158,7 @@ def preprocess_and_train(
     validation_df,
     checkpoint,
     checkpoint_dir,
-    train_image_dir,
+    image_dir,
     train_crop_image_dir,
     val_crop_image_dir, 
     lr=0.0001,
@@ -189,8 +197,6 @@ def preprocess_and_train(
         if checkpoint_num_classes is None:
             raise ValueError("checkpoint_num_classes must be provided if checkpoint is passed.")
     
-    # Get and split annotations
-
     if train_df is None:
         num_classes = checkpoint_num_classes
         # Load existing model
@@ -219,29 +225,45 @@ def preprocess_and_train(
         preprocess_images(
             model=loaded_model, 
             annotations=train_df, 
-            root_dir=train_image_dir, 
+            root_dir=image_dir, 
             save_dir=train_crop_image_dir
         )    
-    
+        non_empty_train = train_df[train_df.xmin != 0]
+        if non_empty_train.empty:
+            train_df = None
+
     if validation_df is not None:
          # Preprocess validation data
         preprocess_images(
             model=loaded_model, 
             annotations=validation_df, 
-            root_dir=train_image_dir, 
+            root_dir=image_dir, 
             save_dir=val_crop_image_dir
         )
 
-    trained_model = train(
-        batch_size=batch_size,
-        lr=lr,
-        train_dir=train_crop_image_dir,
-        val_dir=val_crop_image_dir,
-        model=loaded_model,
-        fast_dev_run=fast_dev_run,
-        max_epochs=max_epochs,
-        comet_logger=comet_logger,
-        workers=workers,
-    )
+    if train_df is not None:
+        trained_model = train(
+            batch_size=batch_size,
+            lr=lr,
+            train_dir=train_crop_image_dir,
+            val_dir=val_crop_image_dir,
+            model=loaded_model,
+            fast_dev_run=fast_dev_run,
+            max_epochs=max_epochs,
+            comet_logger=comet_logger,
+            workers=workers,
+        )
+        classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
+        comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
+
+    else:
+        trained_model = loaded_model
 
     return trained_model
+
+def save_model(model, directory, basename):
+    checkpoint_path = os.path.join(directory, f"{basename}.ckpt")
+    if not os.path.exists(checkpoint_path):
+        model.trainer.save_checkpoint(checkpoint_path)
+
+    return checkpoint_path

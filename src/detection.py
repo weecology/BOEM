@@ -269,6 +269,8 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
                 
             # Train model is just a single class
             validation_df["label"] = "Object"
+        else:
+            validation_df = None        
 
     # Load existing model
     if checkpoint:
@@ -282,7 +284,7 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
         label_dict = {value: index for index, value in enumerate(train_df.label.unique())}
         loaded_model = main.deepforest(label_dict=label_dict)
 
-    if train_annotations is not None:
+    if train_annotations is not None and validation_df is not None:
         # Train model
         trained_model = train(train_annotations=train_df,
                                 test_annotations=validation_df,

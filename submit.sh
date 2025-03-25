@@ -19,4 +19,4 @@ cd ~/BOEM/
 
 export GDAL_ERROR_ON_LIBJPEG_WARNING=FALSE
 export PYTHONPATH=/home/b.weinstein/BOEM:$PYTHONPATH
-srun python main.py check_annotations=True active_learning.pool_limit=100 active_testing.n_images=1 active_learning.n_images=1 debug=False pipeline.gpus=1
+srun python main.py check_annotations=True active_learning.pool_limit=500 active_testing.n_images=100 active_learning.n_images=100 debug=False pipeline.gpus=1

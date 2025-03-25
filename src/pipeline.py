@@ -57,6 +57,7 @@ class Pipeline:
         os.makedirs(self.config.classification_model.checkpoint_dir, exist_ok=True)
         os.makedirs(self.config.detection_model.crop_image_dir, exist_ok=True)
         os.makedirs(self.config.classification_model.train_crop_image_dir, exist_ok=True)
+        os.makedirs(self.config.classification_model.val_crop_image_dir, exist_ok=True)
 
         # Log src folder code
         self.comet_logger.experiment.log_code(folder=os.path.join(os.path.dirname(__file__), "../src"), overwrite=True)
@@ -297,8 +298,8 @@ class Pipeline:
                                                 folder_name=self.config.label_studio.folder_name, 
                                                 preannotations=chosen_preannotations_dict)
 
-        print(f"Images requiring human review: {len(uncertain_predictions)}")
-        print(f"Images auto-annotated: {len(confident_predictions)}")
+        print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
+        print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")
 
         # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
         final_predictions = flightline_predictions.copy(deep=True)

@@ -240,22 +240,25 @@ def preprocess_and_train(
             root_dir=image_dir, 
             save_dir=val_crop_image_dir
         )
+        non_empty_val = validation_df[validation_df.xmin != 0]
+        if non_empty_val.empty:
+            validation_df = None
 
-    if train_df is not None:
-        trained_model = train(
-            batch_size=batch_size,
-            lr=lr,
-            train_dir=train_crop_image_dir,
-            val_dir=val_crop_image_dir,
-            model=loaded_model,
-            fast_dev_run=fast_dev_run,
-            max_epochs=max_epochs,
-            comet_logger=comet_logger,
-            workers=workers,
-        )
-        classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
-        comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
-
+    if train_df is not None and validation_df is not None:
+        # Check for non-empty train and validation data
+            trained_model = train(
+                batch_size=batch_size,
+                lr=lr,
+                train_dir=train_crop_image_dir,
+                val_dir=val_crop_image_dir,
+                model=loaded_model,
+                fast_dev_run=fast_dev_run,
+                max_epochs=max_epochs,
+                comet_logger=comet_logger,
+                workers=workers,
+            )
+            classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
+            comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
     else:
         trained_model = loaded_model
 

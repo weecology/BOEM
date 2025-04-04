@@ -1,23 +1,22 @@
-import glob
-import os
 import random
 from src import detection
 import pandas as pd
-from deepforest.utilities import read_file
 import geopandas as gpd
 
-def human_review(predictions, min_score=0.2, confident_threshold=0.5):
+def human_review(predictions, min_detection_score=0.6, min_classification_score=0.5, confident_threshold=0.5):
     """
     Predict on images and divide into confident and uncertain predictions.
     Args:
         confident_threshold (float): The threshold for confident predictions.
-        min_score (float, optional): The minimum detection score for a prediction to be included. Defaults to 0.1.
+        min_classification_score (float, optional): The minimum class score for a prediction to be included. Defaults to 0.1.
+        min_detection_score (float, optional): The minimum detection score for a prediction to be included. Defaults to 0.1.
         predictions (pd.DataFrame, optional): A DataFrame of existing predictions. Defaults to None.
         Returns:
         tuple: A tuple of confident and uncertain predictions.
         """
     
-    predictions = predictions[predictions["cropmodel_score"] > min_score]
+    predictions = predictions[predictions["score"] >= min_detection_score]
+    predictions = predictions[predictions["cropmodel_score"] < min_classification_score]
 
     # Split predictions into confident and uncertain
     uncertain_predictions = predictions[
@@ -29,12 +28,12 @@ def human_review(predictions, min_score=0.2, confident_threshold=0.5):
     
     return confident_predictions, uncertain_predictions
 
-def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, batch_size=16, pool_limit=1000, crop_model=None):
+def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, batch_size=16, pool_limit=1000, crop_model=None):
     """
     Generate predictions for the flight pool.
     
     Args:
-        image_dir (str): The path to a directory of images.
+        pool (str): List of image paths to predict on.
         patch_size (int, optional): The size of the image patches to predict on. Defaults to 512.
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
         min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.1.
@@ -49,20 +48,10 @@ def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_
     Returns:
         pd.DataFrame: A DataFrame of predictions.
     """
-    pool = glob.glob(os.path.join(image_dir, "*.jpg"))  # Get all images in the data directory
-    
-    # Remove .csv files from the pool
-    pool = [image for image in pool if not image.endswith('.csv')]
     
     #subsample
     if len(pool) > pool_limit:
         pool = random.sample(pool, pool_limit)
-
-    # Remove crop dir
-    try:
-        pool.remove(os.path.join(image_dir, "crops"))
-    except ValueError:
-        pass
 
     preannotations = detection.predict(
         m=model,
@@ -73,7 +62,11 @@ def generate_pool_predictions(image_dir, patch_size=512, patch_overlap=0.1, min_
         batch_size=batch_size,
         crop_model=crop_model,
         dask_client=dask_client)
-    preannotations = pd.concat(preannotations)
+    
+    if len(preannotations) == 0:
+        return None
+    else:
+        preannotations = pd.concat(preannotations)
 
     if preannotations.empty:
         return None
@@ -106,27 +99,29 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
     if preannotations.empty:
         return [], None
     
-    preannotations = preannotations[preannotations["score"] >= min_score]
-
     if strategy == "random":
         chosen_images = random.sample(preannotations["image_path"].unique().tolist(), n)
-    elif strategy == "most-detections":
-        # Sort images by total number of predictions
-        chosen_images = preannotations.groupby("image_path").size().sort_values(ascending=False).head(n).index.tolist()
-    elif strategy == "target-labels":
-        if target_labels is None:
-            raise ValueError("Target labels are required for the 'target-labels' strategy.")
-        # Filter images by target labels
-        chosen_images = preannotations[preannotations.cropmodel_label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
-    elif strategy == "rarest":
-        # Sort images by least common label
-        label_counts = preannotations.groupby("cropmodel_label").size().sort_values(ascending=True)
-        # Sort preannoations by least common label
-        preannotations["label_count"] = preannotations["cropmodel_label"].map(label_counts)
-        preannotations.sort_values("label_count", ascending=True, inplace=True)
-        chosen_images = preannotations.drop_duplicates(subset=["image_path"], keep="first").head(n)["image_path"].tolist()
+
     else:
-        raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', or 'target-labels'.")
+        preannotations = preannotations[preannotations["score"] >= min_score]
+
+        if strategy == "most-detections":
+            # Sort images by total number of predictions
+            chosen_images = preannotations.groupby("image_path").size().sort_values(ascending=False).head(n).index.tolist()
+        elif strategy == "target-labels":
+            if target_labels is None:
+                raise ValueError("Target labels are required for the 'target-labels' strategy.")
+            # Filter images by target labels
+            chosen_images = preannotations[preannotations.cropmodel_label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
+        elif strategy == "rarest":
+            # Sort images by least common label
+            label_counts = preannotations.groupby("cropmodel_label").size().sort_values(ascending=True)
+            # Sort preannoations by least common label
+            preannotations["label_count"] = preannotations["cropmodel_label"].map(label_counts)
+            preannotations.sort_values("label_count", ascending=True, inplace=True)
+            chosen_images = preannotations.drop_duplicates(subset=["image_path"], keep="first").head(n)["image_path"].tolist()
+        else:
+            raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', or 'target-labels'.")
 
     # Get preannotations for chosen images
     chosen_preannotations = preannotations[preannotations["image_path"].isin(chosen_images)]

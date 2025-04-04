@@ -147,14 +147,15 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
     tmpdir = tempfile.gettempdir()
 
     train_annotations.to_csv(os.path.join(tmpdir,"train.csv"), index=False)
-    test_annotations.to_csv(os.path.join(tmpdir,"test.csv"), index=False)
 
     # Set config
     model.config["train"]["csv_file"] = os.path.join(tmpdir,"train.csv")
     model.config["train"]["root_dir"] = train_image_dir
 
-    model.config["validation"]["csv_file"] = os.path.join(tmpdir,"test.csv")
-    model.config["validation"]["root_dir"] = train_image_dir
+    if test_annotations is not None:
+        test_annotations.to_csv(os.path.join(tmpdir,"test.csv"), index=False)
+        model.config["validation"]["csv_file"] = os.path.join(tmpdir,"test.csv")
+        model.config["validation"]["root_dir"] = train_image_dir
 
     # Loop through all keys in model.config and set them to the value of the key in model.config
     config_args = OmegaConf.to_container(config_args)
@@ -187,23 +188,25 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
                 visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
                 comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_train'})
 
-            non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
-            n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
-            for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
-                sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
-                sample_validation_annotations_for_image.root_dir = train_image_dir
-                visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
-                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_validation'})
+            if test_annotations is not None:
+                non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
+                n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
+                for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
+                    sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
+                    sample_validation_annotations_for_image.root_dir = train_image_dir
+                    visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
+                    comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_validation'})
 
     model.trainer.fit(model)
 
     if not model.trainer.fast_dev_run:
-        for image_path in test_annotations.head().image_path.unique():
-            prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
-            if prediction is None:
-                continue
-            visualize.plot_results(prediction, savedir=tmpdir)
-            comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
+        if test_annotations is not None:
+            for image_path in test_annotations.head().image_path.unique():
+                prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
+                if prediction is None:
+                    continue
+                visualize.plot_results(prediction, savedir=tmpdir)
+                comet_logger.experiment.log_image(os.path.join(tmpdir, image_path))
 
     return model
 
@@ -262,7 +265,7 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
                                         )
             validation_df.loc[validation_df.label==0,"label"] = "Object"
             non_empty = validation_df[(validation_df.xmin!=0)]
-            #empty = validation_df[validation_df.xmin==0]
+            empty = validation_df[validation_df.xmin==0]
 
             # TO DO confirm empty frames here
             validation_df = non_empty
@@ -284,7 +287,10 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
         label_dict = {value: index for index, value in enumerate(train_df.label.unique())}
         loaded_model = main.deepforest(label_dict=label_dict)
 
-    if train_annotations is not None and validation_df is not None:
+    if train_annotations is not None:
+        if validation_df is None or validation_df.empty:
+            warn("Validation data is empty. Training model with training data only.")
+            validation_df = None
         # Train model
         trained_model = train(train_annotations=train_df,
                                 test_annotations=validation_df,

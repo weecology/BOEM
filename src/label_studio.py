@@ -370,10 +370,19 @@ def upload_images(sftp_client, images, folder_name):
         Any exceptions that may occur during the file transfer.
 
     """
-    # SCP file transfer
+    # SCP file transfer with retry mechanism
     for image in images:
-        sftp_client.put(image, os.path.join(folder_name,"input",os.path.basename(image)))
-        print(f"Uploaded {image} successfully")
+        retries = 3
+        for attempt in range(retries):
+            try:
+                sftp_client.put(image, os.path.join(folder_name, "input", os.path.basename(image)))
+                print(f"Uploaded {image} successfully")
+                break
+            except EOFError as e:
+                if attempt < retries - 1:
+                    print(f"Retrying upload for {image} due to EOFError (attempt {attempt + 1}/{retries})...")
+                else:
+                    print(f"Failed to upload {image} after {retries} attempts. Error: {e}")
 
 def remove_annotated_images_remote_server(sftp_client, annotations, folder_name):
     """Remove images that have been annotated on the Label Studio server."""

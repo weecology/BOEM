@@ -131,8 +131,9 @@ class Pipeline:
             return None
 
         if self.config.force_training:
+            all_training = pd.concat([self.existing_training, self.existing_reviewed])
             trained_detection_model = detection.preprocess_and_train(
-                train_annotations=self.existing_training,
+                train_annotations=all_training,
                 validation_annotations=self.existing_validation,
                 train_image_dir=self.config.image_dir,
                 crop_image_dir=self.config.detection_model.crop_image_dir,
@@ -145,7 +146,7 @@ class Pipeline:
                 comet_logger=self.comet_logger)
 
             trained_classification_model = classification.preprocess_and_train(
-                train_df=self.existing_training,
+                train_df=all_training,
                 validation_df=self.existing_validation,
                 image_dir=self.config.image_dir,
                 **self.config.classification_model,
@@ -153,6 +154,7 @@ class Pipeline:
 
         else:
             trained_detection_model = detection.load(checkpoint = self.config.detection_model.checkpoint)
+            self.comet_logger.experiment.log_parameter("detection_checkpoint_path",self.config.detection_model.checkpoint)
             trained_classification_model = classification.load(
                 self.config.classification_model.checkpoint,
                 checkpoint_dir=self.config.classification_model.checkpoint_dir,
@@ -164,8 +166,13 @@ class Pipeline:
 
         # Predict entire flightline
         trained_classification_model.num_workers = 0
+
+        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))  # Get all images in the data directory
+        pool = [image for image in pool if not image.endswith('.csv')]
+        pool = [image for image in pool if image not in self.existing_images]
+
         flightline_predictions = generate_pool_predictions(
-            image_dir=self.config.image_dir,
+            pool=pool,
             pool_limit=self.config.active_learning.pool_limit,
             patch_size=self.config.active_learning.patch_size,
             patch_overlap=self.config.active_learning.patch_overlap,
@@ -176,6 +183,10 @@ class Pipeline:
             batch_size=self.config.predict.batch_size,
             crop_model=trained_classification_model,
         )
+        if flightline_predictions is None:
+            print("No predictions")
+            return None
+        
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id
 
         if self.config.debug:
@@ -275,7 +286,8 @@ class Pipeline:
         
         confident_predictions, uncertain_predictions = human_review(
             confident_threshold=self.config.pipeline.confidence_threshold,
-            min_score=self.config.active_learning.min_classification_score,
+            min_classification_score=self.config.active_learning.min_classification_score,
+            min_detection_score=self.config.active_learning.min_detection_score,
             predictions=human_review_pool,
         )
 
@@ -312,6 +324,13 @@ class Pipeline:
         
         # Reset index
         final_predictions = final_predictions.reset_index(drop=True)
+        
+        # Remove False Positives and empty images
+        final_predictions = final_predictions[~final_predictions.cropmodel_label.isin(["FalsePositive", "0",0,"Object"])]
+
+        if final_predictions.empty:
+            print("No predictions")
+            return None
         
         # Write crops to disk
         urls = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment)

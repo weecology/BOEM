@@ -11,7 +11,7 @@ from deepforest.callbacks import images_callback
 # Parse arguments
 parser = argparse.ArgumentParser(description="Train DeepForest model")
 parser.add_argument("--batch_size", type=int, default=12, help="Batch size for training")
-parser.add_argument("--workers", type=int, default=0, help="Number of workers for data loading")
+parser.add_argument("--workers", type=int, default=16, help="Number of workers for data loading")
 args = parser.parse_args()
 
 # Use parsed arguments
@@ -34,15 +34,15 @@ m.config["train"]["fast_dev_run"] = False
 m.config["validation"]["csv_file"] = os.path.join(savedir,"test.csv")
 m.config["validation"]["root_dir"] = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
 m.config["batch_size"] = batch_size
-m.config["train"]["epochs"] = 100
+m.config["train"]["epochs"] = 50
 m.config["workers"] = workers
-m.config["validation"]["val_accuracy_interval"] = 10
+m.config["validation"]["val_accuracy_interval"] = 20
 m.config["train"]["scheduler"]["params"]["eps"]  = 0
 m.config["train"]["lr"] = 0.0005
 
 comet_logger = CometLogger(project_name="BOEM", workspace="bw4sz")
 
-im = images_callback(n=20, every_n_epochs=25, savedir=os.path.join(savedir,"images"))
+#im = images_callback(n=20, every_n_epochs=25, savedir=os.path.join(savedir,"images"))
 
 # Log the training and test sets
 comet_logger.experiment.log_table("train.csv", train)
@@ -61,10 +61,14 @@ comet_logger.experiment.log_parameter("batch_size", m.config["batch_size"])
 comet_logger.experiment.log_parameter("train_size", train.shape[0])
 comet_logger.experiment.log_parameter("test_size", test.shape[0])
 
-m.create_trainer(callbacks=[im], logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices)
+m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices)
 m.trainer.fit(m)
-results = m.evaluate(m.config["validation"]["csv_file"],m.config["validation"]["root_dir"])
-print(results)
+
+# Save the model
+m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/{}.pl".format(comet_logger.experiment.id))
+
+#results = m.evaluate(m.config["validation"]["csv_file"],m.config["validation"]["root_dir"])
+#print(results)
 
 # Gather the number of steps taken from all GPUs
 global_steps = torch.tensor(m.trainer.global_step, dtype=torch.int32, device=m.device)
@@ -72,6 +76,3 @@ comet_logger.experiment.log_metric("global_steps", global_steps)
 
 # Save profiler to comet
 #comet_logger.experiment.log_asset(os.path.join(tmpdir,"profiler","profiler.txt"))
-
-# Save the model
-m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/{}.pl".format(comet_logger.experiment.id))

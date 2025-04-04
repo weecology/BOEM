@@ -31,12 +31,12 @@ label_studio:
 predict:
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0.4
+  min_score: 0.3
   batch_size: 64
 
 pipeline:
-  confidence_threshold: 0.9
-  limit_empty_frac: 0.01
+  confidence_threshold: 0.75
+  limit_empty_frac: 0.001
   gpus: 1
 
 propagate:
@@ -44,19 +44,19 @@ propagate:
   distance_threshold_pixels: 50
 
 detection_model:
-  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/d3a74b0852df4d3ba9a6503660fcc9f1.pl"
+  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/9ec8d539740f4215975ac5626499dbe6.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
   crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
-  limit_empty_frac: 0.01
+  limit_empty_frac: 0.001
   labels:
     - "Object"
   trainer: 
     batch_size: 12
     train:
       fast_dev_run: False
-      epochs: 10
+      epochs: 3
       lr: 0.00001
     workers: 0
     validation:
@@ -72,7 +72,8 @@ active_learning:
   n_images: 50
   patch_size: 1000
   patch_overlap: 0
-  min_classification_score: 0
+  min_classification_score: 0.4
+  min_detection_score: 0.6
   model_checkpoint:
   target_labels:
     - "Object"

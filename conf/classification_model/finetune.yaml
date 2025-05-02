@@ -1,4 +1,4 @@
-checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/807c51c7bee046fdb58790d3b9e44981.ckpt
+checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/ec4851c1e15e44ae847210fbb69cd74c.ckpt
 checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 checkpoint_num_classes: 40
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints

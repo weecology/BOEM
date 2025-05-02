@@ -20,25 +20,16 @@ def get_latest_checkpoint(checkpoint_dir, num_classes):
     else:
         return None
 
-def load(checkpoint=None, annotations=None, checkpoint_dir=None, num_classes=None, checkpoint_num_classes=None, checkpoint_train_dir=None):
+def load(checkpoint=None, num_classes=None):
     if checkpoint: 
         loaded_model = CropModel.load_from_checkpoint(
             checkpoint,
-            num_classes=checkpoint_num_classes)
+            num_classes)
         num_classes = loaded_model.num_classes
-        # This is a workaround for a bug in Deepforest, where the class_to_idx is not saved in the checkpoint
-        loaded_model.load_from_disk(train_dir=checkpoint_train_dir, val_dir=checkpoint_train_dir)
-        loaded_model.label_dict = loaded_model.train_ds.class_to_idx
-        loaded_model.numeric_to_label_dict = {v: k for k, v in loaded_model.train_ds.class_to_idx.items()}
 
-    elif checkpoint_dir:
-            loaded_model = get_latest_checkpoint(
-                num_classes = checkpoint_num_classes,
-                checkpoint_dir=checkpoint_dir)
-
-            if loaded_model is None:
-                loaded_model = CropModel(num_classes=num_classes)
-            num_classes = loaded_model.num_classes
+        # Assert that the crop_model.model.fc.out_features == num_classes
+        assert loaded_model.model.fc.out_features == num_classes, f"Model output features {loaded_model.model.fc.out_features} do not match num_classes {num_classes}"
+        assert loaded_model.model.fc.out_features == len(loaded_model.label_dict), f"Model output features {loaded_model.model.fc.out_features} do not match label_dict {len(loaded_model.label_dict)}"
     else:
         loaded_model = CropModel(num_classes=num_classes)
     
@@ -69,7 +60,7 @@ def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_
     model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices, enable_checkpointing=False)
 
     # Check if the model has been trained on a different set of classes
-    if model.label_dict is not None:
+    if hasattr(model, 'label_dict') and model.label_dict:
         classes_in_checkpoint = list(model.label_dict.keys())
         model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
         classes_in_new_data = list(model.train_ds.class_to_idx.keys())
@@ -153,6 +144,8 @@ def preprocess_images(model, annotations, root_dir, save_dir):
     
     model.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
 
+    return annotations
+
 def preprocess_and_train(
     train_df,
     validation_df,
@@ -202,10 +195,7 @@ def preprocess_and_train(
         # Load existing model
         loaded_model = load(
             checkpoint=checkpoint,
-            checkpoint_dir=checkpoint_dir,
-            num_classes=num_classes,
-            checkpoint_train_dir=checkpoint_train_dir,
-            checkpoint_num_classes=checkpoint_num_classes,
+            num_classes=num_classes
         )
     else:
         num_classes = len(train_df["label"].unique())
@@ -213,16 +203,12 @@ def preprocess_and_train(
         # Load existing model
         loaded_model = load(
             checkpoint=checkpoint,
-            checkpoint_dir=checkpoint_dir,
-            annotations=train_df,
             num_classes=num_classes,
-            checkpoint_num_classes=checkpoint_num_classes,
-            checkpoint_train_dir=checkpoint_train_dir,
         )
 
     # Preprocess train and validation data
     if train_df is not None:
-        preprocess_images(
+        preprocessed_train = preprocess_images(
             model=loaded_model, 
             annotations=train_df, 
             root_dir=image_dir, 
@@ -234,29 +220,47 @@ def preprocess_and_train(
 
     if validation_df is not None:
          # Preprocess validation data
-        preprocess_images(
+        preprocessed_validation = preprocess_images(
             model=loaded_model, 
             annotations=validation_df, 
             root_dir=image_dir, 
             save_dir=val_crop_image_dir
         )
-        non_empty_val = validation_df[validation_df.xmin != 0]
-        if non_empty_val.empty:
-            validation_df = None
+        if preprocessed_validation is not None and not preprocessed_validation.empty:
+            preprocessed_validation = preprocessed_validation
+        else:
+            preprocessed_validation = None
 
-    if train_df is not None and validation_df is not None:
+    if train_df is None:
+        trained_model = train(
+            batch_size=batch_size,
+            lr=lr,
+            train_dir=train_crop_image_dir,
+            val_dir=val_crop_image_dir,
+            model=loaded_model,
+            fast_dev_run=fast_dev_run,
+            max_epochs=max_epochs,
+            comet_logger=comet_logger,
+            workers=workers)
+        if trained_model.trainer.global_rank == 0:
+            print("saving model to checkpoint {checkpoint_dir}")
+            classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
+            comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
+    elif preprocessed_train is not None and preprocessed_validation is not None:
         # Check for non-empty train and validation data
-            trained_model = train(
-                batch_size=batch_size,
-                lr=lr,
-                train_dir=train_crop_image_dir,
-                val_dir=val_crop_image_dir,
-                model=loaded_model,
-                fast_dev_run=fast_dev_run,
-                max_epochs=max_epochs,
-                comet_logger=comet_logger,
-                workers=workers,
-            )
+        trained_model = train(
+            batch_size=batch_size,
+            lr=lr,
+            train_dir=train_crop_image_dir,
+            val_dir=val_crop_image_dir,
+            model=loaded_model,
+            fast_dev_run=fast_dev_run,
+            max_epochs=max_epochs,
+            comet_logger=comet_logger,
+            workers=workers,
+        )
+        if trained_model.trainer.global_rank == 0:
+            print("saving model to checkpoint {checkpoint_dir}")
             classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
             comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
     else:

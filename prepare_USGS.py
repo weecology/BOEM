@@ -136,9 +136,10 @@ test = crop_annotations[crop_annotations["image_path"].isin(test_images)]
 # Make sure any train stay in train
 
 train_csvs = glob.glob("/blue/ewhite/b.weinstein/BOEM/annotations/train/*/*.csv", recursive=True)
+reviewed_csvs = glob.glob("/blue/ewhite/b.weinstein/BOEM/annotations/review/*/*.csv", recursive=True)
 val_csvs = glob.glob("/blue/ewhite/b.weinstein/BOEM/annotations/validation/*/*.csv", recursive=True)
 
-flight_train = pd.concat([pd.read_csv(x) for x in train_csvs])
+flight_train = pd.concat([pd.read_csv(x) for x in train_csvs + reviewed_csvs])
 flight_val = pd.concat([pd.read_csv(x) for x in val_csvs])
 
 # Write directory

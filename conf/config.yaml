@@ -13,7 +13,7 @@ check_annotations: true
 force_upload: False
 force_training: True
 
-image_dir: /blue/ewhite/b.weinstein/BOEM/JPG_20241219_165600
+image_dir: /blue/ewhite/b.weinstein/BOEM/JPG_20241220_104800
 
 label_studio:
   url: "https://labelstudio.naturecast.org/"
@@ -31,7 +31,7 @@ label_studio:
 predict:
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0.3
+  min_score: 0.4
   batch_size: 64
 
 pipeline:
@@ -44,7 +44,7 @@ propagate:
   distance_threshold_pixels: 50
 
 detection_model:
-  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/9ec8d539740f4215975ac5626499dbe6.pl"
+  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/1d1fe42c351e447790dfbb9722492ec0.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -68,11 +68,11 @@ pipeline_evaluation:
   classification_threshold: 0.5
 
 active_learning:
-  strategy: rarest
+  strategy: most-detections
   n_images: 50
   patch_size: 1000
   patch_overlap: 0
-  min_classification_score: 0.4
+  min_classification_score: 0.6
   min_detection_score: 0.6
   model_checkpoint:
   target_labels:
@@ -85,7 +85,7 @@ active_learning:
 
 active_testing:
   strategy: random
-  n_images: 1000
+  n_images: 100
   m: 
   patch_size: 1000
   patch_overlap: 0

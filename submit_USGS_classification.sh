@@ -5,7 +5,7 @@
 #SBATCH --account=ewhite
 #SBATCH --nodes=1                 # Number of MPI ran
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=200GB
+#SBATCH --mem=60GB
 #SBATCH --time=48:00:00       #Time limit hrs:min:sec
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
@@ -16,6 +16,6 @@
 source activate BOEM
 
 cd ~/BOEM/
-#python prepare_USGS.py
+python prepare_USGS.py
 srun python USGS_classification.py
 

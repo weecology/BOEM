@@ -54,6 +54,7 @@ def main(cfg: DictConfig):
     validation_df = None
 
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
+    comet_id = comet_logger.experiment.id
     trained_model = preprocess_and_train(
         train_df=train_df,
         validation_df=validation_df,
@@ -61,7 +62,6 @@ def main(cfg: DictConfig):
         **cfg.classification_model
     )
 
-    comet_id = comet_logger.experiment.id
     checkpoint_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/"
     trained_model.trainer.save_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
 

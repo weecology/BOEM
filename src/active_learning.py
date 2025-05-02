@@ -14,16 +14,17 @@ def human_review(predictions, min_detection_score=0.6, min_classification_score=
         Returns:
         tuple: A tuple of confident and uncertain predictions.
         """
-    
-    predictions = predictions[predictions["score"] >= min_detection_score]
-    predictions = predictions[predictions["cropmodel_score"] < min_classification_score]
+    filtered_predictions = predictions[
+        (predictions["score"] >= min_detection_score) &
+        (predictions["cropmodel_score"] < min_classification_score)
+    ]
 
     # Split predictions into confident and uncertain
-    uncertain_predictions = predictions[
-        predictions["cropmodel_score"] <= confident_threshold]
+    uncertain_predictions = filtered_predictions[
+        filtered_predictions["cropmodel_score"] <= confident_threshold]
     
-    confident_predictions = predictions[
-        ~predictions["image_path"].isin(
+    confident_predictions = filtered_predictions[
+        ~filtered_predictions["image_path"].isin(
             uncertain_predictions["image_path"])]
     
     return confident_predictions, uncertain_predictions

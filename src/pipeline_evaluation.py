@@ -106,9 +106,7 @@ class PipelineEvaluation:
             dict: Dictionary containing the computed accuracy metric.
         """
         self.classification_annotations = self.annotations.copy(deep=True)
-        if self.classification_annotations.empty:
-            return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
-        
+
         # Remove empty frames from classification annotations
         self.classification_annotations = self.annotations.copy(deep=True)
         self.classification_annotations = self.classification_annotations[~self.classification_annotations.label.isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
@@ -122,6 +120,9 @@ class PipelineEvaluation:
         self.classification_annotations["label"] = self.classification_annotations["label"].apply(lambda x: ' '.join(x.split()[:2]))
         self.classification_annotations = self.classification_annotations[self.classification_annotations["label"].apply(lambda x: len(x.split()) == 2)]
     
+        if self.classification_annotations.empty:
+            return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
+
         self.classification_annotations["cropmodel_label"] = self.classification_annotations["label"].apply(lambda x: self.classification_label_dict[x])
         predictions["cropmodel_label"] = predictions["cropmodel_label"].apply(lambda x: self.classification_label_dict[x])
 

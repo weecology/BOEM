@@ -264,11 +264,6 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
                                         allow_empty=True
                                         )
             validation_df.loc[validation_df.label==0,"label"] = "Object"
-            non_empty = validation_df[(validation_df.xmin!=0)]
-            empty = validation_df[validation_df.xmin==0]
-
-            # TO DO confirm empty frames here
-            validation_df = non_empty
                 
             # Train model is just a single class
             validation_df["label"] = "Object"

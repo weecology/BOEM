@@ -1,11 +1,11 @@
 checkpoint:
-checkpoint_num_classes: 40
-checkpoint_dir: 
-train_image_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops/
+checkpoint_num_classes: 38
+checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/
+image_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops/
 train_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 val_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/val
-fast_dev_run: False
+fast_dev_run: True
 max_epochs: 50
 lr: 0.0001
-batch_size: 24
-workers: 12
+batch_size: 32
+workers: 16

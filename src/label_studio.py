@@ -28,7 +28,7 @@ def upload_to_label_studio(images, sftp_client, url, project_name, images_to_ann
     upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
     import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
 
-def check_for_new_annotations(url, project_name, csv_dir, image_dir):
+def check_for_new_annotations(url, project_name, csv_dir, image_dir, sftp_client, folder_name):
     """
     Check for new annotations from Label Studio, move annotated images, and gather new images to annotate.
 
@@ -54,6 +54,8 @@ def check_for_new_annotations(url, project_name, csv_dir, image_dir):
 
     # Choose new images to annotate
     label_studio_annotations = gather_data(csv_dir, image_dir)
+
+    #clean_inactive_images(sftp_client, label_studio_project, folder_name)
 
     return label_studio_annotations
  
@@ -129,7 +131,7 @@ def convert_json_to_dataframe(x):
         ymax = (annotation["value"]["height"]/100 + annotation["value"]["y"]/100) * annotation["original_height"]
         
         if "taxonomy" in annotation["value"]:
-            label = annotation["value"]["taxonomy"][0][0]
+            label = annotation["value"]["taxonomy"][0][-1]
         else:
             label = annotation["value"]["rectanglelabels"][0]
 
@@ -400,3 +402,38 @@ def remove_annotated_images_remote_server(sftp_client, annotations, folder_name)
         sftp_client.rename(remote_path, archive_annotation_path)
         print(f"Archived {image} successfully")
 
+
+def clean_inactive_images(sftp_client, label_studio_project, folder_name):
+    """
+    Check the names of active image tasks in Label Studio and delete all images
+    from the input folder on the remote server that are not in the active tasks.
+
+    Args:
+        sftp_client (SFTPClient): An instance of the SFTPClient class representing the SFTP connection.
+        label_studio_project (LabelStudioProject): The Label Studio project to check active tasks.
+        folder_name (str): The name of the folder on the remote server where the images are stored.
+
+    Returns:
+        None
+    """
+    # Get active tasks from Label Studio
+    active_tasks = label_studio_project.get_tasks()
+    active_image_names = {os.path.basename(task['data']['image']) for task in active_tasks}
+
+    # List images in the input folder on the remote server
+    remote_input_folder = os.path.join(folder_name, "input")
+    try:
+        remote_images = sftp_client.listdir(remote_input_folder)
+    except FileNotFoundError:
+        print(f"The input folder {remote_input_folder} does not exist.")
+        return
+
+    # Identify and delete images not in active tasks
+    for image in remote_images:
+        if image not in active_image_names:
+            remote_path = os.path.join(remote_input_folder, image)
+            try:
+                sftp_client.remove(remote_path)
+                print(f"Deleted inactive image: {image}")
+            except FileNotFoundError:
+                print(f"Image {image} not found during deletion.")

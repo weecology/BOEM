@@ -64,12 +64,16 @@ class Pipeline:
         
     def check_new_annotations(self, instance_name):
         instance_config = self.config.label_studio.instances[instance_name]
-        return label_studio.check_for_new_annotations(
+        annotations = label_studio.check_for_new_annotations(
             url=self.config.label_studio.url,
             csv_dir=instance_config.csv_dir,
             project_name=instance_config.project_name,
             image_dir=self.config.image_dir,
+            sftp_client = self.sftp_client,
+            folder_name=self.config.label_studio.folder_name
             )
+
+        return annotations
     
     def check_annotations(self):
 
@@ -97,13 +101,19 @@ class Pipeline:
                 # Select 5 random images
                 images_to_annotate = random.sample(full_image_paths, 5)
                 full_image_paths = [os.path.join(self.config.image_dir, image) for image in images_to_annotate]
-                label_studio.upload_to_label_studio(images=full_image_paths,
-                                sftp_client=self.sftp_client,
-                                url=self.config.label_studio.url,
-                                project_name=self.config.label_studio.instances[instance].project_name,
-                                images_to_annotate_dir=self.config.image_dir,
-                                folder_name=self.config.label_studio.folder_name,
-                                preannotations=None)
+                try:
+                    label_studio.upload_to_label_studio(
+                        images=full_image_paths,
+                        sftp_client=self.sftp_client,
+                        url=self.config.label_studio.url,
+                        project_name=self.config.label_studio.instances[instance].project_name,
+                        images_to_annotate_dir=self.config.image_dir,
+                        folder_name=self.config.label_studio.folder_name,
+                        preannotations=None
+                    )
+                except Exception as e:
+                    print(f"Failed to upload images to Label Studio for instance '{instance}': {e}")
+                    # Optionally log the error or handle it as needed
             return False
 
         else:
@@ -120,6 +130,7 @@ class Pipeline:
             (self.existing_reviewed.image_path.tolist() if self.existing_reviewed is not None else [])
         ))
 
+
         return True
 
     def run(self):
@@ -130,6 +141,10 @@ class Pipeline:
         if not status:
             return None
 
+        # If there are no annotations in any set, turn off force training
+        if len(self.existing_images) == 0:
+            self.config.force_training = False
+            print("No existing annotations, turning off force training")
         if self.config.force_training:
             all_training = pd.concat([self.existing_training, self.existing_reviewed])
             trained_detection_model = detection.preprocess_and_train(
@@ -235,11 +250,7 @@ class Pipeline:
             test_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images)]
 
         if test_preannotations is not None:
-            test_images_to_annotate, preannotations = select_images(
-                preannotations=test_preannotations,
-                strategy=self.config.active_testing.strategy,
-                n=self.config.active_testing.n_images,
-                )
+            test_images_to_annotate = random.sample(pool, self.config.active_learning.n_images)
         else:
             test_images_to_annotate = []
         
@@ -247,13 +258,19 @@ class Pipeline:
             print("No images to annotate in the test set")
         else:
             full_image_paths = [os.path.join(self.config.image_dir, image) for image in test_images_to_annotate]
-            label_studio.upload_to_label_studio(images=full_image_paths,
-                                        sftp_client=self.sftp_client,
-                                        url=self.config.label_studio.url,
-                                        project_name=self.config.label_studio.instances.validation.project_name,
-                                        images_to_annotate_dir=self.config.image_dir,
-                                        folder_name=self.config.label_studio.folder_name,
-                                        preannotations=None)
+            try:
+                label_studio.upload_to_label_studio(
+                    images=full_image_paths,
+                    sftp_client=self.sftp_client,
+                    url=self.config.label_studio.url,
+                    project_name=self.config.label_studio.instances.validation.project_name,
+                    images_to_annotate_dir=self.config.image_dir,
+                    folder_name=self.config.label_studio.folder_name,
+                    preannotations=None
+                )
+            except Exception as e:
+                print(f"Failed to upload validation images to Label Studio: {e}")
+                # Optionally log the error or handle it as needed
 
         # Select images to annotate based on the strategy
         training_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate)]
@@ -272,13 +289,19 @@ class Pipeline:
             # Training annotation pipeline
             full_image_paths = [os.path.join(self.config.image_dir, image) for image in train_images_to_annotate]
             preannotations_dict = {image_path: group for image_path, group in preannotations.groupby("image_path")}
-            label_studio.upload_to_label_studio(images=full_image_paths, 
-                                                url=self.config.label_studio.url,
-                                                sftp_client=self.sftp_client, 
-                                                project_name=self.config.label_studio.instances.train.project_name, 
-                                                images_to_annotate_dir=self.config.image_dir, 
-                                                folder_name=self.config.label_studio.folder_name, 
-                                                preannotations=preannotations_dict)
+            try:
+                label_studio.upload_to_label_studio(
+                    images=full_image_paths,
+                    url=self.config.label_studio.url,
+                    sftp_client=self.sftp_client,
+                    project_name=self.config.label_studio.instances.train.project_name,
+                    images_to_annotate_dir=self.config.image_dir,
+                    folder_name=self.config.label_studio.folder_name,
+                    preannotations=preannotations_dict
+                )
+            except Exception as e:
+                print(f"Failed to upload training images to Label Studio: {e}")
+                # Optionally log the error or handle it as needed
         if self.config.debug:
             human_review_pool =  evaluation_predictions
         else:
@@ -288,7 +311,7 @@ class Pipeline:
             confident_threshold=self.config.pipeline.confidence_threshold,
             min_classification_score=self.config.active_learning.min_classification_score,
             min_detection_score=self.config.active_learning.min_detection_score,
-            predictions=human_review_pool,
+            predictions=human_review_pool.copy(deep=True),
         )
 
         self.comet_logger.experiment.log_table(tabular_data=confident_predictions, filename="confident_predictions.csv")
@@ -302,13 +325,19 @@ class Pipeline:
             chosen_preannotations = uncertain_predictions[uncertain_predictions.image_path.isin(chosen_uncertain_images)]
             chosen_preannotations_dict = {image_path: group for image_path, group in chosen_preannotations.groupby("image_path")}
             full_image_paths = [os.path.join(self.config.image_dir, image) for image in chosen_uncertain_images]
-            label_studio.upload_to_label_studio(images=full_image_paths, 
-                                                sftp_client=self.sftp_client, 
-                                                url=self.config.label_studio.url,
-                                                project_name=self.config.label_studio.instances.review.project_name, 
-                                                images_to_annotate_dir=self.config.image_dir, 
-                                                folder_name=self.config.label_studio.folder_name, 
-                                                preannotations=chosen_preannotations_dict)
+            try:
+                label_studio.upload_to_label_studio(
+                    images=full_image_paths,
+                    sftp_client=self.sftp_client,
+                    url=self.config.label_studio.url,
+                    project_name=self.config.label_studio.instances.review.project_name,
+                    images_to_annotate_dir=self.config.image_dir,
+                    folder_name=self.config.label_studio.folder_name,
+                    preannotations=chosen_preannotations_dict
+                )
+            except Exception as e:
+                print(f"Failed to upload review images to Label Studio: {e}")
+                # Optionally log the error or handle it as needed
 
         print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
         print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")

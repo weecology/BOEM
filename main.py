@@ -4,7 +4,6 @@ from omegaconf import DictConfig
 from src.pipeline import Pipeline
 from src.label_studio import get_api_key
 from src.cluster import start
-import cProfile
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig):

@@ -73,4 +73,10 @@ def test_select_train_images(detection_model):
         strategy='random',
         n=1
     )
+    train_images_to_annotate = select_images(
+        preannotations=train_image_pool,
+        strategy='qbc',
+        n=1
+    )    
+    train_images_to_annotate
     assert len(train_images_to_annotate) > 0

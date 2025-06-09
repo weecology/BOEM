@@ -28,7 +28,7 @@ def upload_to_label_studio(images, sftp_client, url, project_name, images_to_ann
     upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
     import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
 
-def check_for_new_annotations(url, project_name, csv_dir, image_dir, sftp_client, folder_name):
+def check_for_new_annotations(url, project_name, csv_dir, image_dir):
     """
     Check for new annotations from Label Studio, move annotated images, and gather new images to annotate.
 
@@ -273,7 +273,8 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
     for image_name in image_names:
         print(f"Importing {image_name} into Label Studio")
         basename = os.path.basename(image_name)
-        data_dict = {'image': os.path.join("/data/local-files/?d=input/", basename)}
+        flight_name = os.path.dirname(image_name).split("/")[-1]
+        data_dict = {'image': os.path.join("/data/local-files/?d=input/", basename), 'flight_name':flight_name}
         if predictions is not None:
             prediction = predictions[basename]
             # Skip predictions if there are none
@@ -307,7 +308,8 @@ def download_completed_tasks(label_studio_project, csv_dir):
                     "xmax": 0,
                     "ymax": 0,
                     "label": 0,
-                    "annotator":labeled_task["annotations"][0]["created_username"]
+                    "annotator":labeled_task["annotations"][0]["created_username"],
+                    'flight_name': labeled_task['data']['flight_name']
                 }
             result = pd.DataFrame(result, index=[0])
         else:
@@ -315,16 +317,20 @@ def download_completed_tasks(label_studio_project, csv_dir):
             image_path = os.path.basename(labeled_task['data']['image'])
             result["image_path"] = image_path
             result["annotator"] = labeled_task["annotations"][0]["created_username"]
+            result["flight_name"] = labeled_task['data']['flight_name']
         labels.append(result)
 
     annotations =  pd.concat(labels) 
     print("There are {} new annotations".format(annotations.shape[0]))
 
-
     # Save csv in dir with timestamp
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    train_path = os.path.join(csv_dir, "{}.csv".format(timestamp))
-    annotations.to_csv(train_path, index=False)
+
+    for flight_name, group in annotations.groupby("flight_name"):
+        flight_dir = os.path.join(csv_dir, flight_name)
+        os.makedirs(flight_dir, exist_ok=True)
+        flight_csv_path = os.path.join(flight_dir, f"{timestamp}.csv")
+        group.to_csv(flight_csv_path, index=False)
 
     return annotations
 

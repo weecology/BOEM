@@ -123,14 +123,24 @@ class PipelineEvaluation:
         if self.classification_annotations.empty:
             return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
 
+        # Only evaluate classes that are in the label dict?
+        self.classification_annotations = self.classification_annotations[self.classification_annotations["label"].isin(self.classification_label_dict.keys())]
         self.classification_annotations["cropmodel_label"] = self.classification_annotations["label"].apply(lambda x: self.classification_label_dict[x])
         predictions["cropmodel_label"] = predictions["cropmodel_label"].apply(lambda x: self.classification_label_dict[x])
 
         # Metrics
         num_classes = len(self.classification_annotations["cropmodel_label"].unique())
-        micro_accuracy = Accuracy(average="micro", task="multiclass", num_classes=num_classes)
-        macro_accuracy = Accuracy(average="macro", task="multiclass", num_classes=num_classes)
-    
+        
+        if num_classes == 0:
+            return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
+        elif num_classes == 1:
+            micro_accuracy = Accuracy(average="micro", task="binary")
+            # In a single class scenario, micro and macro accuracy are the same
+            macro_accuracy = micro_accuracy
+        else:  
+            micro_accuracy = Accuracy(average="micro", task="multiclass", num_classes=num_classes)
+            macro_accuracy = Accuracy(average="macro", task="multiclass", num_classes=num_classes)
+        
         true_positive_scores = []
         false_positive_scores = []
         for image_path in predictions.drop_duplicates("image_path").image_path.tolist():

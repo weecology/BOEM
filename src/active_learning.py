@@ -29,7 +29,7 @@ def human_review(predictions, min_detection_score=0.6, min_classification_score=
     
     return confident_predictions, uncertain_predictions
 
-def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, model_path=None, dask_client=None, batch_size=16, pool_limit=1000, crop_model=None):
+def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, batch_size=16, pool_limit=1000, crop_model=None):
     """
     Generate predictions for the flight pool.
     
@@ -39,8 +39,6 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
         min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.1.
         model (main.deepforest, optional): A trained deepforest model. Defaults to None.
-        model_path (str, optional): The path to the model checkpoint file. Defaults to None. Only used in combination with dask.
-        dask_client (dask.distributed.Client, optional): A Dask client for parallel processing. Defaults to None.
         batch_size (int, optional): The batch size for prediction. Defaults to 16.
         comet_logger (CometLogger, optional): A CometLogger object. Defaults to None.
         crop_model (bool, optional): A deepforest.model.CropModel object. Defaults to None.
@@ -56,23 +54,14 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
 
     preannotations = detection.predict(
         m=model,
-        model_path=model_path,
         image_paths=pool,
         patch_size=patch_size,
         patch_overlap=patch_overlap,
         batch_size=batch_size,
-        crop_model=crop_model,
-        dask_client=dask_client)
+        crop_model=crop_model)
     
-    if len(preannotations) == 0:
-        return None
-    else:
-        preannotations = pd.concat(preannotations)
-
     if preannotations.empty:
         return None
-    
-    preannotations = gpd.GeoDataFrame(preannotations, geometry="geometry")
 
     preannotations = preannotations[preannotations["score"] >= min_score]
 
@@ -115,8 +104,12 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
             # Filter images by target labels
             chosen_images = preannotations[preannotations.cropmodel_label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
         elif strategy == "rarest":
+            # Drop most common class
+            preannotations = preannotations[~preannotations["cropmodel_label"].isin(preannotations["cropmodel_label"].value_counts().nlargest(1).index)]
+            
             # Sort images by least common label
             label_counts = preannotations.groupby("cropmodel_label").size().sort_values(ascending=True)
+            
             # Sort preannoations by least common label
             preannotations["label_count"] = preannotations["cropmodel_label"].map(label_counts)
             preannotations.sort_values("label_count", ascending=True, inplace=True)

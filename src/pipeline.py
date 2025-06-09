@@ -16,13 +16,11 @@ import random
 
 class Pipeline:
     """Pipeline for training and evaluating a detection and classification model"""
-    def __init__(self, cfg: DictConfig, dask_client=None):
+    def __init__(self, cfg: DictConfig):
         """Initialize the pipeline with optional configuration"""
         self.config = cfg
         self.sftp_client = label_studio.create_sftp_client(
             **self.config.server)
-
-        self.dask_client = dask_client
 
         # Pool of all images
         self.all_images = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))
@@ -66,11 +64,9 @@ class Pipeline:
         instance_config = self.config.label_studio.instances[instance_name]
         annotations = label_studio.check_for_new_annotations(
             url=self.config.label_studio.url,
-            csv_dir=instance_config.csv_dir,
+            csv_dir=os.path.dirname(self.config.label_studio.instances.train.csv_dir),
             project_name=instance_config.project_name,
             image_dir=self.config.image_dir,
-            sftp_client = self.sftp_client,
-            folder_name=self.config.label_studio.folder_name
             )
 
         return annotations
@@ -145,8 +141,10 @@ class Pipeline:
         if len(self.existing_images) == 0:
             self.config.force_training = False
             print("No existing annotations, turning off force training")
-        if self.config.force_training:
-            all_training = pd.concat([self.existing_training, self.existing_reviewed])
+        
+        all_training = pd.concat([self.existing_training, self.existing_reviewed])
+        
+        if self.config.detection_model.force_train:
             trained_detection_model = detection.preprocess_and_train(
                 train_annotations=all_training,
                 validation_annotations=self.existing_validation,
@@ -159,32 +157,40 @@ class Pipeline:
                 checkpoint_dir=self.config.detection_model.checkpoint_dir,
                 trainer_config=self.config.detection_model.trainer,
                 comet_logger=self.comet_logger)
-
+        else:
+            trained_detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
+            self.comet_logger.experiment.log_parameter("detection_checkpoint_path",self.config.detection_model.checkpoint)
+        
+        if self.config.classification_model.force_train:
             trained_classification_model = classification.preprocess_and_train(
                 train_df=all_training,
                 validation_df=self.existing_validation,
                 image_dir=self.config.image_dir,
-                **self.config.classification_model,
-                comet_logger=self.comet_logger)
-
-        else:
-            trained_detection_model = detection.load(checkpoint = self.config.detection_model.checkpoint)
-            self.comet_logger.experiment.log_parameter("detection_checkpoint_path",self.config.detection_model.checkpoint)
-            trained_classification_model = classification.load(
-                self.config.classification_model.checkpoint,
-                checkpoint_dir=self.config.classification_model.checkpoint_dir,
-                annotations=self.existing_training,
+                checkpoint=self.config.classification_model.checkpoint,
                 checkpoint_num_classes=self.config.classification_model.checkpoint_num_classes,
-                checkpoint_train_dir=self.config.classification_model.checkpoint_train_dir)
+                checkpoint_dir=self.config.classification_model.checkpoint_dir,
+                train_crop_image_dir=self.config.classification_model.train_crop_image_dir,
+                val_crop_image_dir=self.config.classification_model.val_crop_image_dir,
+                fast_dev_run=self.config.classification_model.fast_dev_run,
+                max_epochs=self.config.classification_model.max_epochs,
+                lr=self.config.classification_model.lr,
+                batch_size=self.config.classification_model.batch_size,
+                workers=self.config.classification_model.workers,
+                comet_logger=self.comet_logger)
+        else:
+            trained_classification_model = classification.load(
+                self.config.classification_model.checkpoint)
             
-        detection_checkpoint_path = self.comet_logger.experiment.get_parameter("detection_checkpoint_path")
-
         # Predict entire flightline
         trained_classification_model.num_workers = 0
 
         pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))  # Get all images in the data directory
         pool = [image for image in pool if not image.endswith('.csv')]
         pool = [image for image in pool if image not in self.existing_images]
+
+        if self.config.debug:
+            print(f"Debug mode: Using only 10 images from the pool")
+            pool = random.sample(pool, 10)
 
         flightline_predictions = generate_pool_predictions(
             pool=pool,
@@ -193,8 +199,6 @@ class Pipeline:
             patch_overlap=self.config.active_learning.patch_overlap,
             min_score=self.config.predict.min_score,
             model=trained_detection_model,
-            model_path=detection_checkpoint_path,
-            dask_client=self.dask_client,
             batch_size=self.config.predict.batch_size,
             crop_model=trained_classification_model,
         )
@@ -204,33 +208,12 @@ class Pipeline:
         
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id
 
-        if self.config.debug:
-            # To be a minimum images to debug the pipeline, get the first 5 evaluation images
-            image_paths = [os.path.join(self.config.image_dir, x) for x in self.existing_validation.image_path.head(5).tolist()]
-            
-            evaluation_predictions = detection.predict(
-                image_paths=image_paths,
-                m=trained_detection_model,
-                model_path=detection_checkpoint_path,
-                dask_client=self.dask_client,
-                crop_model=trained_classification_model,
-                patch_size=self.config.active_learning.patch_size,
-                patch_overlap=self.config.active_learning.patch_overlap,
-                batch_size=self.config.predict.batch_size
-            )
-            if len(evaluation_predictions) == 0:
-                evaluation_predictions = None
-            else:
-                evaluation_predictions = gpd.GeoDataFrame(pd.concat(evaluation_predictions), geometry="geometry")
-                evaluation_predictions["comet_id"] = self.comet_logger.experiment.id
+        if self.existing_validation is None:
+            print("No validation annotations, skipping evaluation")       
         else:
+            evaluation_annotations = self.existing_validation.copy(deep=True)
             evaluation_predictions = flightline_predictions[flightline_predictions.image_path.isin(self.existing_validation.image_path)]
 
-        evaluation_annotations = self.existing_validation.copy(deep=True)
-        
-        if evaluation_annotations.empty:
-            print("No annotations")
-        else:
             pipeline_monitor = PipelineEvaluation(
                 predictions=evaluation_predictions,
                 annotations=evaluation_annotations,
@@ -244,10 +227,7 @@ class Pipeline:
                 print("Pipeline performance is satisfactory, exiting")
                 return None
 
-        if self.config.debug:
-            test_preannotations =  evaluation_predictions
-        else:
-            test_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images)]
+        test_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images)]
 
         if test_preannotations is not None:
             test_images_to_annotate = random.sample(pool, self.config.active_learning.n_images)
@@ -302,10 +282,8 @@ class Pipeline:
             except Exception as e:
                 print(f"Failed to upload training images to Label Studio: {e}")
                 # Optionally log the error or handle it as needed
-        if self.config.debug:
-            human_review_pool =  evaluation_predictions
-        else:
-            human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]
+        
+        human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]
         
         confident_predictions, uncertain_predictions = human_review(
             confident_threshold=self.config.pipeline.confidence_threshold,
@@ -347,10 +325,13 @@ class Pipeline:
         final_predictions["set"] = "prediction"
         
         for dataset, label in [("existing_training", "train"), ("existing_validation", "validation"), ("existing_reviewed", "review")]:
-            final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "cropmodel_label"] = getattr(self, dataset)["label"]
-            final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "score"] = None
-            final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "set"] = label
-        
+            if getattr(self, dataset) is None:
+                continue
+            else:
+                final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "cropmodel_label"] = getattr(self, dataset)["label"]
+                final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "score"] = None
+                final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "set"] = label
+            
         # Reset index
         final_predictions = final_predictions.reset_index(drop=True)
         

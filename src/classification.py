@@ -22,15 +22,18 @@ def get_latest_checkpoint(checkpoint_dir, num_classes):
 
 def load(checkpoint=None, num_classes=None):
     if checkpoint: 
+        print(f"[load] Loading model from checkpoint: {checkpoint}")
         loaded_model = CropModel.load_from_checkpoint(
-            checkpoint,
-            num_classes)
+            checkpoint_path=checkpoint)
         num_classes = loaded_model.num_classes
-
+        print(f"[load] Loaded model num_classes: {num_classes}")
+        print(f"[load] Model output features: {loaded_model.model.fc.out_features}")
+        print(f"[load] label_dict length: {len(loaded_model.label_dict)}")
         # Assert that the crop_model.model.fc.out_features == num_classes
         assert loaded_model.model.fc.out_features == num_classes, f"Model output features {loaded_model.model.fc.out_features} do not match num_classes {num_classes}"
         assert loaded_model.model.fc.out_features == len(loaded_model.label_dict), f"Model output features {loaded_model.model.fc.out_features} do not match label_dict {len(loaded_model.label_dict)}"
     else:
+        print(f"[load] Creating new CropModel with num_classes={num_classes}")
         loaded_model = CropModel(num_classes=num_classes)
     
     loaded_model.create_trainer()
@@ -38,53 +41,53 @@ def load(checkpoint=None, num_classes=None):
     return loaded_model
 
 def train(model, train_dir, val_dir, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_size=4, workers=0, lr=0.0001):
-    """Train a model on labeled images.
-    Args:
-        model (CropModel): A CropModel object.
-        lr: Learning rate for training.
-        train_dir (str): The directory containing the training images.
-        val_dir (str): The directory containing the validation images.
-        fast_dev_run (bool): Whether to run a fast development run.
-        max_epochs (int): The maximum number of epochs to train for.
-        comet_logger (CometLogger): A CometLogger object.
-        batch_size (int): The batch size for training.
-
-    Returns:
-        main.deepforest: A trained deepforest model.
-    """
+    """Train a model on labeled images."""
     model.batch_size = batch_size
     model.num_workers = workers
     model.lr = lr
 
     devices = torch.cuda.device_count()
+    print(f"[train] Using {devices} CUDA devices.")
+
     model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices, enable_checkpointing=False)
 
     # Check if the model has been trained on a different set of classes
     if hasattr(model, 'label_dict') and model.label_dict:
         classes_in_checkpoint = list(model.label_dict.keys())
+        print(f"[train] Classes in checkpoint: {len(classes_in_checkpoint)}")
         model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
         classes_in_new_data = list(model.train_ds.class_to_idx.keys())
+        print(f"[train] Classes in new data: {len(classes_in_new_data)}")
 
         # If there are new classes in the training data, update the model
         if set(classes_in_new_data).issubset(set(classes_in_checkpoint)):
+            print("[train] No new classes found, using existing model.")
             finetune_model = model
         else:
+            print("[train] New classes found! Updating model output layer.")
             combined_classes = set(classes_in_new_data).union(set(classes_in_checkpoint))
-            finetune_model = CropModel(num_classes=len(combined_classes))
+            print(f"[train] Combined classes: {len(combined_classes)}")
+            finetune_model = CropModel(num_classes=len(classes_in_new_data))
+            finetune_model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
 
             # Strip the last layer off the checkpoint model and replace with new layer
             num_ftrs = model.model.fc.in_features
-            model.model.fc = torch.nn.Linear(num_ftrs, len(combined_classes))
+            print(f"[train] Setting model output layer to {len(classes_in_new_data)} classes.")
+            model.model.fc = torch.nn.Linear(num_ftrs, len(classes_in_new_data))
             finetune_model.model = model.model
             finetune_model.label_dict = model.train_ds.class_to_idx
             finetune_model.numeric_to_label_dict = {v: k for k, v in model.train_ds.class_to_idx.items()}
+            print(f"[train] label_dict set to {len(finetune_model.label_dict)} classes.")
             finetune_model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices, enable_checkpointing=False)
-            finetune_model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
+            if len(finetune_model.label_dict) != len(classes_in_new_data):
+                print(f"[train][WARNING] label_dict ({len(finetune_model.label_dict)}) does not match classes_in_new_data ({len(classes_in_new_data)})!")
     else:
+        print("[train] No label_dict found, loading from disk.")
         finetune_model = model
         finetune_model.load_from_disk(train_dir=train_dir, val_dir=val_dir)
-    
-    # If rank 0, set the if model.trainer.global_rank == 0:
+        print(f"[train] label_dict set to {len(finetune_model.label_dict)} classes.")
+
+    print(f"[train] Fitting model with {finetune_model.model.fc.out_features} output features and {len(finetune_model.label_dict)} labels.")
     finetune_model.trainer.fit(finetune_model)
     
     dl = finetune_model.predict_dataloader(finetune_model.val_ds)
@@ -161,46 +164,24 @@ def preprocess_and_train(
     workers=0,
     comet_logger=None,
     checkpoint_num_classes=None,
-    checkpoint_train_dir=None
 ):
-    """Preprocess data and train a crop model.
-    
-    Args:
-        checkpoint (str): Path to the checkpoint file.
-        checkpoint_num_classes (int): Number of classes in the checkpoint model. To be removed in DeepForest 1.6
-        checkpoint_dir (str): Directory containing checkpoint files.
-        image_dir (str): Directory containing images to be cropped.
-        train_crop_image_dir (str): Directory to save cropped training images.
-        val_crop_image_dir (str): Directory to save cropped validation images.
-        lr (float): Learning rate for training.
-        batch_size (int): Batch size for training.
-        fast_dev_run (bool): Whether to run a fast development run.
-        max_epochs (int): Maximum number of epochs for training.
-        workers (int): Number of workers for data loading.
-        train_df (pd.DataFrame): DataFrame containing training annotations. If none, load from existing dir
-        validation_df (pd.DataFrame): DataFrame containing validation annotations. If none, load from existing dir
-        checkpoint_train_dir: Directory containing training images for the checkpoint model.
-        comet_logger: CometLogger object for logging experiments.
-        
-    Returns:
-        trained_model: Trained model object.
-    """
-
+    """Preprocess data and train a crop model."""
     if checkpoint:
         if checkpoint_num_classes is None:
             raise ValueError("checkpoint_num_classes must be provided if checkpoint is passed.")
+        print(f"[preprocess_and_train] Using checkpoint: {checkpoint} with checkpoint_num_classes: {checkpoint_num_classes}")
     
     if train_df is None:
         num_classes = checkpoint_num_classes
-        # Load existing model
+        print(f"[preprocess_and_train] No train_df provided, using num_classes from checkpoint: {num_classes}")
         loaded_model = load(
             checkpoint=checkpoint,
             num_classes=num_classes
         )
     else:
         num_classes = len(train_df["label"].unique())
+        print(f"[preprocess_and_train] Found {num_classes} unique labels in train_df.")
 
-        # Load existing model
         loaded_model = load(
             checkpoint=checkpoint,
             num_classes=num_classes,
@@ -216,10 +197,10 @@ def preprocess_and_train(
         )    
         non_empty_train = train_df[train_df.xmin != 0]
         if non_empty_train.empty:
+            print("[preprocess_and_train] All train_df boxes are empty!")
             train_df = None
 
     if validation_df is not None:
-         # Preprocess validation data
         preprocessed_validation = preprocess_images(
             model=loaded_model, 
             annotations=validation_df, 
@@ -229,9 +210,11 @@ def preprocess_and_train(
         if preprocessed_validation is not None and not preprocessed_validation.empty:
             preprocessed_validation = preprocessed_validation
         else:
+            print("[preprocess_and_train] Validation data is empty after preprocessing.")
             preprocessed_validation = None
 
     if train_df is None:
+        print("[preprocess_and_train] Training with no train_df, using loaded model.")
         trained_model = train(
             batch_size=batch_size,
             lr=lr,
@@ -243,11 +226,11 @@ def preprocess_and_train(
             comet_logger=comet_logger,
             workers=workers)
         if trained_model.trainer.global_rank == 0:
-            print("saving model to checkpoint {checkpoint_dir}")
+            print(f"[preprocess_and_train] saving model to checkpoint {checkpoint_dir}")
             classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
             comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
     elif preprocessed_train is not None and preprocessed_validation is not None:
-        # Check for non-empty train and validation data
+        print("[preprocess_and_train] Training with preprocessed train and validation data.")
         trained_model = train(
             batch_size=batch_size,
             lr=lr,
@@ -260,10 +243,11 @@ def preprocess_and_train(
             workers=workers,
         )
         if trained_model.trainer.global_rank == 0:
-            print("saving model to checkpoint {checkpoint_dir}")
+            print(f"[preprocess_and_train] saving model to checkpoint {checkpoint_dir}")
             classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
             comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
     else:
+        print("[preprocess_and_train] No training performed, returning loaded model.")
         trained_model = loaded_model
 
     return trained_model

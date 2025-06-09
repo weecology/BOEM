@@ -6,13 +6,8 @@ import tempfile
 import warnings
 from logging import warn
 import math
-import contextlib
-import io
 
 # Third party imports
-import dask
-import dask.array as da
-from dask.distributed import Client
 import pandas as pd
 from deepforest import main, visualize
 from deepforest.utilities import read_file
@@ -21,10 +16,6 @@ import torch
 # Local imports
 from src import data_processing
 from omegaconf import OmegaConf
-import rasterio
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
-from PIL import Image
 
 def evaluate(model, test_csv, image_root_dir):
     """Evaluate a model on labeled images.
@@ -190,7 +181,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
 
             if test_annotations is not None:
                 non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
-                n = 5 if non_empty_validation_annotations.shape[0] > 5 else non_empty_validation_annotations.shape[0]
+                n = 20 if non_empty_validation_annotations.shape[0] > 20 else non_empty_validation_annotations.shape[0]
                 for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
                     sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
                     sample_validation_annotations_for_image.root_dir = train_image_dir
@@ -268,7 +259,9 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
             # Train model is just a single class
             validation_df["label"] = "Object"
         else:
-            validation_df = None        
+            validation_df = None
+    else:
+        validation_df = None        
 
     # Load existing model
     if checkpoint:
@@ -317,68 +310,27 @@ def get_latest_checkpoint(checkpoint_dir):
     else:
         return None
 
-def _predict_list_(image_paths, patch_size, patch_overlap, model_path, m=None, crop_model=None, batch_size=16):
-    if model_path:
-        m = load(model_path)
-    else:
-        if m is None:
-            raise ValueError("A model or model_path is required for prediction.")
 
-    m.create_trainer(fast_dev_run=False, devices=1)
-    m.config["batch_size"] = batch_size
-    m.config["workers"] = 0
-    
-    predictions = []
-    for image_path in image_paths:
-        prediction = m.predict_tile(raster_path=image_path, patch_size=patch_size, patch_overlap=patch_overlap, crop_model=crop_model)
-        if prediction is not None:
-            predictions.append(prediction)
 
-    return predictions
-
-def predict(image_paths, patch_size, patch_overlap, m=None, model_path=None, dask_client=None, crop_model=None, batch_size=16):
+def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_size=6, workers=5):
     """Predict bounding boxes for images
     Args:
         m (main.deepforest): A trained deepforest model.
         image_paths (list): A list of image paths.          
         crop_model (main.deepforest): A trained deepforest model for classification.
         model_path (str): The path to a model checkpoint.
-        dask_client (dask.distributed.Client): A dask client for parallel prediction.
         batch_size (int): The batch size for prediction.
     Returns:
         list: A list of image predictions.
     """
-    if dask_client:
-        # Load model on each client
-        dask_pool = da.from_array(image_paths, chunks=len(image_paths)//len(dask_client.ncores()))
-        blocks = dask_pool.to_delayed().ravel()
-        block_futures = []
-        for block in blocks:
-            block_future = dask_client.submit(_predict_list_,
-                                              image_paths=block.compute(),
-                                              patch_size=patch_size,
-                                              patch_overlap=patch_overlap,
-                                              model_path=model_path,
-                                              crop_model=crop_model,
-                                              batch_size=batch_size)
-            block_futures.append(block_future)
-        # Get results
-        predictions = []
-        for block_result in block_futures:
-            block_result = block_result.result()
-            if len(block_result) > 0:
-                predictions.append(pd.concat(block_result))
-    else:
-        # Suppress stdout
-        #with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        predictions = _predict_list_(
-                image_paths=image_paths,
-                patch_size=patch_size,
-                patch_overlap=patch_overlap,
-                model_path=model_path,
-                m=m,
-                crop_model=crop_model,
-                batch_size=batch_size)
+
+    m.config["batch_size"] = batch_size
+    m.config["workers"] = workers
+    predictions = m.predict_tile(path=image_paths,
+                   patch_size=patch_size,
+                   patch_overlap=patch_overlap,
+                   dataloader_strategy="batch",
+                   crop_model=crop_model)
 
     return predictions
 

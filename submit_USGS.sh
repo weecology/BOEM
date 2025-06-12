@@ -10,12 +10,12 @@
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
 #SBATCH --partition=gpu
-#SBATCH --ntasks-per-node=3
-#SBATCH --gpus=3
+#SBATCH --ntasks-per-node=6
+#SBATCH --gpus=6
 
 source activate BOEM
 
 cd ~/BOEM/
 python prepare_USGS.py
-srun python USGS_backbone.py --batch_size 16 --workers 4
+srun python USGS_backbone.py --batch_size 12 --workers 4
 

@@ -198,7 +198,7 @@ def crop_images(annotations, root_dir, savedir=None, experiment=None, expand=30)
     context = annotations["set"].values
 
     # Write crops to disk or log to experiment, location is the path
-    locations = write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=savedir, experiment=experiment, context=context)
+    locations = write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=savedir, experiment=experiment, context=context, expand=expand)
     
     return locations
 

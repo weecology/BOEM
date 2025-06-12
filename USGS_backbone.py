@@ -11,7 +11,7 @@ from deepforest.utilities import read_file
 # Parse arguments
 parser = argparse.ArgumentParser(description="Train DeepForest model")
 parser.add_argument("--batch_size", type=int, default=12, help="Batch size for training")
-parser.add_argument("--workers", type=int, default=16, help="Number of workers for data loading")
+parser.add_argument("--workers", type=int, default=5, help="Number of workers for data loading")
 args = parser.parse_args()
 
 # Use parsed arguments
@@ -64,38 +64,42 @@ comet_logger.experiment.log_parameter("batch_size", m.config["batch_size"])
 comet_logger.experiment.log_parameter("train_size", train.shape[0])
 comet_logger.experiment.log_parameter("test_size", test.shape[0])
 
-m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices)
+m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices, fast_dev_run=False)
 
-# Create a temporary directory for saving visualizations
-with tempfile.TemporaryDirectory() as tmpdir:
-    # Filter non-empty train annotations
-    non_empty_train = train[~train.empty_image]
-    n_train = min(20, non_empty_train.shape[0])
-    for img_path in non_empty_train.image_path.sample(n=n_train).unique():
-        ann = non_empty_train[non_empty_train.image_path == img_path]
-        ann.root_dir = savedir
-        ann = read_file(ann, root_dir=m.config["validation"]["root_dir"])
-        short_name = os.path.basename(img_path)
-        visualize.plot_annotations(ann, root_dir=ann.root_dir, savedir=tmpdir)
-        comet_logger.experiment.log_image(
-            os.path.join(tmpdir, short_name),
-            metadata={"name": short_name, "context": "detection_train"}
-        )
+# # Create a temporary directory for saving visualizations
+# with tempfile.TemporaryDirectory() as tmpdir:
+#     # Filter non-empty train annotations
+#     non_empty_train = train[~train.empty_image]
+#     n_train = min(5, non_empty_train.shape[0])
+#     for img_path in non_empty_train.image_path.sample(n=n_train).unique():
+#         ann = non_empty_train[non_empty_train.image_path == img_path]
+#         ann.root_dir = savedir
+#         ann = read_file(ann, root_dir=m.config["validation"]["root_dir"])
+#         short_name = os.path.basename(img_path)
+#         visualize.plot_annotations(ann, root_dir=ann.root_dir, savedir=tmpdir)
+#         comet_logger.experiment.log_image(
+#             os.path.join(tmpdir, short_name),
+#             metadata={"name": short_name, "context": "detection_train"}
+#         )
 
-    # Filter non-empty test annotations
-    non_empty_test = test[~test.empty_image]
-    n_test = min(20, non_empty_test.shape[0])
-    for img_path in non_empty_test.image_path.sample(n=n_test).unique():
-        ann = non_empty_test[non_empty_test.image_path == img_path]
-        ann.root_dir = savedir
-        ann = read_file(ann, root_dir=m.config["validation"]["root_dir"])
-        short_name = os.path.basename(img_path)
-        visualize.plot_annotations(ann, root_dir=ann.root_dir, savedir=tmpdir)
-        comet_logger.experiment.log_image(
-            os.path.join(tmpdir, short_name),
-            metadata={"name": short_name, "context": "detection_validation"}
-        )
-results = m.evaluate(m.config["validation"]["csv_file"],m.config["validation"]["root_dir"], batch_size=36)
+#     # Filter non-empty test annotations
+#     non_empty_test = test[~test.empty_image]
+#     n_test = min(5, non_empty_test.shape[0])
+#     for img_path in non_empty_test.image_path.sample(n=n_test).unique():
+#         ann = non_empty_test[non_empty_test.image_path == img_path]
+#         ann.root_dir = savedir
+#         ann = read_file(ann, root_dir=m.config["validation"]["root_dir"])
+#         short_name = os.path.basename(img_path)
+#         visualize.plot_annotations(ann, root_dir=ann.root_dir, savedir=tmpdir)
+#         comet_logger.experiment.log_image(
+#             os.path.join(tmpdir, short_name),
+#             metadata={"name": short_name, "context": "detection_validation"}
+#         )
+results = m.evaluate(
+    csv_file = m.config["validation"]["csv_file"],
+    root_dir = m.config["validation"]["root_dir"],
+    batch_size=36)
+
 print(results)
 
 m.trainer.fit(m)
@@ -103,8 +107,15 @@ m.trainer.fit(m)
 # Save the model
 m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/{}.pl".format(comet_logger.experiment.id))
 
-results = m.evaluate(m.config["validation"]["csv_file"],m.config["validation"]["root_dir"], batch_size=36)
+results = m.evaluate(
+    csv_file = m.config["validation"]["csv_file"],
+    root_dir = m.config["validation"]["root_dir"],
+    batch_size=36)
+
 print(results)
+# Log the evaluation results
+comet_logger.experiment.log_metric("box_precision", results["box_precision"])
+comet_logger.experiment.log_metric("box_recall", results["box_recall"])
 
 # Gather the number of steps taken from all GPUs
 global_steps = torch.tensor(m.trainer.global_step, dtype=torch.int32, device=m.device)

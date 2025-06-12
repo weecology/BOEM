@@ -191,7 +191,7 @@ combined_test["label"] = "Object"
 
 size_2000 = 0
 images = []
-for x in test.image_path.unique():
+for x in combined_test.image_path.unique():
     img = PIL.Image.open(os.path.join("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops",x))
     # count the size 2000 index
     if img.size[0] == 2000:
@@ -203,6 +203,15 @@ print("Number of size 2000 images in test set:", size_2000)
 # remove the size 2000 images from the test set
 combined_test = combined_test[~combined_test.image_path.isin(images)]
 
+mini_train = combined_train.groupby("label").apply(lambda x: x.groupby("image_path").head(1)).reset_index(drop=True)
+mini_train = mini_train.groupby("label").head(500).reset_index(drop=True)
+
+mini_test = combined_test.groupby("label").apply(lambda x: x.groupby("image_path").head(1)).reset_index(drop=True)
+mini_test = mini_test.groupby("label").head(50).reset_index(drop=True)
+
+# save the mini sets
+mini_train.to_csv(os.path.join(savedir, "mini_train.csv"), index=False)
+mini_test.to_csv(os.path.join(savedir, "mini_test.csv"), index=False)
 
 # Resave the train and test sets with the new label column
 combined_train.to_csv(os.path.join(savedir,"train.csv"), index=False)

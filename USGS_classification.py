@@ -89,7 +89,6 @@ def main(cfg: DictConfig):
         validation_df=validation_df,
         comet_logger=comet_logger,
         checkpoint=cfg.classification_model.checkpoint,
-        checkpoint_num_classes=cfg.classification_model.checkpoint_num_classes,
         checkpoint_dir=cfg.classification_model.checkpoint_dir,
         image_dir=cfg.classification_model.image_dir,
         train_crop_image_dir=cfg.classification_model.train_crop_image_dir,

@@ -4,6 +4,7 @@ import geopandas as gpd
 from omegaconf import DictConfig
 
 from src.active_learning import generate_pool_predictions, select_images, human_review
+from deepforest.model import CropModel
 from src import label_studio
 from src import detection
 from src import classification
@@ -178,8 +179,7 @@ class Pipeline:
                 workers=self.config.classification_model.workers,
                 comet_logger=self.comet_logger)
         else:
-            trained_classification_model = classification.load(
-                self.config.classification_model.checkpoint)
+            trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
             
         # Predict entire flightline
         trained_classification_model.num_workers = 0
@@ -323,17 +323,42 @@ class Pipeline:
         # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
         final_predictions = flightline_predictions.copy(deep=True)
         final_predictions["set"] = "prediction"
+
+        # Add in the existing training and validation annotations
+        if self.existing_training is not None:
+            existing_training = self.existing_training.copy(deep=True)
+            existing_training["set"] = "train"
+            # Change label to cropmodel_label
+            existing_training.rename(columns={"label": "cropmodel_label"}, inplace=True)
+            # Add a cropmodel_score column
+            existing_training["cropmodel_score"] = 1.0
+            final_predictions = pd.concat([final_predictions, existing_training], ignore_index=True)
+
+        if self.existing_validation is not None:
+            existing_validation = self.existing_validation.copy(deep=True)
+            existing_validation["set"] = "validation"
+            # Change label to cropmodel_label
+            existing_validation.rename(columns={"label": "cropmodel_label"}, inplace=True)
+            # Add a cropmodel_score column
+            existing_validation["cropmodel_score"] = 1.0
+
+            final_predictions = pd.concat([final_predictions, existing_validation], ignore_index=True)
+
+        # Add in the human reviewed annotations
+        if self.existing_reviewed is not None:
+            existing_reviewed = self.existing_reviewed.copy(deep=True)
+            # Change label to cropmodel_label
+            existing_reviewed.rename(columns={"label": "cropmodel_label"}, inplace=True)
+            # Add a set column
+            existing_reviewed["cropmodel_score"] = 1.0
+            existing_reviewed["set"] = "reviewed"
+            final_predictions = pd.concat([final_predictions, existing_reviewed], ignore_index=True)
         
-        for dataset, label in [("existing_training", "train"), ("existing_validation", "validation"), ("existing_reviewed", "review")]:
-            if getattr(self, dataset) is None:
-                continue
-            else:
-                final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "cropmodel_label"] = getattr(self, dataset)["label"]
-                final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "score"] = None
-                final_predictions.loc[final_predictions.image_path.isin(getattr(self, dataset).image_path), "set"] = label
-            
         # Reset index
         final_predictions = final_predictions.reset_index(drop=True)
+
+        # add comet_id
+        final_predictions["comet_id"] = self.comet_logger.experiment.id
         
         # Remove False Positives and empty images
         final_predictions = final_predictions[~final_predictions.cropmodel_label.isin(["FalsePositive", "0",0,"Object"])]
@@ -343,7 +368,7 @@ class Pipeline:
             return None
         
         # Write crops to disk
-        urls = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment)
+        urls = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
         final_predictions["crop_api_path"] = urls
 
         # crop_image_id

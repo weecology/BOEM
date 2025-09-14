@@ -159,34 +159,37 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
                 model.config[key] = value
 
     devices = torch.cuda.device_count()
+    if devices ==0:
+        strategy = "auto"
+        devices = 1
     strategy = "ddp" if devices > 1 else "auto"
     if comet_logger:
         comet_logger.experiment.log_parameters(model.config)
         comet_logger.experiment.log_table("train.csv", train_annotations)
         comet_logger.experiment.log_table("test.csv", test_annotations)
         
-    model.create_trainer(logger=comet_logger, num_nodes=1, accelerator="gpu", strategy=strategy, devices=devices)
+    model.create_trainer(logger=comet_logger, num_nodes=1, strategy=strategy, devices=devices)
 
     non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
     
-    # Skip for fast_dev run
-    if not model.trainer.fast_dev_run:
-        if comet_logger:
-            n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
-            for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
-                sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
-                sample_train_annotations_for_image.root_dir = train_image_dir
-                visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
-                comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_train'})
+    # # Skip for fast_dev run
+    # if not model.trainer.fast_dev_run:
+    #     if comet_logger:
+    #         n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
+    #         for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
+    #             sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
+    #             sample_train_annotations_for_image.root_dir = train_image_dir
+    #             visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
+    #             comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_train'})
 
-            if test_annotations is not None:
-                non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
-                n = 20 if non_empty_validation_annotations.shape[0] > 20 else non_empty_validation_annotations.shape[0]
-                for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
-                    sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
-                    sample_validation_annotations_for_image.root_dir = train_image_dir
-                    visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
-                    comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_validation'})
+    #         if test_annotations is not None:
+    #             non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
+    #             n = 20 if non_empty_validation_annotations.shape[0] > 20 else non_empty_validation_annotations.shape[0]
+    #             for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
+    #                 sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
+    #                 sample_validation_annotations_for_image.root_dir = train_image_dir
+    #                 visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
+    #                 comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_validation'})
 
     model.trainer.fit(model)
 

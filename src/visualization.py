@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from tqdm import tqdm
 import subprocess
+import zipfile
+import tempfile
 
 class PredictionVisualizer:
     def __init__(self, predictions: pd.DataFrame, output_dir: str, fps: int = 5, frame_size: Tuple[int, int] = (1920, 1080), thin_factor: int = 10, codec=None):
@@ -130,77 +132,53 @@ class PredictionVisualizer:
             
         return output_path
     
-def write_crops(root_dir, images, boxes, labels, savedir=None, experiment=None, expand=30, context=None):
-    """Write crops to disk.
+def write_crops(root_dir, images, boxes, labels, experiment, expand=30):
+    """Write crops to disk or zip and upload as asset."""
 
-    Args:
-        root_dir (str): The root directory where the images are located.
-        images (list): A list of image filenames.
-        boxes (list): A list of bounding box coordinates in the format [xmin, ymin, xmax, ymax].
-        labels (list): A list of labels corresponding to each bounding box.
-        savedir (str): The directory where the cropped images will be saved.
-        experiment (Experiment): The experiment object to log images to.
-        expand (int): The number of pixels to expand the bounding box on all sides.
-        context (str): a list of str to be used as metadata.
+    basenames = []
 
-    Returns:
-        None
-    """
-    if savedir is None and experiment is None:
-        raise ValueError("Either savedir or experiment must be provided")
+    # Use a single temp dir for all crops and the zip
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, "crops.zip")
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for index, box in enumerate(boxes):
+                try:
+                    xmin, ymin, xmax, ymax = box
+                    xmin = max(0, xmin - expand)
+                    ymin = max(0, ymin - expand)
+                    xmax = max(0, xmax + expand)
+                    ymax = max(0, ymax + expand)
 
-    # Create a directory
-    if savedir:
-        os.makedirs(os.path.join(savedir), exist_ok=True)
+                    label = labels[index]
+                    image = images[index]
+                    basename = os.path.splitext(os.path.basename(image))[0]
+                    img_path = os.path.join(tmpdir, f"{basename}_{label}_{index}.png")
 
+                    with rasterio.open(os.path.join(root_dir, image)) as src:
+                        img = src.read(window=((ymin, ymax), (xmin, xmax)))
+                        img = np.rollaxis(img, 0, 3)
+                        cv2.imwrite(img_path, img)
+                        zipf.write(img_path, os.path.basename(img_path))
+                        basenames.append(os.path.basename(img_path))
 
-    locations = []
-    # Use rasterio to read the image
-    for index, box in enumerate(boxes):
-        try:
-            xmin, ymin, xmax, ymax = box
-
-            # Expand by variable on all sides
-            xmin = max(0, xmin - expand)
-            ymin = max(0, ymin - expand)
-            xmax = max(0, xmax + expand)
-            ymax = max(0, ymax + expand)
-
-            label = labels[index]
-            image = images[index]
-            basename = os.path.splitext(os.path.basename(image))[0]
-            
-            with rasterio.open(os.path.join(root_dir, image)) as src:
-                # Crop the image using the bounding box coordinates
-                img = src.read(window=((ymin, ymax), (xmin, xmax)))
-                
-                # Save the cropped image as a PNG file using opencv
-                img = np.rollaxis(img, 0, 3)
-                if savedir:
-                    img_path = os.path.join(savedir, f"{basename}_{label}_{index}.png")
-                    cv2.imwrite(img_path, img)
-                    locations.append(img_path)
-                else:
-                    url = experiment.log_image(image_data=img,name=f"{basename}_{label}_{index}.png", metadata={"label": label, "context": context})
-                    locations.append(url["web"])
-        except Exception as e:
-            print(f"Error processing image {image}: {e}")
-            locations.append(None)
-
-    return locations
+                except Exception as e:
+                    print(f"Error processing image {image}: {e}")
+                    basenames.append(None)
+        experiment.log_asset(file_data=zip_path, file_name="crops.zip")
+        
+        return basenames
     
-def crop_images(annotations, root_dir, savedir=None, experiment=None, expand=30):
+def crop_images(annotations, root_dir, experiment=None, expand=30):
     """Crop images based on bounding boxes and save them to disk."""
     # Get the bounding boxes, images, and labels
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
     images = annotations["image_path"].values
     labels = annotations["cropmodel_label"].values
-    context = annotations["set"].values
 
     # Write crops to disk or log to experiment, location is the path
-    locations = write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=savedir, experiment=experiment, context=context, expand=expand)
+    crop_image_paths = write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, experiment=experiment, expand=expand)
     
-    return locations
+    return crop_image_paths
 
 def select_images_for_video(image_dir, thin_factor):
     all_images = glob.glob(image_dir + "/*.jpg")

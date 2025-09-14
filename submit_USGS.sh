@@ -9,13 +9,15 @@
 #SBATCH --time=48:00:00       #Time limit hrs:min:sec
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
-#SBATCH --partition=gpu
-#SBATCH --ntasks-per-node=6
-#SBATCH --gpus=6
+#SBATCH --partition=hpg-b200
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus=1
 
-source activate BOEM
+# path to conda environment
+source /blue/ewhite/b.weinstein/miniconda3/etc/profile.d/conda.sh
+conda activate BOEM
 
 cd ~/BOEM/
-python prepare_USGS.py
+#python prepare_USGS.py
 srun python USGS_backbone.py --batch_size 12 --workers 4
 

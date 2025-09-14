@@ -38,9 +38,9 @@ m.config["train"]["fast_dev_run"] = False
 m.config["validation"]["csv_file"] = os.path.join(savedir,"test.csv")
 m.config["validation"]["root_dir"] = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
 m.config["batch_size"] = batch_size
-m.config["train"]["epochs"] = 25
+m.config["train"]["epochs"] = 10
 m.config["workers"] = workers
-m.config["validation"]["val_accuracy_interval"] = 5
+m.config["validation"]["val_accuracy_interval"] = 1
 m.config["train"]["scheduler"]["params"]["eps"]  = 0
 m.config["train"]["lr"] = 0.001
 
@@ -114,8 +114,8 @@ results = m.evaluate(
 
 print(results)
 # Log the evaluation results
-comet_logger.experiment.log_metric("box_precision", results["box_precision"])
-comet_logger.experiment.log_metric("box_recall", results["box_recall"])
+comet_logger.experiment.log_metric("box_precision_after", results["box_precision"])
+comet_logger.experiment.log_metric("box_recall_after", results["box_recall"])
 
 # Gather the number of steps taken from all GPUs
 global_steps = torch.tensor(m.trainer.global_step, dtype=torch.int32, device=m.device)

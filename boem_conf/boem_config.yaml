@@ -1,0 +1,97 @@
+defaults:
+  - server: serenity
+  - classification_model: finetune.yaml
+
+debug: False
+
+comet:
+  project: BOEM
+  workspace: bw4sz
+
+check_annotations: false
+# Force upload bypasses the pipeline, useful for debugging and starting a new project
+force_upload: False
+image_dir: /blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800
+
+label_studio:
+  url: "https://labelstudio.naturecast.org/"
+  folder_name: "/media/T/lab-white-ernest/label_studio_data/input/BOEM"
+  instances:
+    train:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/train
+      project_name: "Bureau of Ocean Energy Management - Training"
+    validation:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
+      project_name: "Bureau of Ocean Energy Management - Validation"
+    review:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/review
+      project_name: "Bureau of Ocean Energy Management - Review"
+predict:
+  patch_size: 1000
+  patch_overlap: 0
+  min_score: 0.7
+  batch_size: 6
+  # For web viz, expand pixels on all sides
+  buffer: 60
+
+
+pipeline:
+  confidence_threshold: 0.75
+  limit_empty_frac: 0.001
+  gpus: 1
+
+propagate:
+  time_threshold_seconds: 5
+  distance_threshold_pixels: 50
+
+detection_model:
+  force_train: True
+  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/f3c687c8824f4b9fafa4bafbbe3fad8b.pl"
+  checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
+  patch_size: 1000
+  patch_overlap: 0
+  crop_image_dir: /blue/ewhite/b.weinstein/BOEM/detection/crops/
+  limit_empty_frac: 0.001
+  labels:
+    - "Object"
+  trainer: 
+    batch_size: 12
+    train:
+      fast_dev_run: False
+      epochs: 4
+      lr: 0.00001
+    workers: 0
+    validation:
+      val_accuracy_interval: 5
+
+pipeline_evaluation:
+  # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
+  detection_true_positive_threshold: 0.8
+  classification_threshold: 0.5
+
+active_learning:
+  strategy: rarest
+  n_images: 200
+  patch_size: 1000
+  patch_overlap: 0
+  min_classification_score: 0.6
+  min_detection_score: 0.8
+  model_checkpoint:
+  target_labels:
+    - "Object"
+  
+  # Optional parameters:
+  evaluation: 
+  dask_client: 
+  pool_limit: 500
+
+active_testing:
+  strategy: random
+  n_images: 20
+  m: 
+  patch_size: 1000
+  patch_overlap: 0
+  min_score: 0
+
+human_review: 
+  n: 200

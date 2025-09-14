@@ -129,7 +129,7 @@ class PipelineEvaluation:
         predictions["cropmodel_label"] = predictions["cropmodel_label"].apply(lambda x: self.classification_label_dict[x])
 
         # Metrics
-        num_classes = len(self.classification_annotations["cropmodel_label"].unique())
+        num_classes = len(self.classification_label_dict)
         
         if num_classes == 0:
             return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}

@@ -189,8 +189,10 @@ class Pipeline:
         pool = [image for image in pool if image not in self.existing_images]
 
         if self.config.debug:
-            print(f"Debug mode: Using only 10 images from the pool")
-            pool = random.sample(pool, 10)
+            if self.existing_validation is not None:
+                pool = [image for image in pool if image not in self.existing_validation.image_path.tolist()][:10]
+            else:
+                pool = random.sample(pool, 10)
 
         flightline_predictions = generate_pool_predictions(
             pool=pool,
@@ -332,6 +334,8 @@ class Pipeline:
             existing_training.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a cropmodel_score column
             existing_training["cropmodel_score"] = 1.0
+            # Add an object score
+            existing_training["score"] = 1.0
             final_predictions = pd.concat([final_predictions, existing_training], ignore_index=True)
 
         if self.existing_validation is not None:
@@ -341,6 +345,8 @@ class Pipeline:
             existing_validation.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a cropmodel_score column
             existing_validation["cropmodel_score"] = 1.0
+            # Add an object score
+            existing_validation["score"] = 1.0
 
             final_predictions = pd.concat([final_predictions, existing_validation], ignore_index=True)
 
@@ -351,6 +357,8 @@ class Pipeline:
             existing_reviewed.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a set column
             existing_reviewed["cropmodel_score"] = 1.0
+            # Add an object score
+            existing_reviewed["score"] = 1.0
             existing_reviewed["set"] = "reviewed"
             final_predictions = pd.concat([final_predictions, existing_reviewed], ignore_index=True)
         
@@ -368,13 +376,11 @@ class Pipeline:
             return None
         
         # Write crops to disk
-        urls = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
-        final_predictions["crop_api_path"] = urls
+        image_paths = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
 
         # crop_image_id
-        final_predictions["crop_image_id"] = final_predictions.apply(
-            lambda row: f"{os.path.splitext(os.path.basename(row['image_path']))[0]}_{row['cropmodel_label']}_{row.name}.png", axis=1)
-        
+        final_predictions["crop_image_id"] = image_paths
+
         # give it a complete tag
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
         self.comet_logger.experiment.add_tag("complete")

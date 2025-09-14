@@ -1,0 +1,4 @@
+# Remote server for image hosting
+user: 'ben'
+host: 'serenity.ifas.ufl.edu'
+key_filename: '/home/b.weinstein/.ssh/id_ed25519'

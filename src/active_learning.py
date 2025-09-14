@@ -60,7 +60,7 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
         batch_size=batch_size,
         crop_model=crop_model)
     
-    if preannotations.empty:
+    if preannotations is None:
         return None
 
     preannotations = preannotations[preannotations["score"] >= min_score]

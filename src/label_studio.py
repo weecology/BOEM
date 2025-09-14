@@ -46,7 +46,10 @@ def check_for_new_annotations(url, project_name, csv_dir, image_dir):
    
    # Move annotated images out of local pool
     if new_annotations is not None:
-        delete_completed_tasks(label_studio_project=label_studio_project)
+        try:
+            delete_completed_tasks(label_studio_project=label_studio_project)
+        except Exception as e:
+            print(f"Error deleting completed tasks: {e}")
     
     else:
         print("No new annotations")

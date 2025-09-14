@@ -14,15 +14,17 @@ for folder in "$GULF_DIR"/*/; do
 #SBATCH --account=ewhite
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
-#SBATCH --mem=60GB
-#SBATCH --time=24:00:00
+#SBATCH --mem=80GB
+#SBATCH --time=48:00:00
 #SBATCH --output=/home/b.weinstein/logs/BOEM_%j.out
 #SBATCH --error=/home/b.weinstein/logs/BOEM_%j.err
-#SBATCH --partition=gpu
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus=a100:1
+#SBATCH --partition=hpg-b200
+#SBATCH --gpus=1
 
-source activate BOEM
+# path to conda environment
+source /blue/ewhite/b.weinstein/miniconda3/etc/profile.d/conda.sh
+conda activate BOEM
 
 cd ~/BOEM/
 
@@ -30,6 +32,7 @@ echo "Running with image_dir: \$IMAGE_DIR"
 
 export GDAL_ERROR_ON_LIBJPEG_WARNING=FALSE
 export PYTHONPATH=/home/b.weinstein/BOEM:\$PYTHONPATH
-srun python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100000 active_testing.n_images=5 active_learning.n_images=50 debug=False pipeline.gpus=1
+srun python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=50000 debug=False pipeline.gpus=1
 EOF
+    sleep 10
 done

@@ -8,7 +8,7 @@ from deepforest.visualize import plot_results
 @hydra.main(config_path="boem_conf", config_name="boem_config.yaml")
 def main_inspect(cfg: DictConfig):
     # Load model from checkpoint
-    checkpoint_path = cfg.detection_model.checkpoint
+    checkpoint_path = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/9a203c4f18b942f3a946ea5db0670524.pl"
     print(f"Loading model from checkpoint: {checkpoint_path}")
     m = main.deepforest.load_from_checkpoint(checkpoint_path)
 

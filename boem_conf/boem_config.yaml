@@ -2,6 +2,8 @@ defaults:
   - server: serenity
   - classification_model: finetune.yaml
 
+annotation_tool: label_studio  # or 'sagemaker'
+
 debug: False
 
 comet:

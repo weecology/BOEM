@@ -32,7 +32,7 @@ echo "Running with image_dir: \$IMAGE_DIR"
 
 export GDAL_ERROR_ON_LIBJPEG_WARNING=FALSE
 export PYTHONPATH=/home/b.weinstein/BOEM:\$PYTHONPATH
-srun python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=50000 debug=False pipeline.gpus=1
+srun python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100 debug=False pipeline.gpus=1
 EOF
     sleep 10
 done

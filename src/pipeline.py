@@ -6,6 +6,7 @@ from omegaconf import DictConfig
 from src.active_learning import generate_pool_predictions, select_images, human_review
 from deepforest.model import CropModel
 from src import label_studio
+from src import sagemaker_gt
 from src import detection
 from src import classification
 from src.visualization import crop_images
@@ -20,8 +21,13 @@ class Pipeline:
     def __init__(self, cfg: DictConfig):
         """Initialize the pipeline with optional configuration"""
         self.config = cfg
-        self.sftp_client = label_studio.create_sftp_client(
-            **self.config.server)
+        # Annotation tool selection
+        self.annotation_tool = getattr(self.config, "annotation_tool", "label_studio")
+
+        # Only needed for Label Studio uploads
+        if self.annotation_tool == "label_studio":
+            self.sftp_client = label_studio.create_sftp_client(
+                **self.config.server)
 
         # Pool of all images
         self.all_images = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))
@@ -62,13 +68,19 @@ class Pipeline:
         self.comet_logger.experiment.log_code(folder=os.path.join(os.path.dirname(__file__), "../src"), overwrite=True)
         
     def check_new_annotations(self, instance_name):
-        instance_config = self.config.label_studio.instances[instance_name]
-        annotations = label_studio.check_for_new_annotations(
-            url=self.config.label_studio.url,
-            csv_dir=os.path.dirname(self.config.label_studio.instances.train.csv_dir),
-            project_name=instance_config.project_name,
-            image_dir=self.config.image_dir,
-            )
+        if self.annotation_tool == "label_studio":
+            instance_config = self.config.label_studio.instances[instance_name]
+            annotations = label_studio.check_for_new_annotations(
+                url=self.config.label_studio.url,
+                csv_dir=os.path.dirname(self.config.label_studio.instances.train.csv_dir),
+                project_name=instance_config.project_name,
+                image_dir=self.config.image_dir,
+                )
+        else:
+            # For SageMaker, simply aggregate any CSVs found under the
+            # corresponding instances directory
+            instance_dir = self.config.label_studio.instances[instance_name].csv_dir
+            annotations = sagemaker_gt.gather_data(annotation_dir=instance_dir, image_dir=self.config.image_dir)
 
         return annotations
     
@@ -79,9 +91,14 @@ class Pipeline:
             self.check_new_annotations("validation")
             self.check_new_annotations("review")
 
-        self.existing_training = label_studio.gather_data(self.config.label_studio.instances.train.csv_dir, image_dir=self.config.image_dir)
-        self.existing_validation = label_studio.gather_data(self.config.label_studio.instances.validation.csv_dir, image_dir=self.config.image_dir)
-        self.existing_reviewed = label_studio.gather_data(self.config.label_studio.instances.review.csv_dir, image_dir=self.config.image_dir)
+        if self.annotation_tool == "label_studio":
+            self.existing_training = label_studio.gather_data(self.config.label_studio.instances.train.csv_dir, image_dir=self.config.image_dir)
+            self.existing_validation = label_studio.gather_data(self.config.label_studio.instances.validation.csv_dir, image_dir=self.config.image_dir)
+            self.existing_reviewed = label_studio.gather_data(self.config.label_studio.instances.review.csv_dir, image_dir=self.config.image_dir)
+        else:
+            self.existing_training = sagemaker_gt.gather_data(self.config.label_studio.instances.train.csv_dir, image_dir=self.config.image_dir)
+            self.existing_validation = sagemaker_gt.gather_data(self.config.label_studio.instances.validation.csv_dir, image_dir=self.config.image_dir)
+            self.existing_reviewed = sagemaker_gt.gather_data(self.config.label_studio.instances.review.csv_dir, image_dir=self.config.image_dir)
         
         self.comet_logger.experiment.log_table(tabular_data=self.existing_reviewed, filename="human_reviewed_annotations.csv")
         self.comet_logger.experiment.log_table(tabular_data=self.existing_training, filename="training_annotations.csv")

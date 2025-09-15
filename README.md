@@ -1,45 +1,61 @@
-# Bird Detection Pipeline
+# BOEM Active Learning Pipeline
 
 A machine learning pipeline for detecting and annotating birds in aerial imagery.
 
 ## Project Structure
 
 ```
-project_root/
+BOEM/
+├── boem_conf/                         # Hydra configuration
+│   ├── boem_config.yaml               # Top-level defaults
+│   ├── classification_model/
+│   │   ├── finetune.yaml              # DeepForest classifier settings
+│   │   ├── hierarchical.yaml          # H-CAST classifier settings
+│   │   └── USGS.yaml                  # Legacy classification config
+│   ├── server/
+│   │   └── serenity.yaml              # Label Studio server creds
+│   ├── Detection/                     # (reserved)
+│   ├── Images/                        # (reserved)
+│   └── with/                          # (reserved)
 │
-├── src/                      # Source code for the ML pipeline
-│   ├── __init__.py
-│   ├── data_ingestion.py    # Data loading and preparation
-│   ├── data_processing.py   # Data preprocessing and transformations
-│   ├── model_training.py    # Model training functionality
-│   ├── pipeline_evaluation.py # Pipeline and model evaluation metrics
-│   ├── model_deployment.py  # Model deployment utilities
-│   ├── monitoring.py        # Monitoring and logging functionality
-│   ├── reporting.py         # Report generation for pipeline results
-│   ├── pre_annotation_prediction.py  # Pre-annotation model predictions
-│   └── annotation/          # Annotation-related functionality
-│       ├── __init__.py
-│       └── pipeline.py      # Annotation pipeline implementation
+├── src/                               # Pipeline source
+│   ├── active_learning.py             # Pool prediction, selection, human review
+│   ├── classification.py              # DeepForest crop classification train/ft
+│   ├── detection.py                   # DeepForest detection train/infer
+│   ├── hierarchical.py                # H-CAST wrapper + inference adapter
+│   ├── label_studio.py                # LS auth, SFTP upload, task import/export
+│   ├── pipeline.py                    # Orchestrates detection + classification
+│   ├── pipeline_evaluation.py         # Eval metrics and summaries
+│   ├── data_ingestion.py              # Data loading utilities
+│   ├── data_processing.py             # Crop writing and preprocessing
+│   ├── visualization.py               # Crop visualization, video helpers
+│   ├── sagemaker_gt.py                # Optional SageMaker Ground Truth pipeline
+│   ├── propagate.py                   # Result propagation utilities
+│   ├── cluster.py                     # Clustering helpers
+│   └── utils.py                       # Shared helpers
 │
-├── tests/                   # Test files for each component
+├── tamu_hcast/                        # H-CAST module (third-party)
+│   ├── cast_models/                   # CAST model definitions
+│   ├── deit/                          # Training/eval scripts and datasets
+│   ├── data/                          # Dataset metadata
+│   └── README.md
+│
+├── tests/                             # Pytest suite
+│   ├── test_active_learning.py
+│   ├── test_classification.py
 │   ├── test_data_ingestion.py
 │   ├── test_data_processing.py
-│   ├── test_model_training.py
+│   ├── test_detection.py
+│   ├── test_pipeline.py
 │   ├── test_pipeline_evaluation.py
-│   ├── test_model_deployment.py
-│   ├── test_monitoring.py
-│   ├── test_reporting.py
+│   ├── test_propagate.py
+│   └── test_visualization.py
 │
-├── conf/                    # Configuration files
-│   └── config.yaml         # Main configuration file
-│
-├── main.py                 # Main entry point for the pipeline
-├── run_ml_workflow.sh      # Script to run pipeline in Serenity container
-├── requirements.txt        # Project dependencies
-├── .gitignore             # Git ignore file
-├── CONTRIBUTING.md        # Contributing guidelines
-├── LICENSE                # Project license
-└── README.md             # This file
+├── main.py                            # Entry point (Hydra)
+├── pyproject.toml                     # uv project metadata and deps
+├── environment.yml                    # Legacy conda env (deprecated)
+├── README.md                          # This file
+└── scripts, utilities, and notebooks (various)
 ```
 
 ## Components
@@ -65,7 +81,7 @@ Contains test files corresponding to each component in `src/`. Uses pytest for t
 Contains YAML configuration files managed by Hydra:
 - **config.yaml**: Main configuration file defining pipeline parameters
 
-## Installation
+## Installation (uv)
 
 1. Clone the repository:
 ```bash
@@ -73,10 +89,25 @@ git clone https://github.com/your-username/project-name.git
 cd project-name
 ```
 
-2. Install dependencies:
+2. Install Python deps with uv (PyPI packages only):
 ```bash
-pip install -r requirements.txt
+uv venv -p 3.10
+uv pip install -e .
 ```
+
+3. Install PyTorch (CUDA 12.1) and torchvision from NVIDIA wheels:
+```bash
+uv pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
+```
+
+4. Install DGL matching your CUDA/PyTorch:
+```bash
+uv pip install dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
+```
+
+Notes:
+- If using CPU-only, install CPU wheels instead of cu121. See PyTorch and DGL docs.
+- H-CAST requires `timm==0.4.12` and OpenCV, already included in `pyproject.toml`.
 
 ## Usage
 
@@ -91,6 +122,52 @@ Or directly with Python:
 ```bash
 python main.py
 ```
+
+### Configuration with Hydra
+
+Hydra configs live under `boem_conf/`. The top-level defaults are in `boem_conf/boem_config.yaml`.
+
+- Switch classification backend:
+  - DeepForest (default):
+    - `classification_model.backend: deepforest`
+  - Hierarchical (H-CAST):
+    - `classification_model.backend: hierarchical`
+    - `classification_model.checkpoint: /path/to/best_checkpoint.pth` (optional; auto-discovers under `tamu_hcast/`)
+
+Override at runtime:
+```bash
+python main.py classification_model=hierarchical
+```
+
+### Label Studio Integration
+
+The pipeline can automatically upload images, import preannotations, and fetch completed annotations from Label Studio.
+
+Prereqs:
+- Get your Label Studio API key and save it to `.label_studio.config` at repo root in the format:
+  ```
+  api_key=YOUR_API_KEY
+  ```
+- Configure Label Studio in Hydra (`boem_conf/boem_config.yaml`):
+  - `label_studio.url`: server URL (e.g., `https://labelstudio.naturecast.org/`)
+  - `label_studio.folder_name`: remote folder path (server-side) where images are uploaded via SFTP
+  - `label_studio.instances.{train,validation,review}.project_name`: Label Studio project titles to target
+  - `label_studio.instances.{train,validation,review}.csv_dir`: where downloaded annotations CSVs are written
+  - SFTP credentials (`server` group) for uploads: `user`, `host`, `key_filename`
+
+Run:
+```bash
+python main.py
+```
+
+What happens:
+- The pipeline connects to Label Studio using `LABEL_STUDIO_API_KEY` (set automatically from `.label_studio.config`).
+- New predictions are uploaded via SFTP to `folder_name/input`, then imported as tasks with bounding box + taxonomy preannotations.
+- Completed tasks are downloaded to per-flight CSVs under the configured `csv_dir` folders, then removed from Label Studio to avoid duplication.
+- Images marked as completed are archived server-side.
+
+Manual overrides:
+- To disable checking Label Studio, set `check_annotations: false` in `boem_conf/boem_config.yaml`.
 
 ### Running Tests
 

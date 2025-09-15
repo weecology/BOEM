@@ -9,6 +9,7 @@ from src import label_studio
 from src import sagemaker_gt
 from src import detection
 from src import classification
+from src import hierarchical
 from src.visualization import crop_images
 from src.pipeline_evaluation import PipelineEvaluation
 from pytorch_lightning.loggers import CometLogger
@@ -179,27 +180,34 @@ class Pipeline:
             trained_detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
             self.comet_logger.experiment.log_parameter("detection_checkpoint_path",self.config.detection_model.checkpoint)
         
-        if self.config.classification_model.force_train:
-            trained_classification_model = classification.preprocess_and_train(
-                train_df=all_training,
-                validation_df=self.existing_validation,
-                image_dir=self.config.image_dir,
-                checkpoint=self.config.classification_model.checkpoint,
-                checkpoint_num_classes=self.config.classification_model.checkpoint_num_classes,
-                checkpoint_dir=self.config.classification_model.checkpoint_dir,
-                train_crop_image_dir=self.config.classification_model.train_crop_image_dir,
-                val_crop_image_dir=self.config.classification_model.val_crop_image_dir,
-                fast_dev_run=self.config.classification_model.fast_dev_run,
-                max_epochs=self.config.classification_model.max_epochs,
-                lr=self.config.classification_model.lr,
-                batch_size=self.config.classification_model.batch_size,
-                workers=self.config.classification_model.workers,
-                comet_logger=self.comet_logger)
+        classification_backend = getattr(self.config.classification_model, "backend", "deepforest")
+
+        if classification_backend == "deepforest":
+            if self.config.classification_model.force_train:
+                trained_classification_model = classification.preprocess_and_train(
+                    train_df=all_training,
+                    validation_df=self.existing_validation,
+                    image_dir=self.config.image_dir,
+                    checkpoint=self.config.classification_model.checkpoint,
+                    checkpoint_num_classes=self.config.classification_model.checkpoint_num_classes,
+                    checkpoint_dir=self.config.classification_model.checkpoint_dir,
+                    train_crop_image_dir=self.config.classification_model.train_crop_image_dir,
+                    val_crop_image_dir=self.config.classification_model.val_crop_image_dir,
+                    fast_dev_run=self.config.classification_model.fast_dev_run,
+                    max_epochs=self.config.classification_model.max_epochs,
+                    lr=self.config.classification_model.lr,
+                    batch_size=self.config.classification_model.batch_size,
+                    workers=self.config.classification_model.workers,
+                    comet_logger=self.comet_logger)
+            else:
+                trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
+            # Predict entire flightline
+            trained_classification_model.num_workers = 0
         else:
-            trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
-            
-        # Predict entire flightline
-        trained_classification_model.num_workers = 0
+            # Hierarchical backend (H-CAST). Load wrapper and classify crops post-detection.
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            hcast_checkpoint = getattr(self.config.classification_model, "checkpoint", None)
+            hcast_wrapper = hierarchical.load_hcast_model(repo_root=repo_root, checkpoint_path=hcast_checkpoint)
 
         pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))  # Get all images in the data directory
         pool = [image for image in pool if not image.endswith('.csv')]
@@ -211,16 +219,37 @@ class Pipeline:
             else:
                 pool = random.sample(pool, 10)
 
-        flightline_predictions = generate_pool_predictions(
-            pool=pool,
-            pool_limit=self.config.active_learning.pool_limit,
-            patch_size=self.config.active_learning.patch_size,
-            patch_overlap=self.config.active_learning.patch_overlap,
-            min_score=self.config.predict.min_score,
-            model=trained_detection_model,
-            batch_size=self.config.predict.batch_size,
-            crop_model=trained_classification_model,
-        )
+        if classification_backend == "deepforest":
+            flightline_predictions = generate_pool_predictions(
+                pool=pool,
+                pool_limit=self.config.active_learning.pool_limit,
+                patch_size=self.config.active_learning.patch_size,
+                patch_overlap=self.config.active_learning.patch_overlap,
+                min_score=self.config.predict.min_score,
+                model=trained_detection_model,
+                batch_size=self.config.predict.batch_size,
+                crop_model=trained_classification_model,
+            )
+        else:
+            # Detect first, then classify with H-CAST wrapper
+            flightline_predictions = generate_pool_predictions(
+                pool=pool,
+                pool_limit=self.config.active_learning.pool_limit,
+                patch_size=self.config.active_learning.patch_size,
+                patch_overlap=self.config.active_learning.patch_overlap,
+                min_score=self.config.predict.min_score,
+                model=trained_detection_model,
+                batch_size=self.config.predict.batch_size,
+                crop_model=None,
+            )
+            if flightline_predictions is not None and not flightline_predictions.empty:
+                flightline_predictions = hierarchical.classify_dataframe(
+                    predictions=flightline_predictions,
+                    image_dir=self.config.image_dir,
+                    model=hcast_wrapper,
+                    batch_size=getattr(self.config.classification_model, "batch_size", 64),
+                    num_workers=getattr(self.config.classification_model, "workers", 2),
+                )
         if flightline_predictions is None:
             print("No predictions")
             return None
@@ -233,10 +262,14 @@ class Pipeline:
             evaluation_annotations = self.existing_validation.copy(deep=True)
             evaluation_predictions = flightline_predictions[flightline_predictions.image_path.isin(self.existing_validation.image_path)]
 
+            if classification_backend == "deepforest":
+                label_dict = trained_classification_model.label_dict
+            else:
+                label_dict = hcast_wrapper.label_dict
             pipeline_monitor = PipelineEvaluation(
                 predictions=evaluation_predictions,
                 annotations=evaluation_annotations,
-                classification_label_dict=trained_classification_model.label_dict,
+                classification_label_dict=label_dict,
                 **self.config.pipeline_evaluation)
 
             performance = pipeline_monitor.evaluate()

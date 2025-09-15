@@ -186,9 +186,11 @@ class PipelineEvaluation:
         combined_predictions = combined_predictions
         ground_truth = self.annotations.copy(deep=True)
 
+        # deepforest.evaluate.evaluate_boxes requires root_dir when image_path is relative
         iou_results = evaluate_boxes(
             combined_predictions,
             ground_truth,
+            root_dir=".",
             iou_threshold=self.detection_true_positive_threshold
         )
         

@@ -10,11 +10,13 @@ import math
 # Third party imports
 import pandas as pd
 from deepforest import main, visualize
+from deepforest.model import CropModel as DF_CropModel
 from deepforest.utilities import read_file
 import torch
 
 # Local imports
 from src import data_processing
+from src.hierarchical import HCastWrapper, classify_dataframe
 from omegaconf import OmegaConf
 
 def evaluate(model, test_csv, image_root_dir):
@@ -194,7 +196,7 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
     model.trainer.fit(model)
 
     if not model.trainer.fast_dev_run:
-        if test_annotations is not None:
+        if test_annotations is not None and comet_logger is not None:
             for image_path in test_annotations.head().image_path.unique():
                 prediction = model.predict_image(path = os.path.join(train_image_dir, image_path))
                 if prediction is None:
@@ -290,9 +292,10 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
                                 comet_logger=comet_logger,
                                 config_args=trainer_config)
 
-        detection_checkpoint_path = save_model(trained_model, checkpoint_dir, basename=comet_logger.experiment.id)
-        comet_logger.experiment.log_asset(file_data=detection_checkpoint_path, file_name="detection_model.ckpt")
-        comet_logger.experiment.log_parameter("detection_checkpoint_path", detection_checkpoint_path)
+        if comet_logger is not None:
+            detection_checkpoint_path = save_model(trained_model, checkpoint_dir, basename=comet_logger.experiment.id)
+            comet_logger.experiment.log_asset(file_data=detection_checkpoint_path, file_name="detection_model.ckpt")
+            comet_logger.experiment.log_parameter("detection_checkpoint_path", detection_checkpoint_path)
     else:
         trained_model = loaded_model
         comet_logger.experiment.log_parameter("detection_checkpoint_path", checkpoint)
@@ -329,11 +332,33 @@ def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_si
 
     m.config["batch_size"] = batch_size
     m.config["workers"] = workers
-    predictions = m.predict_tile(path=image_paths,
-                   patch_size=patch_size,
-                   patch_overlap=patch_overlap,
-                   dataloader_strategy="batch",
-                   crop_model=crop_model)
+
+    # Pass crop_model to DeepForest only if it's a DeepForest CropModel. Otherwise, do two-stage.
+    inline_classification = isinstance(crop_model, DF_CropModel)
+
+    predictions = m.predict_tile(
+        image_paths,
+        patch_size=patch_size,
+        patch_overlap=patch_overlap,
+        crop_model=crop_model if inline_classification else None,
+    )
+
+    if predictions is None:
+        return None
+
+    # If using hierarchical classifier, post-process to add cropmodel_label/cropmodel_score
+    if isinstance(crop_model, HCastWrapper):
+        # Derive root_dir from inputs (assumes all images share the same directory)
+        try:
+            first_path = image_paths[0]
+            root_dir = os.path.dirname(first_path)
+        except Exception:
+            root_dir = ""
+        predictions = classify_dataframe(
+            predictions=predictions,
+            image_dir=root_dir,
+            model=crop_model,
+        )
 
     return predictions
 

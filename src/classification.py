@@ -27,22 +27,21 @@ def train(model, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_siz
     model.lr = lr
 
     devices = torch.cuda.device_count()
-    print(f"[train] Using {devices} CUDA devices.")
+    accelerator = "gpu" if devices > 0 else "cpu"
+    if devices == 0:
+        devices = 1
+    print(f"[train] Using accelerator={accelerator}, devices={devices}.")
 
-    model.create_trainer(logger=comet_logger, fast_dev_run=fast_dev_run, max_epochs=max_epochs, num_nodes=1, devices = devices, enable_checkpointing=False)
+    model.create_trainer(
+        logger=comet_logger,
+        fast_dev_run=fast_dev_run,
+        max_epochs=max_epochs,
+        num_nodes=1,
+        devices=devices,
+        accelerator=accelerator,
+        enable_checkpointing=False,
+    )
     model.trainer.fit(model)
-    
-    images, y_true, y_predicted = model.val_dataset_confusion(return_images=True)
-    labels = [x for x in model.label_dict]
-   
-    # Log the confusion matrix to Comet
-    if comet_logger:
-        comet_logger.experiment.log_confusion_matrix(
-            y_true=y_true,
-            y_predicted=y_predicted,
-            images=images,
-            labels=labels,
-        )
 
     return model
 
@@ -92,9 +91,12 @@ def preprocess_and_train(
 ):
     """Preprocess data and train a crop model."""
     if train_df is None:
-            loaded_model = CropModel.load_from_checkpoint(checkpoint_path=checkpoint)
+        loaded_model = CropModel.load_from_checkpoint(checkpoint_path=checkpoint)
     else:
-        loaded_model = CropModel()
+        # infer classes from training labels
+        label_dict = {value: index for index, value in enumerate(sorted(train_df.label.unique()))}
+        loaded_model = CropModel(num_classes=len(label_dict))
+        loaded_model.label_dict = label_dict
 
     loaded_model.create_trainer()
 
@@ -124,10 +126,7 @@ def preprocess_and_train(
             print("[preprocess_and_train] Validation data is empty after preprocessing.")
             preprocessed_validation = None
     
-    if checkpoint is None:
-        loaded_model.load_from_disk(train_dir=train_crop_image_dir, val_dir=val_crop_image_dir, recreate_model=True)
-    else:
-        loaded_model.load_from_disk(train_dir=train_crop_image_dir, val_dir=val_crop_image_dir, recreate_model=False)
+    loaded_model.load_from_disk(train_dir=str(train_crop_image_dir), val_dir=str(val_crop_image_dir))
 
     if preprocessed_train is not None and preprocessed_validation is not None:
         print("[preprocess_and_train] Training with preprocessed train and validation data.")
@@ -140,7 +139,7 @@ def preprocess_and_train(
             comet_logger=comet_logger,
             workers=workers,
         )
-        if trained_model.trainer.global_rank == 0:
+        if trained_model.trainer.global_rank == 0 and comet_logger is not None:
             print(f"[preprocess_and_train] saving model to checkpoint {checkpoint_dir}")
             classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
             comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")

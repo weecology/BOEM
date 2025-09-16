@@ -22,17 +22,7 @@ for folder in "$GULF_DIR"/*/; do
 #SBATCH --partition=hpg-b200
 #SBATCH --gpus=1
 
-# path to conda environment
-source /blue/ewhite/b.weinstein/miniconda3/etc/profile.d/conda.sh
-conda activate BOEM
-
-cd ~/BOEM/
-
-echo "Running with image_dir: \$IMAGE_DIR"
-
-export GDAL_ERROR_ON_LIBJPEG_WARNING=FALSE
-export PYTHONPATH=/home/b.weinstein/BOEM:\$PYTHONPATH
-srun python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100 debug=False pipeline.gpus=1
+uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100 debug=False pipeline.gpus=1
 EOF
-    sleep 10
+    sleep 8
 done

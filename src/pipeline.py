@@ -200,7 +200,7 @@ class Pipeline:
                     workers=self.config.classification_model.workers,
                     comet_logger=self.comet_logger)
             else:
-                trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
+                trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint )
             # Predict entire flightline
             trained_classification_model.num_workers = 0
         else:

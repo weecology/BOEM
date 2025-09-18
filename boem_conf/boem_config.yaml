@@ -1,6 +1,6 @@
 defaults:
   - server: serenity
-  - classification_model: finetune.yaml
+  - classification_model: finetune.yaml # or hierarchical.yaml
 
 annotation_tool: label_studio  # or 'sagemaker'
 
@@ -17,7 +17,7 @@ image_dir: /blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800
 
 label_studio:
   url: "https://labelstudio.naturecast.org/"
-  folder_name: "/media/T/lab-white-ernest/label_studio_data/input/BOEM"
+  folder_name: "/media/T/lab-white-ernest/label_studio_data/BOEM"
   instances:
     train:
       csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/train

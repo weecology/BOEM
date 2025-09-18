@@ -7,7 +7,6 @@ from src.hierarchical import load_hcast_model, classify_dataframe, find_hcast_ch
 
 def test_find_checkpoint():
     ckpt = find_hcast_checkpoint("/home/b.weinstein/BOEM")
-    # Optional: just assert function runs and returns None or a path
     assert ckpt is None or os.path.exists(ckpt)
 
 
@@ -15,10 +14,6 @@ def test_load_and_classify_smoke(tmp_path):
     # Try to load checkpoint if present
     repo_root = "/home/b.weinstein/BOEM"
     ckpt = find_hcast_checkpoint(repo_root)
-
-    # If no checkpoint present, skip just this test (environment-dependent)
-    if ckpt is None:
-        pytest.skip("No H-CAST checkpoint found to load")
 
     model = load_hcast_model(repo_root=repo_root, checkpoint_path=ckpt)
 

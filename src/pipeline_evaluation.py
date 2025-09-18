@@ -190,7 +190,6 @@ class PipelineEvaluation:
         iou_results = evaluate_boxes(
             combined_predictions,
             ground_truth,
-            root_dir=".",
             iou_threshold=self.detection_true_positive_threshold
         )
         

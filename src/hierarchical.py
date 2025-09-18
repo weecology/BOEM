@@ -1,12 +1,11 @@
 import os
 import sys
-import glob
 from typing import Optional, Tuple, List, Dict
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-
+from src.hcast.cast_models import cast_deit_hier  
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -24,36 +23,6 @@ def _default_transform(image_size: int = 224):
         transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
     ])
 
-
-def _ensure_hcast_on_path(repo_root: str):
-    base_dir = os.path.join(repo_root, "tamu_hcast")
-    deit_dir = os.path.join(base_dir, "deit")
-    # Add both base (for cast_models) and deit (for dataset/utils) to path
-    for p in (base_dir, deit_dir):
-        if p not in sys.path:
-            sys.path.append(p)
-    # Register the CAST hierarchical model with timm via side-effect import
-    import importlib
-    importlib.import_module("cast_models.cast_deit_hier")
-
-
-def find_hcast_checkpoint(repo_root: str) -> Optional[str]:
-    """Find a best_checkpoint.pth under tamu_hcast/ by recency.
-
-    Returns the most recently modified path if found, else None.
-    """
-    candidates: List[str] = []
-    base = os.path.join(repo_root, "tamu_hcast")
-    for pattern in [
-        os.path.join(base, "best_checkpoint.pth"),
-        os.path.join(base, "output", "**", "best_checkpoint.pth"),
-    ]:
-        candidates.extend(glob.glob(pattern, recursive=True))
-
-    if not candidates:
-        return None
-    candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return candidates[0]
 
 
 def _infer_head_sizes_from_checkpoint(ckpt: Dict[str, torch.Tensor]) -> Tuple[int, Optional[int], Optional[int]]:
@@ -106,7 +75,7 @@ class HCastWrapper:
         return species_logits
 
 
-def load_hcast_model(repo_root: str, checkpoint_path: Optional[str] = None, device: Optional[torch.device] = None) -> HCastWrapper:
+def load_hcast_model(repo_root: str, checkpoint_path, device: Optional[torch.device] = None) -> HCastWrapper:
     """Load H-CAST model from checkpoint and return a wrapper ready for inference.
 
     If checkpoint_path is None, the most recent best_checkpoint.pth under tamu_hcast/ is used.
@@ -117,12 +86,7 @@ def load_hcast_model(repo_root: str, checkpoint_path: Optional[str] = None, devi
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if checkpoint_path is None:
-        checkpoint_path = find_hcast_checkpoint(repo_root)
-    if checkpoint_path is None or not os.path.exists(checkpoint_path):
-        raise FileNotFoundError("No H-CAST checkpoint found. Place best_checkpoint.pth under tamu_hcast/ or tamu_hcast/output/**/")
-
-    state = torch.load(checkpoint_path, map_location="cpu")
+    state = torch.load(checkpoint_path)
     if "model" in state:
         ckpt = state["model"]
     elif "state_dict" in state:
@@ -141,10 +105,7 @@ def load_hcast_model(repo_root: str, checkpoint_path: Optional[str] = None, devi
         nb_classes=[c for c in [species_classes, family_classes, manu_classes] if c is not None],
     )
 
-    missing, unexpected = model.load_state_dict(ckpt, strict=False)
-    if len(unexpected) > 0:
-        # keys from optimizer/ema or extra heads are fine
-        pass
+    model.load_state_dict(ckpt, strict=True)
 
     # Build a placeholder label dict if none provided. Users can override externally.
     label_dict = {f"species_{i}": i for i in range(species_classes)}

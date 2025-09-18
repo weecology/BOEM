@@ -1,6 +1,5 @@
 import comet_ml
 import os
-import geopandas as gpd
 from omegaconf import DictConfig
 
 from src.active_learning import generate_pool_predictions, select_images, human_review

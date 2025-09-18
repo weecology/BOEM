@@ -1,7 +1,5 @@
 import random
 from src import detection
-import pandas as pd
-import geopandas as gpd
 
 def human_review(predictions, min_detection_score=0.6, min_classification_score=0.5, confident_threshold=0.5):
     """

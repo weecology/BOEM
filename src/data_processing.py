@@ -107,6 +107,8 @@ def preprocess_images(
         crop_annotations.append(crop_annotation)
 
     crop_annotations = pd.concat(crop_annotations)
+    crop_annotations.root_dir = root_dir
+
     return crop_annotations
 
 def process_image(
@@ -141,7 +143,7 @@ def process_image(
     crop_csv = "{}.csv".format(os.path.join(save_dir, image_name))
     
     if os.path.exists(crop_csv):
-        return pd.read_csv(crop_csv)
+        return read_file(crop_csv)
         
     full_path = os.path.join(root_dir, image_path)
     

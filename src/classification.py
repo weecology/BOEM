@@ -1,10 +1,9 @@
 import os
 import glob
-from PIL import Image
 
 from deepforest.model import CropModel
 import torch
-from torch.nn import functional as F
+import datetime
 
 def get_latest_checkpoint(checkpoint_dir, num_classes):
     #Get model with latest checkpoint dir, if none exist make a new model
@@ -37,8 +36,8 @@ def train(model, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_siz
         fast_dev_run=fast_dev_run,
         max_epochs=max_epochs,
         num_nodes=1,
-        devices=devices,
-        accelerator=accelerator,
+        devices=1,
+        accelerator="cpu",
         enable_checkpointing=False,
     )
     model.trainer.fit(model)
@@ -81,7 +80,7 @@ def preprocess_and_train(
     checkpoint_dir,
     image_dir,
     train_crop_image_dir,
-    val_crop_image_dir, 
+    val_crop_image_dir,
     lr=0.0001,
     batch_size=4,
     fast_dev_run=False,
@@ -90,62 +89,58 @@ def preprocess_and_train(
     comet_logger=None,
 ):
     """Preprocess data and train a crop model."""
-    if train_df is None:
+    if checkpoint is not None:
         loaded_model = CropModel.load_from_checkpoint(checkpoint_path=checkpoint)
     else:
-        # infer classes from training labels
-        label_dict = {value: index for index, value in enumerate(sorted(train_df.label.unique()))}
-        loaded_model = CropModel(num_classes=len(label_dict))
-        loaded_model.label_dict = label_dict
+        num_classes = len(pd.concat([train_df, validation_df]).label.unique())
+        loaded_model = CropModel(num_classes=num_classes)
 
     loaded_model.create_trainer()
 
     # Preprocess train and validation data
-    if train_df is not None:
-        preprocessed_train = preprocess_images(
-            model=loaded_model, 
-            annotations=train_df, 
-            root_dir=image_dir, 
-            save_dir=train_crop_image_dir
-        )    
-        non_empty_train = train_df[train_df.xmin != 0]
-        if non_empty_train.empty:
-            print("[preprocess_and_train] All train_df boxes are empty!")
-            train_df = None
+    preprocessed_train = preprocess_images(
+        model=loaded_model,
+        annotations=train_df,
+        root_dir=image_dir,
+        save_dir=train_crop_image_dir,
+    )
 
-    if validation_df is not None:
-        preprocessed_validation = preprocess_images(
-            model=loaded_model, 
-            annotations=validation_df, 
-            root_dir=image_dir, 
-            save_dir=val_crop_image_dir
-        )
-        if preprocessed_validation is not None and not preprocessed_validation.empty:
-            preprocessed_validation = preprocessed_validation
-        else:
-            print("[preprocess_and_train] Validation data is empty after preprocessing.")
-            preprocessed_validation = None
+    preprocessed_validation = preprocess_images(
+        model=loaded_model,
+        annotations=validation_df,
+        root_dir=image_dir,
+        save_dir=val_crop_image_dir,
+    )
+
+    loaded_model.load_from_disk(
+        train_dir=str(train_crop_image_dir), val_dir=str(val_crop_image_dir)
+    )
+
+    # Assert that the label_dict, the train_ds classes and val_ds classes are the same
+    assert loaded_model.label_dict == loaded_model.train_ds.class_to_idx
+    assert loaded_model.label_dict == loaded_model.val_ds.class_to_idx
     
-    loaded_model.load_from_disk(train_dir=str(train_crop_image_dir), val_dir=str(val_crop_image_dir))
+    trained_model = train(
+        batch_size=batch_size,
+        lr=lr,
+        model=loaded_model,
+        fast_dev_run=fast_dev_run,
+        max_epochs=max_epochs,
+        comet_logger=comet_logger,
+        workers=workers,
+    )
 
-    if preprocessed_train is not None and preprocessed_validation is not None:
-        print("[preprocess_and_train] Training with preprocessed train and validation data.")
-        trained_model = train(
-            batch_size=batch_size,
-            lr=lr,
-            model=loaded_model,
-            fast_dev_run=fast_dev_run,
-            max_epochs=max_epochs,
-            comet_logger=comet_logger,
-            workers=workers,
-        )
-        if trained_model.trainer.global_rank == 0 and comet_logger is not None:
-            print(f"[preprocess_and_train] saving model to checkpoint {checkpoint_dir}")
-            classification_checkpoint_path = save_model(trained_model, checkpoint_dir, comet_logger.experiment.id)
-            comet_logger.experiment.log_asset(file_data=classification_checkpoint_path, file_name="classification_model.ckpt")
+    print(f"[preprocess_and_train] saving model to checkpoint {checkpoint_dir}")
+    if comet_logger is not None:
+        model_name = comet_logger.experiment.id
     else:
-        print("[preprocess_and_train] No training performed, returning loaded model.")
-        trained_model = loaded_model
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        model_name = f"classification_model_{timestamp}"
+    classification_checkpoint_path = save_model(trained_model, checkpoint_dir, model_name)
+    if comet_logger is not None:
+        comet_logger.experiment.log_asset(
+            file_data=classification_checkpoint_path, file_name="classification_model.ckpt"
+        )
 
     return trained_model
 

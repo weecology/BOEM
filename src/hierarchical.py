@@ -1,11 +1,11 @@
 import os
-import sys
 from typing import Optional, Tuple, List, Dict
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from src.hcast.cast_models import cast_deit_hier  
+import pandas as pd
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -75,18 +75,16 @@ class HCastWrapper:
         return species_logits
 
 
-def load_hcast_model(repo_root: str, checkpoint_path, device: Optional[torch.device] = None) -> HCastWrapper:
+def load_hcast_model(checkpoint_path, device: Optional[torch.device] = None) -> HCastWrapper:
     """Load H-CAST model from checkpoint and return a wrapper ready for inference.
 
     If checkpoint_path is None, the most recent best_checkpoint.pth under tamu_hcast/ is used.
     """
-    repo_root = os.path.abspath(repo_root)
-    _ensure_hcast_on_path(repo_root)
 
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    state = torch.load(checkpoint_path)
+    state = torch.load(checkpoint_path, weights_only=False)
     if "model" in state:
         ckpt = state["model"]
     elif "state_dict" in state:
@@ -108,7 +106,15 @@ def load_hcast_model(repo_root: str, checkpoint_path, device: Optional[torch.dev
     model.load_state_dict(ckpt, strict=True)
 
     # Build a placeholder label dict if none provided. Users can override externally.
-    label_dict = {f"species_{i}": i for i in range(species_classes)}
+    # Read species labels from CSV
+
+    df = pd.read_csv(species_csv)
+    species_label_dict = {row['species']: idx for idx, row in df.iterrows()}
+    genus_label_dict = {row['genus']: idx for idx, row in df(subset=['genus']).iterrows()}
+    family_label_dict = {row['family']: idx for idx, row in df(subset=['family']).iterrows()}
+
+    # If no CSV provided, fall back to numeric labels
+    label_dict = {**species_label_dict, **genus_label_dict, **family_label_dict}
 
     return HCastWrapper(model=model, device=device, label_dict=label_dict, image_size=224)
 
@@ -170,5 +176,74 @@ def classify_dataframe(
     predictions["cropmodel_label"] = labels
     predictions["cropmodel_score"] = all_top_prob
     return predictions
+
+
+def infer_head_sizes_from_checkpoint(checkpoint_path: str) -> List[int]:
+    """Return list of output sizes for each head found in checkpoint state_dict.
+    Looks for weight tensors named like '*head*weight' (robust heuristic).
+    """
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    state = ckpt.get("state_dict", ckpt)
+    sizes = []
+    seen = set()
+    for k, v in state.items():
+        kn = k.lower()
+        if "head" in kn and k.endswith("weight") and v.ndim == 2:
+            out_features = v.shape[0]
+            if out_features not in seen:
+                sizes.append(out_features)
+                seen.add(out_features)
+    # fallback: if nothing found, try final classifier or heads list
+    if not sizes:
+        for k, v in state.items():
+            if v.ndim == 2 and ("classifier" in k or "fc" in k or "head" in k):
+                sizes.append(v.shape[0])
+    return sizes
+
+
+def load_hierarchical_label_table(csv_path: str, index_col: str = None) -> pd.DataFrame:
+    """Load labels CSV exported from your spreadsheet.
+    Expect columns like: species, genus, family and an optional numeric index column.
+    If index_col is None the dataframe index will be used as numeric class index.
+    """
+    df = pd.read_csv(csv_path)
+    if index_col:
+        df = df.set_index(index_col)
+    return df
+
+
+def build_label_maps(df: pd.DataFrame, head_cols: List[str]) -> List[Dict[int, str]]:
+    """Given label table and head column names (e.g. ['species','genus','family']),
+    return list of mappings numeric_index -> label for each head in same order.
+    """
+    maps = []
+    for col in head_cols:
+        if col not in df.columns:
+            raise KeyError(f"Column {col} not in label table")
+        mapping = {int(idx): str(lbl) for idx, lbl in df[col].items()}
+        maps.append(mapping)
+    return maps
+
+
+def split_logits_and_map(logits: torch.Tensor, head_sizes: List[int], maps: List[Dict[int,str]]) -> Tuple[List[int], List[str]]:
+    """Split model logits per head, return numeric predictions and mapped labels per head.
+    logits: (N, sum(head_sizes)) or list of per-head arrays.
+    returns per-head predicted indices and per-head labels (each list length = num_heads).
+    """
+    if isinstance(logits, (list, tuple)):
+        per_head = logits
+    else:
+        # split along last dim
+        splits = torch.split(logits, head_sizes, dim=-1)
+        per_head = splits
+    numeric_preds = []
+    label_preds = []
+    for h_out, mapping in zip(per_head, maps):
+        # h_out shape (N, C_h)
+        pred_idx = torch.argmax(h_out, dim=-1).cpu().numpy()
+        numeric_preds.append(pred_idx)
+        # map each numeric to string label
+        label_preds.append([mapping.get(int(i), f"UNK_{i}") for i in pred_idx])
+    return numeric_preds, label_preds
 
 

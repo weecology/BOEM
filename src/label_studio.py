@@ -277,7 +277,7 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
         print(f"Importing {image_name} into Label Studio")
         basename = os.path.basename(image_name)
         flight_name = os.path.dirname(image_name).split("/")[-1]
-        data_dict = {'image': os.path.join("/data/local-files/?d=input/", basename), 'flight_name':flight_name}
+        data_dict = {'image': os.path.join("/data/local-files/?d=BOEM/input/", basename), 'flight_name':flight_name}
         if predictions is not None:
             prediction = predictions[basename]
             # Skip predictions if there are none

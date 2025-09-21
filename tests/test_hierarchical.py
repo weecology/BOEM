@@ -1,21 +1,18 @@
 import os
 import pandas as pd
+
 import pytest
+from src.hierarchical import load_hcast_model, classify_dataframe
 
-from src.hierarchical import load_hcast_model, classify_dataframe, find_hcast_checkpoint
-
-
-def test_find_checkpoint():
-    ckpt = find_hcast_checkpoint("/home/b.weinstein/BOEM")
-    assert ckpt is None or os.path.exists(ckpt)
-
-
+# Skip entire module if checkpoint is not found
+pytestmark = pytest.mark.skipif(
+    not os.path.exists("outputs/usgs_hcast_300_b256/best_checkpoint.pth"),
+    reason="H-CAST checkpoint not found, skipping hierarchical tests"
+)
 def test_load_and_classify_smoke(tmp_path):
     # Try to load checkpoint if present
-    repo_root = "/home/b.weinstein/BOEM"
-    ckpt = find_hcast_checkpoint(repo_root)
-
-    model = load_hcast_model(repo_root=repo_root, checkpoint_path=ckpt)
+    ckpt = "outputs/usgs_hcast_300_b256/best_checkpoint.pth"
+    model = load_hcast_model(checkpoint_path=ckpt)
 
     # Build a minimal predictions dataframe mimicking detection outputs
     df = pd.DataFrame(

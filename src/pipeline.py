@@ -182,6 +182,19 @@ class Pipeline:
         classification_backend = getattr(self.config.classification_model, "backend", "deepforest")
 
         if classification_backend == "deepforest":
+            # If there are no train annotations, turn off force training
+            if all_training.xmin[all_training.xmin != 0].empty:
+                self.config.classification_model.force_train = False
+                print("No training annotations, turning off force training")
+            
+            # If there are no validation annotations, turn off force training
+            if self.existing_validation is None:
+                self.config.classification_model.force_train = False
+                print("No validation annotations, turning off force training")
+            elif self.existing_validation.xmin[self.existing_validation.xmin!= 0].empty:
+                self.config.classification_model.force_train = False
+                print("No validation annotations, turning off force training")
+            
             if self.config.classification_model.force_train:
                 trained_classification_model = classification.preprocess_and_train(
                     train_df=all_training,
@@ -200,8 +213,6 @@ class Pipeline:
                     comet_logger=self.comet_logger)
             else:
                 trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint )
-            # Predict entire flightline
-            trained_classification_model.num_workers = 0
         else:
             # Hierarchical backend (H-CAST). Load wrapper and classify crops post-detection.
             repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

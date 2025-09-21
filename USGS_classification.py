@@ -7,7 +7,6 @@ from src.classification import preprocess_and_train
 import hydra
 from omegaconf import DictConfig
 import os
-import cv2
 import torch.nn.functional as F
 
 # Create train test split, split each class into 90% train and 10% test with a minimum of 5 images per class for test and a max of 100
@@ -39,7 +38,7 @@ def main(cfg: DictConfig):
     crop_annotations = pd.concat(crop_annotations)
     
     # Keep labels with more than 25 images
-    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 25)
+    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 500)
 
     # Only keep two word labels
     crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
@@ -52,36 +51,18 @@ def main(cfg: DictConfig):
 
     train_df, validation_df = train_test_split(crop_annotations)
 
-    # Plot all the Tursiops truncatus images as a sanity check
-    import matplotlib.pyplot as plt
-
-    # Get unique image paths for Tursiops truncatus in the training set
-    tursiops_images = train_df[train_df['label'] == 'Tursiops truncatus']['image_path'].unique()
-    n_plot = min(20, len(tursiops_images))
-
-    for img_path in pd.Series(tursiops_images).sample(n=n_plot, random_state=42):
-        if not os.path.exists(img_path):
-            continue
-        img = cv2.imread(img_path)
-        if img is None:
-            continue
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        plt.figure(figsize=(4, 4))
-        plt.imshow(img_rgb)
-        plt.title("Tursiops truncatus")
-        plt.axis('off')
-        # Save to a temporary file
-        tmp_img_path = "/tmp/tursiops_plot.png"
-        plt.savefig(tmp_img_path, bbox_inches='tight')
-        plt.close()
-        # Log image to comet
-        comet_logger.experiment.log_image(
-            tmp_img_path,
-            metadata={"name": os.path.basename(img_path), "context": "tursiops_sanity_check"}
-        )
-
-
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
+
+    # Log train and val dataframes to comet
+    train_csv_path = "/tmp/train_annotations.csv"
+    val_csv_path = "/tmp/val_annotations.csv"
+    train_df.to_csv(train_csv_path, index=False)
+    validation_df.to_csv(val_csv_path, index=False)
+    comet_logger.experiment.log_parameters(cfg.classification_model)
+    comet_logger.experiment.log_parameter("num_classes", len(train_df['label'].unique()))
+    comet_logger.experiment.log_table("train_annotations.csv", train_df)
+    comet_logger.experiment.log_table("val_annotations.csv", validation_df)
+
     comet_logger.experiment.add_tag("classification")
     comet_id = comet_logger.experiment.id
     trained_model = preprocess_and_train(
@@ -97,13 +78,19 @@ def main(cfg: DictConfig):
         max_epochs=cfg.classification_model.max_epochs,
         lr=cfg.classification_model.lr,
         batch_size=cfg.classification_model.batch_size,
-        workers=cfg.classification_model.workers
+        workers=cfg.classification_model.workers,
     )
-
+    
     checkpoint_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/"
     trained_model.trainer.save_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
-            
 
+    image_dataset, true_label, predicted_label = trained_model.val_dataset_confusion(return_images=True)
+    comet_logger.experiment.log_confusion_matrix(
+            y_true=true_label,
+            y_predicted=predicted_label,
+            images=image_dataset,
+            labels=list(trained_model.label_dict.keys()),
+        )
 if __name__ == "__main__":
     main()
 

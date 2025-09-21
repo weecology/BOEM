@@ -22,7 +22,7 @@ for folder in "$GULF_DIR"/*/; do
 #SBATCH --partition=hpg-turin
 #SBATCH --gpus=1
 
-uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=1000 debug=False pipeline.gpus=1
+uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100000 debug=False pipeline.gpus=1
 EOF
     sleep 8
 done

@@ -1,4 +1,3 @@
-from deepforest import model
 import pandas as pd
 import glob
 import comet_ml
@@ -7,7 +6,6 @@ from src.classification import preprocess_and_train
 import hydra
 from omegaconf import DictConfig
 import os
-import torch.nn.functional as F
 
 # Create train test split, split each class into 90% train and 10% test with a minimum of 5 images per class for test and a max of 100
 def train_test_split(df, test_size=0.1, min_test_images=5, max_test_images=100):
@@ -65,6 +63,14 @@ def main(cfg: DictConfig):
 
     comet_logger.experiment.add_tag("classification")
     comet_id = comet_logger.experiment.id
+
+    # Add a timestamp to not use the same image_dir for different runs
+    train_crop_image_dir = os.path.join(cfg.classification_model.train_crop_image_dir, comet_id)
+    os.makedirs(train_crop_image_dir, exist_ok=True)
+
+    val_crop_image_dir = os.path.join(cfg.classification_model.val_crop_image_dir, comet_id)
+    os.makedirs(val_crop_image_dir, exist_ok=True)
+
     trained_model = preprocess_and_train(
         train_df=train_df,
         validation_df=validation_df,
@@ -72,8 +78,8 @@ def main(cfg: DictConfig):
         checkpoint=cfg.classification_model.checkpoint,
         checkpoint_dir=cfg.classification_model.checkpoint_dir,
         image_dir=cfg.classification_model.image_dir,
-        train_crop_image_dir=cfg.classification_model.train_crop_image_dir,
-        val_crop_image_dir=cfg.classification_model.val_crop_image_dir,
+        train_crop_image_dir=train_crop_image_dir,
+        val_crop_image_dir=val_crop_image_dir,
         fast_dev_run=cfg.classification_model.fast_dev_run,
         max_epochs=cfg.classification_model.max_epochs,
         lr=cfg.classification_model.lr,

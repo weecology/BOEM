@@ -4,6 +4,7 @@ import glob
 from deepforest.model import CropModel
 import torch
 import datetime
+import pandas as pd
 
 def get_latest_checkpoint(checkpoint_dir, num_classes):
     #Get model with latest checkpoint dir, if none exist make a new model
@@ -36,8 +37,8 @@ def train(model, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_siz
         fast_dev_run=fast_dev_run,
         max_epochs=max_epochs,
         num_nodes=1,
-        devices=1,
-        accelerator="cpu",
+        devices=devices,
+        accelerator=accelerator,
         enable_checkpointing=False,
     )
     model.trainer.fit(model)

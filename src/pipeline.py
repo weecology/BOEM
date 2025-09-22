@@ -8,7 +8,6 @@ from src import label_studio
 from src import sagemaker_gt
 from src import detection
 from src import classification
-from src import hierarchical
 from src.visualization import crop_images
 from src.pipeline_evaluation import PipelineEvaluation
 from pytorch_lightning.loggers import CometLogger
@@ -214,11 +213,8 @@ class Pipeline:
             else:
                 trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint )
         else:
-            # Hierarchical backend (H-CAST). Load wrapper and classify crops post-detection.
-            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            hcast_checkpoint = getattr(self.config.classification_model, "checkpoint", None)
-            hcast_wrapper = hierarchical.load_hcast_model(repo_root=repo_root, checkpoint_path=hcast_checkpoint)
-
+            raise NotImplementedError("Only deepforest classification backend is currently implemented")
+        
         pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))  # Get all images in the data directory
         pool = [image for image in pool if not image.endswith('.csv')]
         pool = [image for image in pool if image not in self.existing_images]

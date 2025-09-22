@@ -21,13 +21,6 @@ dependencies = [
   "label-studio-sdk",
   "label-studio-converter",
   "comet-ml",
-  # H-CAST requirements
-  "timm==0.4.12",
-  "opencv-python==4.9.0.80",
-  "opencv-contrib-python==4.9.0.80",
-  'dgl',
-  "packaging",
-  # DeepForest-based detection/classification (local source)
   "deepforest @ file:///home/b.weinstein/DeepForest",
 ]
 

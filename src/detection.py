@@ -16,7 +16,6 @@ import torch
 
 # Local imports
 from src import data_processing
-from src.hierarchical import HCastWrapper, classify_dataframe
 from omegaconf import OmegaConf
 
 def evaluate(model, test_csv, image_root_dir):

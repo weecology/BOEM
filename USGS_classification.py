@@ -36,7 +36,7 @@ def main(cfg: DictConfig):
     crop_annotations = pd.concat(crop_annotations)
     
     # Keep labels with more than 25 images
-    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 100)
+    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 500)
 
     # Only keep two word labels
     crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
@@ -64,7 +64,7 @@ def main(cfg: DictConfig):
     comet_logger.experiment.add_tag("classification")
     comet_id = comet_logger.experiment.id
 
-    # Add a timestamp to not use the same image_dir for different runs
+    # Add a experiment stamp to not use the same image_dir for different runs
     train_crop_image_dir = os.path.join(cfg.classification_model.train_crop_image_dir, comet_id)
     os.makedirs(train_crop_image_dir, exist_ok=True)
 

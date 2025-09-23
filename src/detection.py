@@ -345,20 +345,6 @@ def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_si
     if predictions is None:
         return None
 
-    # If using hierarchical classifier, post-process to add cropmodel_label/cropmodel_score
-    if isinstance(crop_model, HCastWrapper):
-        # Derive root_dir from inputs (assumes all images share the same directory)
-        try:
-            first_path = image_paths[0]
-            root_dir = os.path.dirname(first_path)
-        except Exception:
-            root_dir = ""
-        predictions = classify_dataframe(
-            predictions=predictions,
-            image_dir=root_dir,
-            model=crop_model,
-        )
-
     return predictions
 
 def save_model(model, directory, basename):

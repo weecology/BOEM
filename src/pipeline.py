@@ -225,37 +225,17 @@ class Pipeline:
             else:
                 pool = random.sample(pool, 10)
 
-        if classification_backend == "deepforest":
-            flightline_predictions = generate_pool_predictions(
-                pool=pool,
-                pool_limit=self.config.active_learning.pool_limit,
-                patch_size=self.config.active_learning.patch_size,
-                patch_overlap=self.config.active_learning.patch_overlap,
-                min_score=self.config.predict.min_score,
-                model=trained_detection_model,
-                batch_size=self.config.predict.batch_size,
-                crop_model=trained_classification_model,
-            )
-        else:
-            # Detect first, then classify with H-CAST wrapper
-            flightline_predictions = generate_pool_predictions(
-                pool=pool,
-                pool_limit=self.config.active_learning.pool_limit,
-                patch_size=self.config.active_learning.patch_size,
-                patch_overlap=self.config.active_learning.patch_overlap,
-                min_score=self.config.predict.min_score,
-                model=trained_detection_model,
-                batch_size=self.config.predict.batch_size,
-                crop_model=None,
-            )
-            if flightline_predictions is not None and not flightline_predictions.empty:
-                flightline_predictions = hierarchical.classify_dataframe(
-                    predictions=flightline_predictions,
-                    image_dir=self.config.image_dir,
-                    model=hcast_wrapper,
-                    batch_size=getattr(self.config.classification_model, "batch_size", 64),
-                    num_workers=getattr(self.config.classification_model, "workers", 2),
-                )
+        flightline_predictions = generate_pool_predictions(
+            pool=pool,
+            pool_limit=self.config.active_learning.pool_limit,
+            patch_size=self.config.active_learning.patch_size,
+            patch_overlap=self.config.active_learning.patch_overlap,
+            min_score=self.config.predict.min_score,
+            model=trained_detection_model,
+            batch_size=self.config.predict.batch_size,
+            crop_model=trained_classification_model,
+        )
+
         if flightline_predictions is None:
             print("No predictions")
             return None
@@ -268,10 +248,9 @@ class Pipeline:
             evaluation_annotations = self.existing_validation.copy(deep=True)
             evaluation_predictions = flightline_predictions[flightline_predictions.image_path.isin(self.existing_validation.image_path)]
 
-            if classification_backend == "deepforest":
-                label_dict = trained_classification_model.label_dict
-            else:
-                label_dict = hcast_wrapper.label_dict
+
+            label_dict = trained_classification_model.label_dict
+                
             pipeline_monitor = PipelineEvaluation(
                 predictions=evaluation_predictions,
                 annotations=evaluation_annotations,

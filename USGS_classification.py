@@ -36,7 +36,7 @@ def main(cfg: DictConfig):
     crop_annotations = pd.concat(crop_annotations)
     
     # Keep labels with more than 25 images
-    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 500)
+    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 100)
 
     # Only keep two word labels
     crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]

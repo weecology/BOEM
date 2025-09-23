@@ -180,6 +180,14 @@ class Pipeline:
         
         classification_backend = getattr(self.config.classification_model, "backend", "deepforest")
 
+
+        # Create crop image directories if they don't exist
+        train_crop_image_dir = os.path.join(self.config.classification_model.train_crop_image_dir, self.comet_logger.experiment.id)
+        os.makedirs(train_crop_image_dir, exist_ok=True)
+
+        val_crop_image_dir = os.path.join(self.config.classification_model.val_crop_image_dir, self.comet_logger.experiment.id)
+        os.makedirs(val_crop_image_dir, exist_ok=True)
+
         if classification_backend == "deepforest":
             # If there are no train annotations, turn off force training
             if all_training.xmin[all_training.xmin != 0].empty:
@@ -202,8 +210,8 @@ class Pipeline:
                     checkpoint=self.config.classification_model.checkpoint,
                     checkpoint_num_classes=self.config.classification_model.checkpoint_num_classes,
                     checkpoint_dir=self.config.classification_model.checkpoint_dir,
-                    train_crop_image_dir=self.config.classification_model.train_crop_image_dir,
-                    val_crop_image_dir=self.config.classification_model.val_crop_image_dir,
+                    train_crop_image_dir=train_crop_image_dir,
+                    val_crop_image_dir=val_crop_image_dir,
                     fast_dev_run=self.config.classification_model.fast_dev_run,
                     max_epochs=self.config.classification_model.max_epochs,
                     lr=self.config.classification_model.lr,

@@ -180,7 +180,6 @@ class Pipeline:
         
         classification_backend = getattr(self.config.classification_model, "backend", "deepforest")
 
-
         # Create crop image directories if they don't exist
         train_crop_image_dir = os.path.join(self.config.classification_model.train_crop_image_dir, self.comet_logger.experiment.id)
         os.makedirs(train_crop_image_dir, exist_ok=True)
@@ -231,7 +230,11 @@ class Pipeline:
             if self.existing_validation is not None:
                 pool = [image for image in pool if image not in self.existing_validation.image_path.tolist()][:10]
             else:
-                pool = random.sample(pool, 10)
+                if self.existing_validation is None:
+                    pool = self.existing_validation.image_path.tolist()[:10]
+                    print("No validation annotations, skipping evaluation")
+                else:
+                    pool = random.sample(pool, 10)
 
         flightline_predictions = generate_pool_predictions(
             pool=pool,

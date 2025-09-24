@@ -47,7 +47,7 @@ propagate:
   distance_threshold_pixels: 50
 
 detection_model:
-  force_train: True
+  force_train: False
   checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/f3c687c8824f4b9fafa4bafbbe3fad8b.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000

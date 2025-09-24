@@ -5,7 +5,7 @@ image_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops/
 train_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 val_crop_image_dir:  /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/val
 fast_dev_run: False
-max_epochs: 50
+max_epochs: 45
 lr: 0.00001
-batch_size: 12
+batch_size: 72
 workers: 8

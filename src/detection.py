@@ -339,6 +339,7 @@ def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_si
         image_paths,
         patch_size=patch_size,
         patch_overlap=patch_overlap,
+        dataloader_strategy="batch",
         crop_model=crop_model if inline_classification else None,
     )
 

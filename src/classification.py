@@ -45,20 +45,24 @@ def train(model, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_siz
 
     return model
 
-def preprocess_images(model, annotations, root_dir, save_dir):
-    annotations = annotations[~annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]
-    if annotations.empty:
-        return None
+def filter_annotations(crop_annotations):
+    # Only keep two word labels
+    crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
+    crop_annotations = crop_annotations[~crop_annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]
     
     # Two word labels
-    annotations["label"] = annotations["label"].apply(lambda x: ' '.join(x.split()[:2]))
-    annotations = annotations[annotations["label"].apply(lambda x: len(x.split()) == 2)]
+    crop_annotations["label"] = crop_annotations["label"].apply(lambda x: ' '.join(x.split()[:2]))
+    crop_annotations = crop_annotations[crop_annotations["label"].apply(lambda x: len(x.split()) == 2)]
 
-    # Remove any annotations with empty boxes
-    annotations = annotations[(annotations['xmin'] != 0) & (annotations['ymin'] != 0) & (annotations['xmax'] != 0) & (annotations['ymax'] != 0)]
-    
+    # Remove any crop_annotations with empty boxes
+    crop_annotations = crop_annotations[(crop_annotations['xmin'] != 0) & (crop_annotations['ymin'] != 0) & (crop_annotations['xmax'] != 0) & (crop_annotations['ymax'] != 0)]
+
     # Remove any negative values
-    annotations = annotations[(annotations['xmin'] >= 0) & (annotations['ymin'] >= 0) & (annotations['xmax'] >= 0) & (annotations['ymax'] >= 0)]
+    crop_annotations = crop_annotations[(crop_annotations['xmin'] >= 0) & (crop_annotations['ymin'] >= 0) & (crop_annotations['xmax'] >= 0) & (crop_annotations['ymax'] >= 0)]
+    
+    return crop_annotations
+
+def preprocess_images(model, annotations, root_dir, save_dir):
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
     
     # Expand by 20 pixels on all sides
@@ -90,6 +94,11 @@ def preprocess_and_train(
     comet_logger=None,
 ):
     """Preprocess data and train a crop model."""
+    
+    # Filter annotations
+    train_df = filter_annotations(train_df)
+    validation_df = filter_annotations(validation_df)
+
     if checkpoint is not None:
         loaded_model = CropModel.load_from_checkpoint(checkpoint_path=checkpoint)
     else:

@@ -36,10 +36,31 @@ def main(cfg: DictConfig):
     crop_annotations = pd.concat(crop_annotations)
     
     # Keep labels with more than 25 images
-    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 500)
+    crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 25)
 
     # Only keep two word labels
     crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
+    crop_annotations = crop_annotations[~crop_annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]
+    
+    def normalize_label(l):
+        if pd.isna(l):
+            return l
+        s = str(l).strip()
+        s = s.replace("/", " ")
+        s = " ".join(s.split()[:2])   # keep first two tokens if that is your convention
+        return s
+    
+    crop_annotations["label"] = crop_annotations["label"].apply(normalize_label)
+
+    # Two word labels
+    crop_annotations["label"] = crop_annotations["label"].apply(lambda x: ' '.join(x.split()[:2]))
+    crop_annotations = crop_annotations[crop_annotations["label"].apply(lambda x: len(x.split()) == 2)]
+
+    # Remove any crop_annotations with empty boxes
+    crop_annotations = crop_annotations[(crop_annotations['xmin'] != 0) & (crop_annotations['ymin'] != 0) & (crop_annotations['xmax'] != 0) & (crop_annotations['ymax'] != 0)]
+
+    # Remove any negative values
+    crop_annotations = crop_annotations[(crop_annotations['xmin'] >= 0) & (crop_annotations['ymin'] >= 0) & (crop_annotations['xmax'] >= 0) & (crop_annotations['ymax'] >= 0)]
 
     # Expand bounding boxes by 30 pixels on all sides
     crop_annotations["xmin"] -= 30
@@ -95,6 +116,7 @@ def main(cfg: DictConfig):
             y_true=true_label,
             y_predicted=predicted_label,
             images=image_dataset,
+            max_categories=len(trained_model.label_dict.keys()),
             labels=list(trained_model.label_dict.keys()),
         )
 if __name__ == "__main__":

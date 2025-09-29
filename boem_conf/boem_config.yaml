@@ -1,7 +1,7 @@
 defaults:
   - server: serenity
   - classification_model: finetune.yaml # or hierarchical.yaml
-  - annotation: sagemaker
+  - annotation: label_studio
 
 debug: False
 

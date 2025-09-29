@@ -271,8 +271,8 @@ def write_daily_annotation_manifest(
 
 def globus_upload_files(
     local_paths: List[str],
-    dest_collection_id: Optional[str] = None,
     dest_dir: str,
+    dest_collection_id: Optional[str] = None,
     source_collection_id: Optional[str] = None,
     client_id: Optional[str] = None,
 ) -> Optional[str]:

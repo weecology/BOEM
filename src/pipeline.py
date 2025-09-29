@@ -20,11 +20,9 @@ class Pipeline:
     def __init__(self, cfg: DictConfig):
         """Initialize the pipeline with optional configuration"""
         self.config = cfg
-        # Annotation tool selection
-        self.annotation_tool = getattr(self.config, "annotation_tool", "label_studio")
 
         # Only needed for Label Studio uploads
-        if self.annotation_tool == "label_studio":
+        if self.config.annotation_tool == "label_studio":
             self.sftp_client = label_studio.create_sftp_client(
                 **self.config.server)
 

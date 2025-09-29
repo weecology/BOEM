@@ -21,7 +21,7 @@ dependencies = [
   "label-studio-sdk",
   "label-studio-converter",
   "comet-ml",
-  "deepforest",
+  "deepforest @ /home/b.weinstein/DeepForest",
   "globus-sdk",
 ]
 

@@ -3,14 +3,21 @@ annotation_tool: sagemaker
 sagemaker:
   # Globus defaults with ability to override via environment
   globus:
-    native_app_client_id: ${env:GLOBUS_NATIVE_APP_CLIENT_ID, ""}
-    source_collection_id: ${env:GLOBUS_SOURCE_COLLECTION_ID, ""}
-    dest_collection_id: ${env:GLOBUS_DEST_COLLECTION_ID, "e9612e0b-677c-4685-a721-7f4c2b6258d0"}
+    source_collection_id: "5dbaf795-8a7e-4dca-91aa-6e10d610c2b3"
+    dest_collection_id: "e9612e0b-677c-4685-a721-7f4c2b6258d0"
     dest_dir: /daily
+
+  instances:
+    train:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/train
+    validation:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
+    review:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/review
 
   # Example defaults for daily export
   output_dir: outputs
   job_name: umesc_annotation
   jobs_per_day: 200
   # S3 prefix used to construct source-ref URIs in manifests and roster
-  s3_prefix: ""
+  s3_prefix: "s3://umesc-ocs-label/production/job-input/"

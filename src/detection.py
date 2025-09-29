@@ -10,7 +10,6 @@ import math
 # Third party imports
 import pandas as pd
 from deepforest import main, visualize
-from deepforest.model import CropModel as DF_CropModel
 import torch
 
 # Local imports

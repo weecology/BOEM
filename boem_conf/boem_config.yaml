@@ -3,8 +3,6 @@ defaults:
   - classification_model: finetune.yaml # or hierarchical.yaml
   - annotation: sagemaker
 
-annotation_tool: ${annotation_tool}
-
 debug: False
 
 comet:
@@ -14,7 +12,7 @@ comet:
 check_annotations: false
 # Force upload bypasses the pipeline, useful for debugging and starting a new project
 force_upload: False
-image_dir: /blue/ewhite/b.weinstein/BOEM/Atlantic/JPG_2021_May15_101800
+image_dir: /blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800
 
 predict:
   patch_size: 1000

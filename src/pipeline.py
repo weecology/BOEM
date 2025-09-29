@@ -22,7 +22,7 @@ class Pipeline:
         self.config = cfg
 
         # Only needed for Label Studio uploads
-        if self.config.annotation_tool == "label_studio":
+        if self.config.annotation.annotation_tool== "label_studio":
             self.sftp_client = label_studio.create_sftp_client(
                 **self.config.server)
 
@@ -37,7 +37,7 @@ class Pipeline:
         self.comet_logger.experiment.log_parameter("flight_name", flight_name)
 
         # Label Studio: prepare per-flight directories
-        if self.annotation_tool == "label_studio":
+        if self.config.annotation.annotation_tool == "label_studio":
             self.config.label_studio.instances.train.csv_dir = os.path.join(self.config.label_studio.instances.train.csv_dir, flight_name)
             self.config.label_studio.instances.validation.csv_dir = os.path.join(self.config.label_studio.instances.validation.csv_dir, flight_name)
             self.config.label_studio.instances.review.csv_dir = os.path.join(self.config.label_studio.instances.review.csv_dir, flight_name)
@@ -65,7 +65,7 @@ class Pipeline:
         self.comet_logger.experiment.log_code(folder=os.path.join(os.path.dirname(__file__), "../src"), overwrite=True)
         
     def check_new_annotations(self, instance_name):
-        if self.annotation_tool == "label_studio":
+        if self.config.annotation.annotation_tool == "label_studio":
             instance_config = self.config.label_studio.instances[instance_name]
             annotations = label_studio.check_for_new_annotations(
                 url=self.config.label_studio.url,
@@ -76,7 +76,7 @@ class Pipeline:
         else:
             # For SageMaker, simply aggregate any CSVs found under the
             # corresponding instances directory
-            instance_dir = self.config.label_studio.instances[instance_name].csv_dir
+            instance_dir = self.config.annotation.sagemaker.instances[instance_name].csv_dir
             annotations = sagemaker_gt.gather_data(annotation_dir=instance_dir, image_dir=self.config.image_dir)
 
         return annotations
@@ -88,15 +88,15 @@ class Pipeline:
             self.check_new_annotations("validation")
             self.check_new_annotations("review")
 
-        if self.annotation_tool == "label_studio":
+        if self.config.annotation.annotation_tool == "label_studio":
             self.existing_training = label_studio.gather_data(self.config.label_studio.instances.train.csv_dir, image_dir=self.config.image_dir)
             self.existing_validation = label_studio.gather_data(self.config.label_studio.instances.validation.csv_dir, image_dir=self.config.image_dir)
             self.existing_reviewed = label_studio.gather_data(self.config.label_studio.instances.review.csv_dir, image_dir=self.config.image_dir)
         else:
-            self.existing_training = sagemaker_gt.gather_data(self.config.label_studio.instances.train.csv_dir, image_dir=self.config.image_dir)
-            self.existing_validation = sagemaker_gt.gather_data(self.config.label_studio.instances.validation.csv_dir, image_dir=self.config.image_dir)
-            self.existing_reviewed = sagemaker_gt.gather_data(self.config.label_studio.instances.review.csv_dir, image_dir=self.config.image_dir)
-        
+            self.existing_training = sagemaker_gt.gather_data(self.config.annotation.sagemaker.instances.train.csv_dir, image_dir=self.config.image_dir)
+            self.existing_validation = sagemaker_gt.gather_data(self.config.annotation.sagemaker.instances.validation.csv_dir, image_dir=self.config.image_dir)
+            self.existing_reviewed = sagemaker_gt.gather_data(self.config.annotation.sagemaker.instances.review.csv_dir, image_dir=self.config.image_dir)
+
         self.comet_logger.experiment.log_table(tabular_data=self.existing_reviewed, filename="human_reviewed_annotations.csv")
         self.comet_logger.experiment.log_table(tabular_data=self.existing_training, filename="training_annotations.csv")
         self.comet_logger.experiment.log_table(tabular_data=self.existing_validation, filename="validation_annotations.csv")
@@ -105,7 +105,7 @@ class Pipeline:
         if self.existing_training is None and self.existing_validation is None and self.existing_reviewed is None:
             self.existing_images = None
             print("No existing annotations, starting from scratch")
-            if self.annotation_tool == "label_studio":
+            if self.config.annotation.annotation_tool == "label_studio":
                 for instance in ["train", "validation", "review"]:
                     if self.config.debug:
                         continue
@@ -126,7 +126,7 @@ class Pipeline:
                     except Exception as e:
                         print(f"Failed to upload images to Label Studio for instance '{instance}': {e}")
                         # Optionally log the error or handle it as needed
-            if self.annotation_tool == "sagemaker":
+            if self.config.annotation.annotation_tool == "sagemaker":
                 # For SageMaker, no initial upload; just indicate not ready yet
                 pass
             return False
@@ -285,7 +285,7 @@ class Pipeline:
         if len(test_images_to_annotate) == 0:
             print("No images to annotate in the test set")
         else:
-            if self.annotation_tool == "label_studio":
+            if self.config.annotation.annotation_tool == "label_studio":
                 full_image_paths = [os.path.join(self.config.image_dir, image) for image in test_images_to_annotate]
                 try:
                     label_studio.upload_to_label_studio(
@@ -316,7 +316,7 @@ class Pipeline:
         else:
             print(f"Training images to annotate: {len(train_images_to_annotate)}")
             # Training annotation pipeline
-            if self.annotation_tool == "label_studio":
+            if self.config.annotation.annotation_tool == "label_studio":
                 full_image_paths = [os.path.join(self.config.image_dir, image) for image in train_images_to_annotate]
                 preannotations_dict = {image_path: group for image_path, group in preannotations.groupby("image_path")}
                 try:
@@ -352,7 +352,7 @@ class Pipeline:
             chosen_uncertain_images = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].unique()
             chosen_preannotations = uncertain_predictions[uncertain_predictions.image_path.isin(chosen_uncertain_images)]
             chosen_preannotations_dict = {image_path: group for image_path, group in chosen_preannotations.groupby("image_path")}
-            if self.annotation_tool == "label_studio":
+            if self.config.annotation.annotation_tool == "label_studio":
                 full_image_paths = [os.path.join(self.config.image_dir, image) for image in chosen_uncertain_images]
                 try:
                     label_studio.upload_to_label_studio(
@@ -434,7 +434,7 @@ class Pipeline:
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
 
         # If using SageMaker annotation route, create daily files and optionally upload to Globus
-        if self.annotation_tool == "sagemaker":
+        if self.config.annotation.annotation_tool == "sagemaker":
             # Build S3 URIs from selected images
             s3_prefix = getattr(self.config.sagemaker, "s3_prefix", "").rstrip("/")
             if not s3_prefix:

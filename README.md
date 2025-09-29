@@ -81,6 +81,12 @@ Contains test files corresponding to each component in `src/`. Uses pytest for t
 Contains YAML configuration files managed by Hydra:
 - **config.yaml**: Main configuration file defining pipeline parameters
 
+Add Globus Client App to .env file
+
+``` .env
+GLOBUS_NATIVE_APP_CLIENT_ID = [your globus ID]
+```
+
 ## Installation (uv)
 
 1. Clone the repository:

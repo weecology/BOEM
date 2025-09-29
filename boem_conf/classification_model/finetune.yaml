@@ -1,5 +1,5 @@
 force_train: False
-checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/39262f84a24b46e38b0b47bf2a989b70.ckpt
+checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/623bfb2620bc46fd9f87edff3cab1991.ckpt
 checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train
@@ -7,5 +7,5 @@ val_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/val
 fast_dev_run: True
 max_epochs: 10
 lr: 0.00001
-batch_size: 16
+batch_size: 72
 workers: 5

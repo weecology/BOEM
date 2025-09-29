@@ -13,7 +13,7 @@ comet:
 check_annotations: false
 # Force upload bypasses the pipeline, useful for debugging and starting a new project
 force_upload: False
-image_dir: /blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800
+image_dir: /blue/ewhite/b.weinstein/BOEM/Atlantic/JPG_2021_May15_101800
 
 label_studio:
   url: "https://labelstudio.naturecast.org/"

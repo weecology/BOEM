@@ -1,13 +1,14 @@
 import os
 import glob
+import json
 import datetime as _dt
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 
 
 def _now_date_string() -> str:
-    return _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M")
+    return _dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _basename_no_ext(path: str) -> str:
@@ -34,214 +35,151 @@ def _ensure_image_path(image_stem: str, image_dir: str) -> str:
     return os.path.join(image_dir, image_stem)
 
 
-def write_request_csv(
+def write_sagemaker_manifest(
     images: Iterable[str],
-    output_csv: str,
+    output_manifest: str,
     job_name: str,
-    source: str,
+    s3_prefix: str,
     preannotations: Optional[pd.DataFrame] = None,
+    capture_date_col: Optional[str] = None,
+    human_annotated: str = "yes",
+    manifest_type: str = "groundtruth/object-detection",
 ) -> str:
     """
-    Create a CSV for SageMaker Ground Truth team upload.
+    Write a SageMaker-style manifest (JSON lines). Each object looks like:
+    {
+      "source-ref": "s3://bucket/path/to/image.jpg",
+      "rootmanifest": {"annotations": [{left, top, width, height, label}, ...]},
+      "rootmanifest-metadata": { "capture-date": "...", "job-name": "...", ... }
+    }
 
-    The CSV schema follows the team's expected columns based on the provided
-    example screenshot:
-      - bname_parcel: image basename without extension
-      - label: optional seed label (string)
-      - conf: optional confidence (float)
-      - left, top, width, height: bounding box in parent coordinates (pixels)
-      - creation_dat: UTC timestamp (YYYY-mm-ddTHH:MM)
-      - source: free-text source (e.g., flightline)
-      - job_name: identifier of the job/batch
-
-    If preannotations is provided, one row is written per proposed box per
-    image. Otherwise, one empty row per image is written to request annotation.
-
-    Returns the written CSV path.
+    preannotations (optional) must contain: image_path, xmin, ymin, xmax, ymax
+    and may contain cropmodel_label or label and an optional capture_date_col.
     """
-    rows: List[Dict] = []  # type: ignore[valid-type]
-    creation_dat = _now_date_string()
+    os.makedirs(os.path.dirname(output_manifest) or ".", exist_ok=True)
+    creation_date = _now_date_string()
 
-    # Normalize preannotations to expected columns
+    # Build map: stem -> {"annotations": [...], "capture_date": ...}
+    pre_map: Dict[str, Dict] = {}
     if preannotations is not None and not preannotations.empty:
-        expected_cols = {"image_path", "xmin", "ymin", "xmax", "ymax"}
-        missing = expected_cols - set(preannotations.columns)
-        if missing:
-            raise ValueError(
-                f"preannotations is missing required columns: {sorted(missing)}"
-            )
-
-        # Prefer explicit class/score columns if present
+        required = {"image_path", "xmin", "ymin", "xmax", "ymax"}
+        if not required.issubset(set(preannotations.columns)):
+            raise ValueError("preannotations must contain image_path,xmin,ymin,xmax,ymax")
         label_col = (
             "cropmodel_label"
             if "cropmodel_label" in preannotations.columns
             else ("label" if "label" in preannotations.columns else None)
         )
-        score_col = "score" if "score" in preannotations.columns else None
-
         for _, row in preannotations.iterrows():
-            image_stem = _basename_no_ext(str(row["image_path"]))
-            xmin = float(row["xmin"])
-            ymin = float(row["ymin"])
-            xmax = float(row["xmax"])
-            ymax = float(row["ymax"])
-            rows.append(
-                {
-                    "bname_parcel": image_stem,
-                    "label": (str(row[label_col]) if label_col else ""),
-                    "conf": (float(row[score_col]) if score_col else ""),
-                    "left": xmin,
-                    "top": ymin,
-                    "width": max(0.0, xmax - xmin),
-                    "height": max(0.0, ymax - ymin),
-                    "creation_dat": creation_dat,
-                    "source": source,
-                    "job_name": job_name,
-                }
-            )
-    else:
-        # Write a single placeholder row per image (no preannotation boxes)
+            stem = _basename_no_ext(str(row["image_path"]))
+            ann = {
+                "left": float(row["xmin"]),
+                "top": float(row["ymin"]),
+                "width": float(max(0.0, row["xmax"] - row["xmin"])),
+                "height": float(max(0.0, row["ymax"] - row["ymin"])),
+                "label": str(row[label_col]) if label_col else "",
+            }
+            entry = pre_map.setdefault(stem, {"annotations": [], "capture_date": ""})
+            entry["annotations"].append(ann)
+            if capture_date_col and capture_date_col in row.index:
+                entry["capture_date"] = str(row[capture_date_col])
+
+    with open(output_manifest, "w", encoding="utf-8") as fh:
         for img in images:
-            rows.append(
-                {
-                    "bname_parcel": _basename_no_ext(img),
-                    "label": "",
-                    "conf": "",
-                    "left": "",
-                    "top": "",
-                    "width": "",
-                    "height": "",
-                    "creation_dat": creation_dat,
-                    "source": source,
-                    "job_name": job_name,
-                }
-            )
+            stem = _basename_no_ext(img)
+            source_ref = os.path.join(s3_prefix.rstrip("/"), os.path.basename(img))
+            entry = pre_map.get(stem, {"annotations": [], "capture_date": ""})
+            manifest_obj = {
+                "source-ref": source_ref,
+                "rootmanifest": {"annotations": entry["annotations"]},
+                "rootmanifest-metadata": {
+                    "capture-date": entry.get("capture_date", ""),
+                    "unique_x": "",
+                    "unique_y": "",
+                    "job-name": job_name,
+                    "human-annotated": human_annotated,
+                    "creation-date": creation_date,
+                    "type": manifest_type,
+                },
+            }
+            fh.write(json.dumps(manifest_obj) + "\n")
+    return output_manifest
 
+
+def read_sagemaker_manifest(manifest_path: str, image_dir: str) -> pd.DataFrame:
+    """
+    Read a SageMaker manifest (JSON lines) and convert to DeepForest-format DataFrame:
+    columns: image_path (relative to image_dir), xmin, ymin, xmax, ymax, label
+    """
+    rows: List[Dict] = []
+    with open(manifest_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                # skip invalid JSON lines
+                continue
+            src = obj.get("source-ref", "")
+            basename = _basename_no_ext(src)
+            local_path = _ensure_image_path(basename, image_dir)
+            # image_path relative to image_dir
+            try:
+                rel_path = os.path.relpath(local_path, image_dir)
+            except Exception:
+                rel_path = os.path.basename(local_path)
+            anns = obj.get("rootmanifest", {}).get("annotations", []) or []
+            for a in anns:
+                try:
+                    left = float(a.get("left", a.get("xmin", 0.0)))
+                    top = float(a.get("top", a.get("ymin", 0.0)))
+                    width = float(a.get("width", 0.0))
+                    height = float(a.get("height", 0.0))
+                except Exception:
+                    continue
+                rows.append(
+                    {
+                        "image_path": rel_path,
+                        "xmin": left,
+                        "ymin": top,
+                        "xmax": left + width,
+                        "ymax": top + height,
+                        "label": str(a.get("label", "Object")),
+                    }
+                )
+    if not rows:
+        return pd.DataFrame(columns=["image_path", "xmin", "ymin", "xmax", "ymax", "label"])
     df = pd.DataFrame(rows)
-    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
-    df.to_csv(output_csv, index=False)
-    return output_csv
-
-
-def _detect_columns(df: pd.DataFrame) -> Tuple[str, str, str, str, str, str]:
-    """
-    Robustly detect the required columns from the Ground Truth CSV, which may
-    vary slightly by naming.
-    Returns tuple: (image_col, label_col, left_col, top_col, width_col, height_col)
-    """
-    # Image/name
-    image_candidates = ["bname_parcel", "image", "image_name", "filename", "name"]
-    label_candidates = ["label", "class", "species"]
-    left_candidates = ["left", "xmin", "x_min"]
-    top_candidates = ["top", "ymin", "y_min"]
-    width_candidates = ["width", "w"]
-    height_candidates = ["height", "h"]
-
-    def pick(cands: List[str]) -> Optional[str]:
-        for c in cands:
-            if c in df.columns:
-                return c
-        return None
-
-    image_col = pick(image_candidates)
-    label_col = pick(label_candidates) or "label"
-    left_col = pick(left_candidates)
-    top_col = pick(top_candidates)
-    width_col = pick(width_candidates)
-    height_col = pick(height_candidates)
-
-    required = {
-        "image": image_col,
-        "left": left_col,
-        "top": top_col,
-        "width": width_col,
-        "height": height_col,
-    }
-    missing = [k for k, v in required.items() if v is None]
-    if missing:
-        raise ValueError(
-            f"Missing required columns in SageMaker CSV: {', '.join(missing)}"
-        )
-
-    return image_col, label_col, left_col, top_col, width_col, height_col
-
-
-def read_results_csv(csv_path: str, image_dir: str) -> pd.DataFrame:
-    """
-    Read a SageMaker Ground Truth results CSV and convert to DeepForest format:
-      - image_path: relative path to parent image
-      - xmin, ymin, xmax, ymax: in pixels
-      - label: taxonomy/class string
-    """
-    df = pd.read_csv(csv_path)
-    if df.empty:
-        return pd.DataFrame(columns=["image_path", "xmin", "ymin", "xmax", "ymax", "label"])  # noqa: E501
-
-    image_col, label_col, left_col, top_col, width_col, height_col = _detect_columns(df)
-
-    # Coerce numeric columns
-    for c in [left_col, top_col, width_col, height_col]:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    # Drop rows missing any box numeric field
-    df = df.dropna(subset=[left_col, top_col, width_col, height_col])
-
-    # Compute DeepForest-friendly columns
-    result = pd.DataFrame(
-        {
-            "image_path": [
-                os.path.relpath(_ensure_image_path(str(stem), image_dir), image_dir)
-                for stem in df[image_col].astype(str).tolist()
-            ],
-            "xmin": df[left_col].astype(float),
-            "ymin": df[top_col].astype(float),
-            "xmax": (df[left_col] + df[width_col]).astype(float),
-            "ymax": (df[top_col] + df[height_col]).astype(float),
-            "label": df.get(label_col, "Object").astype(str),
-        }
-    )
-
-    # Sanity: clamp negatives
+    # clamp negatives and drop invalid boxes
     for c in ["xmin", "ymin", "xmax", "ymax"]:
-        result[c] = result[c].clip(lower=0)
-
-    return result
-
-
-def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
-    """
-    Aggregate all CSVs in a directory into a single DeepForest-format DataFrame.
-    """
-    csvs = sorted(glob.glob(os.path.join(annotation_dir, "**", "*.csv"), recursive=True))
-    if not csvs:
-        return None
-
-    parts: List[pd.DataFrame] = []
-    for csv in csvs:
-        try:
-            parts.append(read_results_csv(csv, image_dir=image_dir))
-        except Exception as exc:  # keep going on partial/invalid files
-            print(f"Warning: failed to parse {csv}: {exc}")
-    if not parts:
-        return None
-
-    df = pd.concat(parts, ignore_index=True)
-    # Drop empty boxes
+        df[c] = df[c].clip(lower=0)
     df = df[(df["xmax"] > df["xmin"]) & (df["ymax"] > df["ymin"])].copy()
     return df
 
 
-# Notes on tiling and coordinates
-# -------------------------------
-# DeepForest training functions expect annotation coordinates to be in the
-# coordinate system of the ORIGINAL/PARENT image. The preprocessing pipeline
-# (see src/data_processing.preprocess_images/process_image) uses
-# deepforest.preprocess.split_raster to handle splitting the parent image into
-# tiles and internally transforms annotation coordinates into tile coordinates.
-#
-# Therefore, SageMaker results should be provided here in parent-image pixel
-# coordinates. The returned DataFrame from read_results_csv matches
-# DeepForest's expected format and can be passed directly to
-# data_processing.preprocess_images for tiling and training.
+def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
+    """
+    Aggregate supported annotation files in a directory into a single DataFrame.
+    Currently supports only SageMaker manifest JSON-lines (.jsonl/.manifest/.json).
+    """
+    manifests = sorted(
+        glob.glob(os.path.join(annotation_dir, "**", "*.jsonl"), recursive=True)
+        + glob.glob(os.path.join(annotation_dir, "**", "*.manifest"), recursive=True)
+        + glob.glob(os.path.join(annotation_dir, "**", "*.json"), recursive=True)
+    )
 
+    parts: List[pd.DataFrame] = []
+    for mf in manifests:
+        try:
+            parts.append(read_sagemaker_manifest(mf, image_dir=image_dir))
+        except Exception as exc:
+            print(f"Warning: failed to parse manifest {mf}: {exc}")
 
+    if not parts:
+        return None
+
+    df = pd.concat(parts, ignore_index=True)
+    df = df[(df["xmax"] > df["xmin"]) & (df["ymax"] > df["ymin"])].copy()
+    return df

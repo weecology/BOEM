@@ -11,7 +11,6 @@ import math
 import pandas as pd
 from deepforest import main, visualize
 from deepforest.model import CropModel as DF_CropModel
-from deepforest.utilities import read_file
 import torch
 
 # Local imports
@@ -170,28 +169,6 @@ def train(model, train_annotations, test_annotations, train_image_dir, comet_log
         comet_logger.experiment.log_table("test.csv", test_annotations)
         
     model.create_trainer(logger=comet_logger, num_nodes=1, strategy=strategy, devices=devices)
-
-    non_empty_train_annotations = read_file(model.config["train"]["csv_file"], root_dir=train_image_dir)
-    
-    # # Skip for fast_dev run
-    # if not model.trainer.fast_dev_run:
-    #     if comet_logger:
-    #         n = 5 if non_empty_train_annotations.shape[0] > 5 else non_empty_train_annotations.shape[0]
-    #         for filename in non_empty_train_annotations.image_path.sample(n=n).unique():
-    #             sample_train_annotations_for_image = non_empty_train_annotations[non_empty_train_annotations.image_path == filename]
-    #             sample_train_annotations_for_image.root_dir = train_image_dir
-    #             visualize.plot_annotations(sample_train_annotations_for_image, savedir=tmpdir)
-    #             comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_train'})
-
-    #         if test_annotations is not None:
-    #             non_empty_validation_annotations = read_file(model.config["validation"]["csv_file"], root_dir=train_image_dir)
-    #             n = 20 if non_empty_validation_annotations.shape[0] > 20 else non_empty_validation_annotations.shape[0]
-    #             for filename in non_empty_validation_annotations.image_path.sample(n=n).unique():
-    #                 sample_validation_annotations_for_image = non_empty_validation_annotations[non_empty_validation_annotations.image_path == filename]
-    #                 sample_validation_annotations_for_image.root_dir = train_image_dir
-    #                 visualize.plot_annotations(sample_validation_annotations_for_image, savedir=tmpdir)
-    #                 comet_logger.experiment.log_image(os.path.join(tmpdir, filename),metadata={"name":filename,"context":'detection_validation'})
-
     model.trainer.fit(model)
 
     if not model.trainer.fast_dev_run:
@@ -332,15 +309,12 @@ def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_si
     m.config["batch_size"] = batch_size
     m.config["workers"] = workers
 
-    # Pass crop_model to DeepForest only if it's a DeepForest CropModel. Otherwise, do two-stage.
-    inline_classification = isinstance(crop_model, DF_CropModel)
-
     predictions = m.predict_tile(
-        image_paths,
+        image_paths, 
         patch_size=patch_size,
         patch_overlap=patch_overlap,
         dataloader_strategy="batch",
-        crop_model=crop_model if inline_classification else None,
+        crop_model=crop_model,
     )
 
     if predictions is None:

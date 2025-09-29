@@ -29,7 +29,7 @@ class Pipeline:
                 **self.config.server)
 
         # Pool of all images
-        self.all_images = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))
+        self.all_images = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG"))
 
         self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
         self.comet_logger.experiment.add_tag("pipeline")
@@ -221,20 +221,18 @@ class Pipeline:
                 trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint )
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
-        
-        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg"))  # Get all images in the data directory
+
+        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG"))  + glob.glob(os.path.join(self.config.image_dir, "*.jpeg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPEG"))  # Get all images in the data directory
         pool = [image for image in pool if not image.endswith('.csv')]
         pool = [image for image in pool if image not in self.existing_images]
 
         if self.config.debug:
             if self.existing_validation is not None:
-                pool = [image for image in pool if image not in self.existing_validation.image_path.tolist()][:10]
+                non_empty_validation = self.existing_validation[~(self.existing_validation.xmin==0)]
+                pool = list(non_empty_validation.image_path.unique())
+                pool = [os.path.join(self.config.image_dir, image) for image in pool]
             else:
-                if self.existing_validation is None:
-                    pool = self.existing_validation.image_path.tolist()[:10]
-                    print("No validation annotations, skipping evaluation")
-                else:
-                    pool = random.sample(pool, 10)
+                pool = random.sample(pool, 10)
 
         flightline_predictions = generate_pool_predictions(
             pool=pool,

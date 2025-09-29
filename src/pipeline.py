@@ -23,7 +23,7 @@ class Pipeline:
         # Annotation tool selection
         self.annotation_tool = getattr(self.config, "annotation_tool", "label_studio")
 
-        # Only needed for Label Studio uploads
+        # Only init SFTP for Label Studio
         if self.annotation_tool == "label_studio":
             self.sftp_client = label_studio.create_sftp_client(
                 **self.config.server)
@@ -38,15 +38,15 @@ class Pipeline:
         self.comet_logger.experiment.log_parameters(self.config)
         self.comet_logger.experiment.log_parameter("flight_name", flight_name)
 
-        # The folders are relative to flight name
-        self.config.label_studio.instances.train.csv_dir = os.path.join(self.config.label_studio.instances.train.csv_dir, flight_name)
-        self.config.label_studio.instances.validation.csv_dir = os.path.join(self.config.label_studio.instances.validation.csv_dir, flight_name)
-        self.config.label_studio.instances.review.csv_dir = os.path.join(self.config.label_studio.instances.review.csv_dir, flight_name)
+        # Label Studio: prepare per-flight directories
+        if self.annotation_tool == "label_studio":
+            self.config.label_studio.instances.train.csv_dir = os.path.join(self.config.label_studio.instances.train.csv_dir, flight_name)
+            self.config.label_studio.instances.validation.csv_dir = os.path.join(self.config.label_studio.instances.validation.csv_dir, flight_name)
+            self.config.label_studio.instances.review.csv_dir = os.path.join(self.config.label_studio.instances.review.csv_dir, flight_name)
 
-        # Create the directories for the annotations
-        os.makedirs(self.config.label_studio.instances.train.csv_dir, exist_ok=True)
-        os.makedirs(self.config.label_studio.instances.validation.csv_dir, exist_ok=True)
-        os.makedirs(self.config.label_studio.instances.review.csv_dir, exist_ok=True)
+            os.makedirs(self.config.label_studio.instances.train.csv_dir, exist_ok=True)
+            os.makedirs(self.config.label_studio.instances.validation.csv_dir, exist_ok=True)
+            os.makedirs(self.config.label_studio.instances.review.csv_dir, exist_ok=True)
 
         self.config.detection_model.crop_image_dir = os.path.join(self.config.detection_model.crop_image_dir, flight_name)
         self.config.detection_model.checkpoint_dir = os.path.join(self.config.detection_model.checkpoint_dir, flight_name)
@@ -107,26 +107,30 @@ class Pipeline:
         if self.existing_training is None and self.existing_validation is None and self.existing_reviewed is None:
             self.existing_images = None
             print("No existing annotations, starting from scratch")
-            for instance in ["train", "validation", "review"]:
-                if self.config.debug:
-                    continue
-                full_image_paths = [os.path.join(self.config.image_dir, image) for image in self.all_images]
-                # Select 5 random images
-                images_to_annotate = random.sample(full_image_paths, 5)
-                full_image_paths = [os.path.join(self.config.image_dir, image) for image in images_to_annotate]
-                try:
-                    label_studio.upload_to_label_studio(
-                        images=full_image_paths,
-                        sftp_client=self.sftp_client,
-                        url=self.config.label_studio.url,
-                        project_name=self.config.label_studio.instances[instance].project_name,
-                        images_to_annotate_dir=self.config.image_dir,
-                        folder_name=self.config.label_studio.folder_name,
-                        preannotations=None
-                    )
-                except Exception as e:
-                    print(f"Failed to upload images to Label Studio for instance '{instance}': {e}")
-                    # Optionally log the error or handle it as needed
+            if self.annotation_tool == "label_studio":
+                for instance in ["train", "validation", "review"]:
+                    if self.config.debug:
+                        continue
+                    full_image_paths = [os.path.join(self.config.image_dir, image) for image in self.all_images]
+                    # Select 5 random images
+                    images_to_annotate = random.sample(full_image_paths, 5)
+                    full_image_paths = [os.path.join(self.config.image_dir, image) for image in images_to_annotate]
+                    try:
+                        label_studio.upload_to_label_studio(
+                            images=full_image_paths,
+                            sftp_client=self.sftp_client,
+                            url=self.config.label_studio.url,
+                            project_name=self.config.label_studio.instances[instance].project_name,
+                            images_to_annotate_dir=self.config.image_dir,
+                            folder_name=self.config.label_studio.folder_name,
+                            preannotations=None
+                        )
+                    except Exception as e:
+                        print(f"Failed to upload images to Label Studio for instance '{instance}': {e}")
+                        # Optionally log the error or handle it as needed
+            if self.annotation_tool == "sagemaker":
+                # For SageMaker, no initial upload; just indicate not ready yet
+                pass
             return False
 
         else:
@@ -283,20 +287,21 @@ class Pipeline:
         if len(test_images_to_annotate) == 0:
             print("No images to annotate in the test set")
         else:
-            full_image_paths = [os.path.join(self.config.image_dir, image) for image in test_images_to_annotate]
-            try:
-                label_studio.upload_to_label_studio(
-                    images=full_image_paths,
-                    sftp_client=self.sftp_client,
-                    url=self.config.label_studio.url,
-                    project_name=self.config.label_studio.instances.validation.project_name,
-                    images_to_annotate_dir=self.config.image_dir,
-                    folder_name=self.config.label_studio.folder_name,
-                    preannotations=None
-                )
-            except Exception as e:
-                print(f"Failed to upload validation images to Label Studio: {e}")
-                # Optionally log the error or handle it as needed
+            if self.annotation_tool == "label_studio":
+                full_image_paths = [os.path.join(self.config.image_dir, image) for image in test_images_to_annotate]
+                try:
+                    label_studio.upload_to_label_studio(
+                        images=full_image_paths,
+                        sftp_client=self.sftp_client,
+                        url=self.config.label_studio.url,
+                        project_name=self.config.label_studio.instances.validation.project_name,
+                        images_to_annotate_dir=self.config.image_dir,
+                        folder_name=self.config.label_studio.folder_name,
+                        preannotations=None
+                    )
+                except Exception as e:
+                    print(f"Failed to upload validation images to Label Studio: {e}")
+                    # Optionally log the error or handle it as needed
 
         # Select images to annotate based on the strategy
         training_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate)]
@@ -313,21 +318,22 @@ class Pipeline:
         else:
             print(f"Training images to annotate: {len(train_images_to_annotate)}")
             # Training annotation pipeline
-            full_image_paths = [os.path.join(self.config.image_dir, image) for image in train_images_to_annotate]
-            preannotations_dict = {image_path: group for image_path, group in preannotations.groupby("image_path")}
-            try:
-                label_studio.upload_to_label_studio(
-                    images=full_image_paths,
-                    url=self.config.label_studio.url,
-                    sftp_client=self.sftp_client,
-                    project_name=self.config.label_studio.instances.train.project_name,
-                    images_to_annotate_dir=self.config.image_dir,
-                    folder_name=self.config.label_studio.folder_name,
-                    preannotations=preannotations_dict
-                )
-            except Exception as e:
-                print(f"Failed to upload training images to Label Studio: {e}")
-                # Optionally log the error or handle it as needed
+            if self.annotation_tool == "label_studio":
+                full_image_paths = [os.path.join(self.config.image_dir, image) for image in train_images_to_annotate]
+                preannotations_dict = {image_path: group for image_path, group in preannotations.groupby("image_path")}
+                try:
+                    label_studio.upload_to_label_studio(
+                        images=full_image_paths,
+                        url=self.config.label_studio.url,
+                        sftp_client=self.sftp_client,
+                        project_name=self.config.label_studio.instances.train.project_name,
+                        images_to_annotate_dir=self.config.image_dir,
+                        folder_name=self.config.label_studio.folder_name,
+                        preannotations=preannotations_dict
+                    )
+                except Exception as e:
+                    print(f"Failed to upload training images to Label Studio: {e}")
+                    # Optionally log the error or handle it as needed
         
         human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]
         
@@ -348,20 +354,21 @@ class Pipeline:
             chosen_uncertain_images = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].unique()
             chosen_preannotations = uncertain_predictions[uncertain_predictions.image_path.isin(chosen_uncertain_images)]
             chosen_preannotations_dict = {image_path: group for image_path, group in chosen_preannotations.groupby("image_path")}
-            full_image_paths = [os.path.join(self.config.image_dir, image) for image in chosen_uncertain_images]
-            try:
-                label_studio.upload_to_label_studio(
-                    images=full_image_paths,
-                    sftp_client=self.sftp_client,
-                    url=self.config.label_studio.url,
-                    project_name=self.config.label_studio.instances.review.project_name,
-                    images_to_annotate_dir=self.config.image_dir,
-                    folder_name=self.config.label_studio.folder_name,
-                    preannotations=chosen_preannotations_dict
-                )
-            except Exception as e:
-                print(f"Failed to upload review images to Label Studio: {e}")
-                # Optionally log the error or handle it as needed
+            if self.annotation_tool == "label_studio":
+                full_image_paths = [os.path.join(self.config.image_dir, image) for image in chosen_uncertain_images]
+                try:
+                    label_studio.upload_to_label_studio(
+                        images=full_image_paths,
+                        sftp_client=self.sftp_client,
+                        url=self.config.label_studio.url,
+                        project_name=self.config.label_studio.instances.review.project_name,
+                        images_to_annotate_dir=self.config.image_dir,
+                        folder_name=self.config.label_studio.folder_name,
+                        preannotations=chosen_preannotations_dict
+                    )
+                except Exception as e:
+                    print(f"Failed to upload review images to Label Studio: {e}")
+                    # Optionally log the error or handle it as needed
 
         print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
         print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")
@@ -427,6 +434,50 @@ class Pipeline:
 
         # give it a complete tag
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
-        self.comet_logger.experiment.add_tag("complete")
 
+        # If using SageMaker annotation route, create daily files and optionally upload to Globus
+        if self.annotation_tool == "sagemaker":
+            # Build S3 URIs from selected images
+            s3_prefix = getattr(self.config.sagemaker, "s3_prefix", "").rstrip("/")
+            if not s3_prefix:
+                print("Warning: s3_prefix not set in config.sagemaker; skipping SageMaker file generation")
+                self.comet_logger.experiment.add_tag("complete")
+                return None
+
+            # Use candidates not yet in existing_images
+            candidate_images = [p for p in self.all_images if p not in self.existing_images]
+            basenames = [os.path.basename(p) for p in candidate_images]
+            s3_uris = [os.path.join(s3_prefix, b) for b in basenames]
+
+            out_dir = getattr(self.config.sagemaker, "output_dir", "outputs")
+            os.makedirs(out_dir, exist_ok=True)
+            jobs_per_day = int(getattr(self.config.sagemaker, "jobs_per_day", 200))
+            job_name = str(getattr(self.config.sagemaker, "job_name", "umesc_annotation"))
+
+            # Generate daily roster and jobs
+            roster_path = sagemaker_gt.write_daily_roster(s3_uris=s3_uris, output_dir=out_dir)
+            jobs_path, selected_uris = sagemaker_gt.assign_jobs_from_roster(roster_path=roster_path, output_dir=out_dir, num_jobs=jobs_per_day)
+            metadata_path = sagemaker_gt.write_daily_metadata(selected_uris, output_dir=out_dir)
+            manifest_path = sagemaker_gt.write_daily_annotation_manifest(selected_uris, output_dir=out_dir, job_name=job_name)
+
+            # Upload via Globus if configured
+            try:
+                dest_dir = str(getattr(self.config.sagemaker.globus, "dest_dir", "/daily"))
+                client_id = getattr(self.config.sagemaker.globus, "native_app_client_id", None)
+                source_collection_id = getattr(self.config.sagemaker.globus, "source_collection_id", None)
+                dest_collection_id = getattr(self.config.sagemaker.globus, "dest_collection_id", None)
+                task_id = sagemaker_gt.globus_upload_files(
+                    local_paths=[roster_path, jobs_path, metadata_path, manifest_path],
+                    dest_collection_id=dest_collection_id,
+                    dest_dir=dest_dir,
+                    source_collection_id=source_collection_id,
+                    client_id=client_id,
+                )
+                if task_id:
+                    print(f"Globus transfer submitted: {task_id}")
+                    self.comet_logger.experiment.log_parameter("globus_task_id", task_id)
+            except Exception as e:
+                print(f"Globus upload skipped/failed: {e}")
+
+        self.comet_logger.experiment.add_tag("complete")
         return None

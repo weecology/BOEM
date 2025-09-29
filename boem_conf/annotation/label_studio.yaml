@@ -1,0 +1,15 @@
+annotation_tool: label_studio
+
+label_studio:
+  url: "https://labelstudio.naturecast.org/"
+  folder_name: "/media/T/lab-white-ernest/label_studio_data/BOEM"
+  instances:
+    train:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/train
+      project_name: "Bureau of Ocean Energy Management - Training"
+    validation:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
+      project_name: "Bureau of Ocean Energy Management - Validation"
+    review:
+      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/review
+      project_name: "Bureau of Ocean Energy Management - Review"

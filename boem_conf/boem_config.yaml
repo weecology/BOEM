@@ -1,8 +1,9 @@
 defaults:
   - server: serenity
   - classification_model: finetune.yaml # or hierarchical.yaml
+  - annotation: label_studio
 
-annotation_tool: label_studio  # or 'sagemaker'
+annotation_tool: ${annotation_tool}
 
 debug: False
 
@@ -15,19 +16,6 @@ check_annotations: false
 force_upload: False
 image_dir: /blue/ewhite/b.weinstein/BOEM/Atlantic/JPG_2021_May15_101800
 
-label_studio:
-  url: "https://labelstudio.naturecast.org/"
-  folder_name: "/media/T/lab-white-ernest/label_studio_data/BOEM"
-  instances:
-    train:
-      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/train
-      project_name: "Bureau of Ocean Energy Management - Training"
-    validation:
-      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/validation
-      project_name: "Bureau of Ocean Energy Management - Validation"
-    review:
-      csv_dir: /blue/ewhite/b.weinstein/BOEM/annotations/review
-      project_name: "Bureau of Ocean Energy Management - Review"
 predict:
   patch_size: 1000
   patch_overlap: 0

@@ -2,6 +2,7 @@
 name = "boem"
 description = "BOEM bird detection and classification pipeline"
 readme = "README.md"
+requires-python = ">=3.10"
 version = "0.0.0"
 dependencies = [
   "numpy",
@@ -23,7 +24,13 @@ dependencies = [
   "comet-ml",
   "deepforest",
   "globus-sdk",
-  'pytest',
+  # H-CAST requirements
+  "timm==0.4.12",
+  "opencv-contrib-python==4.9.0.80",
+  # DGL wheels may require a custom index (see https://data.dgl.ai/wheels/repo.html)
+  "dgl",
+  "packaging",
+  "pytest",
   "python-dotenv>=1.2.1",
 ]
 
@@ -34,9 +41,14 @@ explicit = true
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu128"},
+  { index = "pytorch-cu128" }
 ]
 torchvision = [
-  { index = "pytorch-cu128" },
+  { index = "pytorch-cu128" }
 ]
-deepforest = { path = "/home/b.weinstein/DeepForest" }
+deepforest = [
+  { path = "/home/b.weinstein/DeepForest" }
+]
+
+[tool.uv]
+find-links = ["https://data.dgl.ai/wheels/repo.html"]

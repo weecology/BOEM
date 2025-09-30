@@ -30,12 +30,12 @@ class LabelStudioAnnotator(BaseAnnotator):
         self.sftp_client = ls_mod.create_sftp_client(**self.cfg.server)
         # Prepare per-flight directories for LS
         flight_name = os.path.basename(self.cfg.image_dir)
-        self.cfg.label_studio.instances.train.csv_dir = os.path.join(self.cfg.label_studio.instances.train.csv_dir, flight_name)
-        self.cfg.label_studio.instances.validation.csv_dir = os.path.join(self.cfg.label_studio.instances.validation.csv_dir, flight_name)
-        self.cfg.label_studio.instances.review.csv_dir = os.path.join(self.cfg.label_studio.instances.review.csv_dir, flight_name)
-        os.makedirs(self.cfg.label_studio.instances.train.csv_dir, exist_ok=True)
-        os.makedirs(self.cfg.label_studio.instances.validation.csv_dir, exist_ok=True)
-        os.makedirs(self.cfg.label_studio.instances.review.csv_dir, exist_ok=True)
+        self.cfg.annotation.label_studio.instances.train.csv_dir = os.path.join(self.cfg.annotation.label_studio.instances.train.csv_dir, flight_name)
+        self.cfg.annotation.label_studio.instances.validation.csv_dir = os.path.join(self.cfg.annotation.label_studio.instances.validation.csv_dir, flight_name)
+        self.cfg.annotation.label_studio.instances.review.csv_dir = os.path.join(self.cfg.annotation.label_studio.instances.review.csv_dir, flight_name)
+        os.makedirs(self.cfg.annotation.label_studio.instances.train.csv_dir, exist_ok=True)
+        os.makedirs(self.cfg.annotation.label_studio.instances.validation.csv_dir, exist_ok=True)
+        os.makedirs(self.cfg.annotation.label_studio.instances.review.csv_dir, exist_ok=True)
 
     def upload(
         self,
@@ -43,28 +43,28 @@ class LabelStudioAnnotator(BaseAnnotator):
         instance_name: str,
         preannotations: Optional[Dict[str, pd.DataFrame]] = None,
     ) -> None:
-        project_name = self.cfg.label_studio.instances[instance_name].project_name
+        project_name = self.cfg.annotation.label_studio.instances[instance_name].project_name
         ls_mod.upload_to_label_studio(
             images=images,
             sftp_client=self.sftp_client,
-            url=self.cfg.label_studio.url,
+            url=self.cfg.annotation.label_studio.url,
             project_name=project_name,
             images_to_annotate_dir=self.cfg.image_dir,
-            folder_name=self.cfg.label_studio.folder_name,
+            folder_name=self.cfg.annotation.label_studio.folder_name,
             preannotations=preannotations,
         )
 
     def check_for_new_annotations(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
-        instance_cfg = self.cfg.label_studio.instances[instance_name]
+        instance_cfg = self.cfg.annotation.label_studio.instances[instance_name]
         return ls_mod.check_for_new_annotations(
-            url=self.cfg.label_studio.url,
-            csv_dir=os.path.dirname(self.cfg.label_studio.instances.train.csv_dir),
+            url=self.cfg.annotation.label_studio.url,
+            csv_dir=os.path.dirname(self.cfg.annotation.label_studio.instances.train.csv_dir),
             project_name=instance_cfg.project_name,
             image_dir=image_dir,
         )
 
     def gather_data(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
-        instance_csv = self.cfg.label_studio.instances[instance_name].csv_dir
+        instance_csv = self.cfg.annotation.label_studio.instances[instance_name].csv_dir
         return ls_mod.gather_data(instance_csv, image_dir=image_dir)
 
 
@@ -79,17 +79,17 @@ class SageMakerAnnotator(BaseAnnotator):
         preannotations: Optional[Dict[str, pd.DataFrame]] = None,
     ) -> None:
         # Build S3 URIs
-        s3_prefix = getattr(self.cfg.sagemaker, "s3_prefix", "").rstrip("/")
+        s3_prefix = getattr(self.cfg.annotation.sagemaker, "s3_prefix", "").rstrip("/")
         if not s3_prefix:
             raise ValueError("config.sagemaker.s3_prefix must be set for SageMaker uploads")
 
         basenames = [os.path.basename(p) for p in images]
         s3_uris = [os.path.join(s3_prefix, b) for b in basenames]
 
-        out_dir = getattr(self.cfg.sagemaker, "output_dir", "outputs")
+        out_dir = getattr(self.cfg.annotation.sagemaker, "output_dir", "outputs")
         os.makedirs(out_dir, exist_ok=True)
-        jobs_per_day = int(getattr(self.cfg.sagemaker, "jobs_per_day", 200))
-        job_name = str(getattr(self.cfg.sagemaker, "job_name", "annotation"))
+        jobs_per_day = int(getattr(self.cfg.annotation.sagemaker, "jobs_per_day", 200))
+        job_name = str(getattr(self.cfg.annotation.sagemaker, "job_name", "annotation"))
 
         roster_path = sm_mod.write_daily_roster(s3_uris=s3_uris, output_dir=out_dir)
         jobs_path, selected_uris = sm_mod.assign_jobs_from_roster(
@@ -100,10 +100,10 @@ class SageMakerAnnotator(BaseAnnotator):
 
         # Optional Globus upload
         try:
-            dest_dir = str(getattr(self.cfg.sagemaker.globus, "dest_dir", "/daily"))
-            client_id = getattr(self.cfg.sagemaker.globus, "native_app_client_id", None)
-            source_collection_id = getattr(self.cfg.sagemaker.globus, "source_collection_id", None)
-            dest_collection_id = getattr(self.cfg.sagemaker.globus, "dest_collection_id", None)
+            dest_dir = str(getattr(self.cfg.annotation.sagemaker.globus, "dest_dir", "/daily"))
+            client_id = getattr(self.cfg.annotation.sagemaker.globus, "native_app_client_id", None)
+            source_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "source_collection_id", None)
+            dest_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "dest_collection_id", None)
             sm_mod.globus_upload_files(
                 local_paths=[roster_path, jobs_path, os.path.join(out_dir, f"{sm_mod._today_stamp()}_metadata.txt"), os.path.join(out_dir, f"{sm_mod._today_stamp()}_annotation_manifest.jsonl")],
                 dest_collection_id=dest_collection_id,

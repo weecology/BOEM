@@ -341,6 +341,8 @@ class Pipeline:
         for instance in instance_dict:
             existing_images = instance_dict[instance].image_path.unique()
             preannotations = final_predictions[final_predictions.set == instance].copy(deep=True)
+            # Full path
+            existing_images = [os.path.join(self.config.image_dir, x) for x in existing_images]
             self.annotator.upload(images=existing_images, instance_name=instance, preannotations=preannotations)
 
         self.comet_logger.experiment.add_tag("complete")

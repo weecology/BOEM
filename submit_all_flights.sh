@@ -17,7 +17,7 @@ for ROOT in "$ATLANTIC_DIR" "$GULF_DIR"; do
 #SBATCH --account=ewhite
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
-#SBATCH --mem=70GB
+#SBATCH --mem=80GB
 #SBATCH --time=48:00:00
 #SBATCH --output=/home/b.weinstein/logs/BOEM_%j.out
 #SBATCH --error=/home/b.weinstein/logs/BOEM_%j.err
@@ -25,7 +25,7 @@ for ROOT in "$ATLANTIC_DIR" "$GULF_DIR"; do
 #SBATCH --partition=hpg-b200
 #SBATCH --gpus=1
 
-uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100000 debug=False pipeline.gpus=1
+uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=1000 debug=False pipeline.gpus=1
 EOF
     sleep "$SLEEP_SEC"
   done

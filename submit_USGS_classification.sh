@@ -16,6 +16,6 @@
 source activate BOEM
 
 cd ~/BOEM/
-#uv run python prepare_USGS.py
+uv run python prepare_USGS.py
 uv run python USGS_classification.py
 

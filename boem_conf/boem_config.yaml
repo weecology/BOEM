@@ -3,6 +3,16 @@ defaults:
   - classification_model: finetune.yaml # or hierarchical.yaml
   - annotation: label_studio
 
+hydra:
+  run:
+    dir: /blue/ewhite/b.weinstein/BOEM/hydra_runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: /blue/ewhite/b.weinstein/BOEM/hydra_multirun
+    subdir: ${hydra.job.num}
+  output_subdir: null
+  job:
+    chdir: False
+
 debug: False
 
 comet:
@@ -17,14 +27,14 @@ image_dir: /blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800
 predict:
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0.7
-  batch_size: 16
+  min_score: 0.8
+  batch_size: 20
   # For web viz, expand pixels on all sides
   buffer: 60
 
 
 pipeline:
-  confidence_threshold: 0.75
+  confidence_threshold: 0.85
   limit_empty_frac: 0.001
   gpus: 1
 
@@ -59,11 +69,11 @@ pipeline_evaluation:
 
 active_learning:
   strategy: rarest
-  n_images: 200
+  n_images: 50
   patch_size: 1000
   patch_overlap: 0
   min_classification_score: 0.6
-  min_detection_score: 0.8
+  min_detection_score: 0.85
   model_checkpoint:
   target_labels:
     - "Object"
@@ -82,4 +92,4 @@ active_testing:
   min_score: 0
 
 human_review: 
-  n: 200
+  n: 50

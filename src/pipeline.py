@@ -181,7 +181,7 @@ class Pipeline:
             if self.existing_validation is not None:
                 non_empty_validation = self.existing_validation[~(self.existing_validation.xmin==0)]
                 pool = list(non_empty_validation.image_path.unique())
-                pool = [os.path.join(self.config.image_dir, image) for image in pool]
+                pool = [os.path.join(self.config.image_dir, image) for image in pool][:10]
             else:
                 pool = random.sample(pool, 10)
 
@@ -225,16 +225,13 @@ class Pipeline:
                 return None
 
         test_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images)]
+        test_images_to_annotate, preannotations = select_images(
+            preannotations=test_preannotations,
+            strategy="random",
+           n=self.config.active_testing.n_images,
+        )
 
-        if test_preannotations is not None:
-            test_images_to_annotate = random.sample(pool, self.config.active_learning.n_images)
-        else:
-            test_images_to_annotate = []
-        
-        if len(test_images_to_annotate) == 0:
-            print("No images to annotate in the test set")
-        else:
-            pass
+        print(f"Test images to annotate: {len(test_images_to_annotate)}")
 
         # Select images to annotate based on the strategy
         training_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate)]
@@ -243,14 +240,9 @@ class Pipeline:
             preannotations=training_preannotations,
             strategy=self.config.active_learning.strategy,
             n=self.config.active_learning.n_images,
-            target_labels=self.config.active_learning.target_labels
         )
         
-        if len(train_images_to_annotate) == 0:
-            print("No images to annotate in the training set")
-        else:
-            print(f"Training images to annotate: {len(train_images_to_annotate)}")
-        
+        print(f"Training images to annotate: {len(train_images_to_annotate)}")
         human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]
         
         confident_predictions, uncertain_predictions = human_review(
@@ -266,10 +258,9 @@ class Pipeline:
         # Human review 
         if len(uncertain_predictions) == 0:
             print("No images to review")
+            review_images_to_annotate = []
         else:
-            chosen_uncertain_images = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].unique()
-            chosen_preannotations = uncertain_predictions[uncertain_predictions.image_path.isin(chosen_uncertain_images)]
-            chosen_preannotations_dict = {image_path: group for image_path, group in chosen_preannotations.groupby("image_path")}
+            review_images_to_annotate = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].unique()
 
         print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
         print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")
@@ -287,7 +278,12 @@ class Pipeline:
             # Add a cropmodel_score column
             existing_training["cropmodel_score"] = 1.0
             # Add an object score
+            existing_training["label"] = "Object"
             existing_training["score"] = 1.0
+
+            if self.config.debug:
+                existing_training = existing_training[:10]
+
             final_predictions = pd.concat([final_predictions, existing_training], ignore_index=True)
 
         if self.existing_validation is not None:
@@ -297,9 +293,13 @@ class Pipeline:
             existing_validation.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a cropmodel_score column
             existing_validation["cropmodel_score"] = 1.0
+
             # Add an object score
+            existing_validation["label"] = "Object"
             existing_validation["score"] = 1.0
 
+            if self.config.debug:
+                existing_validation = existing_validation[:10]
             final_predictions = pd.concat([final_predictions, existing_validation], ignore_index=True)
 
         # Add in the human reviewed annotations
@@ -309,9 +309,16 @@ class Pipeline:
             existing_reviewed.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a set column
             existing_reviewed["cropmodel_score"] = 1.0
+            
+            #Set detection column
+            existing_reviewed["label"] = "Object"
             # Add an object score
             existing_reviewed["score"] = 1.0
             existing_reviewed["set"] = "reviewed"
+
+            if self.config.debug:
+                existing_reviewed = existing_reviewed[:10]
+
             final_predictions = pd.concat([final_predictions, existing_reviewed], ignore_index=True)
         
         # Reset index
@@ -332,26 +339,22 @@ class Pipeline:
 
         # crop_image_id
         final_predictions["crop_image_id"] = image_paths
-
+        
         # give it a complete tag
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
 
         # Use generic annotator to upload for each instance
-        instance_dict = {"train":self.existing_training, "validation":self.existing_validation, "review":self.existing_reviewed}
-        for instance in instance_dict:
-            existing_images = instance_dict[instance].image_path.unique()
-            preannotations = final_predictions[final_predictions.set == instance].copy(deep=True)
-            
-            if instance in ["train","review"]:
-                existing_images = [x for x in existing_images if x in preannotations.image_path.unique()]
+        for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():
+            if len(image_paths) == 0:
+                print(f"No images to upload for instance {instance}, skipping")
+                continue
 
-            if self.config.debug:
-                existing_images = [x for x in existing_images if x in preannotations.image_path.unique()]
+            image_paths = [os.path.join(self.config.image_dir, x) for x in image_basenames]
+            preannotations = final_predictions[final_predictions.image_path.isin(image_basenames)].copy(deep=True)
 
-            # Full path
-            existing_images = [os.path.join(self.config.image_dir, x) for x in existing_images]
+            # As a dict of lists
             preannotations = {image_path: group for image_path, group in preannotations.groupby("image_path")}
-            self.annotator.upload(images=existing_images, instance_name=instance, preannotations=preannotations)
+            self.annotator.upload(images=image_paths, instance_name=instance, preannotations=preannotations)
 
         self.comet_logger.experiment.add_tag("complete")
         return None

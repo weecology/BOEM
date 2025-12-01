@@ -22,10 +22,8 @@ dependencies = [
   "label-studio-sdk",
   "label-studio-converter",
   "comet-ml",
-<<<<<<< HEAD
   "deepforest @ /home/b.weinstein/DeepForest",
   "globus-sdk",
-=======
   # H-CAST requirements
   "timm==0.4.12",
   "opencv-contrib-python==4.9.0.80",
@@ -34,7 +32,6 @@ dependencies = [
   "packaging",
   # DeepForest-based detection/classification (local source)
   "deepforest"
->>>>>>> working on dgl
 ]
 
 [tool.uv]

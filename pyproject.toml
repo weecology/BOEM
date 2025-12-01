@@ -27,8 +27,8 @@ dependencies = [
   # H-CAST requirements
   "timm==0.4.12",
   "opencv-contrib-python==4.9.0.80",
-  # DGL wheels may require a custom index (see https://data.dgl.ai/wheels/repo.html)
-  "dgl",
+  # DGL must be installed separately with CUDA-specific wheels:
+  # uv pip install dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
   "packaging",
   "pytest",
   "python-dotenv>=1.2.1",
@@ -50,5 +50,15 @@ deepforest = [
   { path = "/home/b.weinstein/DeepForest" }
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "pytest-mock",
+  "pytest-profiling",
+  "pytest-xdist",
+]
+
 [tool.uv]
-find-links = ["https://data.dgl.ai/wheels/repo.html"]
+# DGL should be installed separately with CUDA-specific URL, not via find-links
+# find-links = ["https://data.dgl.ai/wheels/repo.html"]

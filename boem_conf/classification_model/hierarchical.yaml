@@ -1,0 +1,9 @@
+backend: hierarchical
+force_train: False
+# Optional: explicitly set checkpoint path; if empty we auto-discover under tamu_hcast/
+checkpoint: /home/b.weinstein/BOEM/tamu_hcast/output/usgs_hcast_300_b256/best_checkpoint.pth
+# Batch size for classifying crops after detection
+batch_size: 64
+workers: 4
+
+

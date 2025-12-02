@@ -10,8 +10,9 @@ from pytorch_lightning.loggers import CometLogger
 
 @pytest.fixture(scope="session")
 def config(tmpdir_factory):
-    with initialize(version_base=None, config_path="../conf"):
-        cfg = compose(config_name="config", overrides=["classification_model=USGS"])
+    # Use correct config path and name matching main.py
+    with initialize(version_base=None, config_path="../boem_conf"):
+        cfg = compose(config_name="boem_config", overrides=["classification_model=USGS"])
 
     # Label studio instances
     cfg.label_studio.instances.validation.csv_dir = tmpdir_factory.mktemp("validation_csvs").strpath

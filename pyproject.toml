@@ -25,10 +25,11 @@ dependencies = [
   "deepforest",
   "globus-sdk",
   # H-CAST requirements
-  "timm==0.4.12",
-  "opencv-contrib-python==4.9.0.80",
-  # DGL must be installed separately with CUDA-specific wheels:
-  # uv pip install dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
+  "timm",
+  "opencv-contrib-python",
+  #"deepforest",
+  # DGL requires CUDA-specific wheels - will be resolved from find-links configured below
+  "dgl",
   "packaging",
   "pytest",
   "python-dotenv>=1.2.1",
@@ -50,15 +51,15 @@ deepforest = [
   { path = "/home/b.weinstein/DeepForest" }
 ]
 
-[project.optional-dependencies]
-dev = [
-  "pytest",
-  "pytest-cov",
-  "pytest-mock",
-  "pytest-profiling",
-  "pytest-xdist",
+[tool.uv]
+# DGL installation: Configure find-links to point to DGL wheel repository
+# DGL requires CUDA-specific wheels. Adjust the URL for your PyTorch/CUDA version.
+# See https://www.dgl.ai/pages/start.html for available versions
+find-links = [
+    "https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html"
+]
+# Exclude
+override-dependencies = [
+  "opencv-python; python_version < '0'"
 ]
 
-[tool.uv]
-# DGL should be installed separately with CUDA-specific URL, not via find-links
-# find-links = ["https://data.dgl.ai/wheels/repo.html"]

@@ -9,7 +9,7 @@ from tests.conftest import config
 from src import label_studio
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-get_api_key()
+# Removed import-time execution of get_api_key() to prevent hanging during test discovery
 
 @pytest.fixture()
 def label_studio_client(config):

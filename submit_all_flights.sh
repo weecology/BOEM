@@ -25,7 +25,7 @@ for ROOT in "$ATLANTIC_DIR" "$GULF_DIR"; do
 #SBATCH --partition=hpg-b200
 #SBATCH --gpus=1
 
-uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=1000 debug=False pipeline.gpus=1
+uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=10000 debug=False pipeline.gpus=1
 EOF
     sleep "$SLEEP_SEC"
   done

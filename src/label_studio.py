@@ -189,7 +189,9 @@ def gather_data(annotation_dir, image_dir):
     csvs = glob.glob(os.path.join(annotation_dir,"*.csv"))
     df = []
     for x in csvs:
-        df.append(pd.read_csv(x))
+        image_annotations = pd.read_csv(x)
+        image_annotations["filename"] = x
+        df.append(image_annotations )
     
     if len(df) == 0:
         return None
@@ -197,9 +199,12 @@ def gather_data(annotation_dir, image_dir):
     df.drop_duplicates(inplace=True)
     df.reset_index(drop=True, inplace=True)
     
-    df = read_file(df, image_dir)
+    # For images with multipe filenames, take the most recent one
+    most_recent_annotation = df.groupby("image_path")["filename"].max().reset_index()
+    df_most_recent = df.merge(most_recent_annotation, on=["image_path","filename"])
+    df_most_recent = read_file(df_most_recent)
 
-    return df
+    return df_most_recent
 
 def get_api_key():
     """Get Label Studio API key from config file"""

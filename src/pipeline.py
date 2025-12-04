@@ -142,7 +142,10 @@ class Pipeline:
         val_crop_image_dir = os.path.join(self.config.classification_model.val_crop_image_dir, self.comet_logger.experiment.id)
         os.makedirs(val_crop_image_dir, exist_ok=True)
 
-        if classification_backend == "deepforest":
+        # Always load the finetune/cropmodel (load both models when both configs are present)
+        trained_classification_model = None
+        # Load cropmodel if finetune config is available (which it should be by default)
+        if hasattr(self.config.classification_model, "checkpoint") and self.config.classification_model.checkpoint:
             # If there are no train annotations, turn off force training
             if all_training.xmin[all_training.xmin != 0].empty:
                 self.config.classification_model.force_train = False
@@ -194,6 +197,13 @@ class Pipeline:
         
         trained_classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
+        # Get hierarchical model parameters from config (hierarchical.yaml)
+        hcast_batch_size = None
+        hcast_workers = None
+        if classification_backend == "hierarchical" and getattr(self.config.classification_model, "enabled", False):
+            hcast_batch_size = self.config.classification_model.batch_size
+            hcast_workers = self.config.classification_model.workers
+
         flightline_predictions = generate_pool_predictions(
             pool=pool,
             pool_limit=self.config.active_learning.pool_limit,
@@ -203,6 +213,10 @@ class Pipeline:
             model=trained_detection_model,
             batch_size=self.config.predict.batch_size,
             crop_model=trained_classification_model,
+            hcast_model=hcast_model,
+            image_dir=self.config.image_dir if hcast_model is not None else None,
+            hcast_batch_size=hcast_batch_size,
+            hcast_workers=hcast_workers,
         )
 
         if flightline_predictions is None:
@@ -214,24 +228,26 @@ class Pipeline:
         if self.existing_validation is None:
             print("No validation annotations, skipping evaluation")       
         else:
-            evaluation_annotations = self.existing_validation.copy(deep=True)
-            evaluation_predictions = flightline_predictions[flightline_predictions.image_path.isin(self.existing_validation.image_path)]
+            if trained_classification_model is None:
+                print("No classification model available, skipping evaluation")
+            else:
+                evaluation_annotations = self.existing_validation.copy(deep=True)
+                evaluation_predictions = flightline_predictions[flightline_predictions.image_path.isin(self.existing_validation.image_path)]
 
+                label_dict = trained_classification_model.label_dict
+                    
+                pipeline_monitor = PipelineEvaluation(
+                    predictions=evaluation_predictions,
+                    annotations=evaluation_annotations,
+                    classification_label_dict=label_dict,
+                    **self.config.pipeline_evaluation)
 
-            label_dict = trained_classification_model.label_dict
-                
-            pipeline_monitor = PipelineEvaluation(
-                predictions=evaluation_predictions,
-                annotations=evaluation_annotations,
-                classification_label_dict=label_dict,
-                **self.config.pipeline_evaluation)
+                performance = pipeline_monitor.evaluate()
+                self.comet_logger.experiment.log_metrics(performance)
 
-            performance = pipeline_monitor.evaluate()
-            self.comet_logger.experiment.log_metrics(performance)
-
-            if pipeline_monitor.check_success():
-                print("Pipeline performance is satisfactory, exiting")
-                return None
+                if pipeline_monitor.check_success():
+                    print("Pipeline performance is satisfactory, exiting")
+                    return None
 
         test_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images)]
         test_images_to_annotate, preannotations = select_images(

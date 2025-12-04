@@ -2,15 +2,15 @@ import os
 from typing import Optional, Tuple, List, Dict, Callable
 
 import torch
-from torch.utils.data import Dataset, DataLoader
-from PIL import Image
-from src.hcast.cast_models import cast_deit_hier  
 import pandas as pd
 import numpy as np
+from PIL import Image
 import cv2
+
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-
+from timm.models import create_model
 
 def _infer_head_sizes_from_checkpoint(ckpt: Dict[str, torch.Tensor]) -> Tuple[int, Optional[int], Optional[int]]:
     species = None
@@ -167,9 +167,6 @@ def load_hcast_model(
         model_state_dict = checkpoint["state_dict"]
     else:
         model_state_dict = checkpoint
-
-    # Get the training arguments if available
-    from timm.models import create_model
     
     if 'args' in checkpoint:
         args = checkpoint['args']

@@ -27,7 +27,7 @@ dependencies = [
   # H-CAST requirements
   "timm",
   "opencv-contrib-python",
-  #"deepforest",
+  "deepforest<2.0",
   # DGL requires CUDA-specific wheels - will be resolved from find-links configured below
   "dgl",
   "packaging",
@@ -60,6 +60,7 @@ find-links = [
 ]
 # Exclude
 override-dependencies = [
-  "opencv-python; python_version < '0'"
+  "opencv-python; python_version < '0'",
+  "opencv-python-headless; python_version < '0'",
 ]
 

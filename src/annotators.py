@@ -96,7 +96,30 @@ class SageMakerAnnotator(BaseAnnotator):
             roster_path=roster_path, output_dir=out_dir, num_jobs=jobs_per_day
         )
         sm_mod.write_daily_metadata(selected_uris, output_dir=out_dir)
-        sm_mod.write_daily_annotation_manifest(selected_uris, output_dir=out_dir, job_name=job_name)
+        
+        # Process preannotations if provided
+        preannotations_df = None
+        if preannotations is not None and len(preannotations) > 0:
+            # Extract basenames from selected S3 URIs
+            selected_basenames = {os.path.basename(uri) for uri in selected_uris}
+            
+            # Collect DataFrames for selected images
+            # Note: preannotations dict keys are image_path values (basenames) from the pipeline
+            selected_preannotations = []
+            for basename in selected_basenames:
+                if basename in preannotations:
+                    df = preannotations[basename].copy()
+                    # Ensure image_path uses basename (matching S3 URI basename)
+                    df["image_path"] = basename
+                    selected_preannotations.append(df)
+            
+            # Concatenate all selected preannotations
+            if selected_preannotations:
+                preannotations_df = pd.concat(selected_preannotations, ignore_index=True)
+        
+        sm_mod.write_daily_annotation_manifest(
+            selected_uris, output_dir=out_dir, job_name=job_name, preannotations=preannotations_df
+        )
 
         # Optional Globus upload
         try:

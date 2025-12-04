@@ -169,7 +169,8 @@ class Pipeline:
                     workers=self.config.classification_model.workers,
                     comet_logger=self.comet_logger)
             else:
-                trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint )
+                # HOT FIX: For old deepforest, add num_classes to the checkpoint
+                trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
 

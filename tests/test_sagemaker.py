@@ -92,6 +92,7 @@ def test_write_manifest_with_preannotations_and_readback(tmp_path):
     # should contain three rows matching preannotations (order may differ)
     assert len(df) == 3
     assert set(df["label"].unique()) == {"Anatidae", "Other"}
+    
     # numeric boxes consistent
     row = df[df["label"] == "Other"].iloc[0]
     assert row["xmin"] == 1.0 and row["ymin"] == 2.0 and row["xmax"] == 11.0 and row["ymax"] == 12.0

@@ -256,6 +256,7 @@ def write_daily_annotation_manifest(
     output_dir: str,
     job_name: str,
     stamp: Optional[str] = None,
+    preannotations: Optional[pd.DataFrame] = None,
 ) -> str:
     stamp = stamp or _today_stamp()
     os.makedirs(output_dir or ".", exist_ok=True)
@@ -266,6 +267,7 @@ def write_daily_annotation_manifest(
         output_manifest=manifest_path,
         job_name=job_name,
         s3_prefix=s3_prefix,
+        preannotations=preannotations,
     )
 
 

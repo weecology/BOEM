@@ -1,6 +1,6 @@
 defaults:
   - server: serenity
-  - classification_model: finetune.yaml # or hierarchical.yaml
+  - classification_model: finetune.yaml
   - annotation: label_studio
 
 hydra:

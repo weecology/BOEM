@@ -1,5 +1,6 @@
 import random
 from src import detection
+from src import hierarchical
 
 def human_review(predictions, min_detection_score=0.6, min_classification_score=0.5, confident_threshold=0.5):
     """
@@ -27,7 +28,7 @@ def human_review(predictions, min_detection_score=0.6, min_classification_score=
     
     return confident_predictions, uncertain_predictions
 
-def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, batch_size=16, pool_limit=1000, crop_model=None):
+def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, batch_size=16, pool_limit=1000, crop_model=None, hcast_model=None, image_dir=None, hcast_batch_size=None, hcast_workers=None):
     """
     Generate predictions for the flight pool.
     
@@ -41,9 +42,13 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
         comet_logger (CometLogger, optional): A CometLogger object. Defaults to None.
         crop_model (bool, optional): A deepforest.model.CropModel object. Defaults to None.
         pool_limit (int, optional): The maximum number of images to consider. Defaults to 1000.
+        hcast_model (optional): H-CAST hierarchical model wrapper. Defaults to None.
+        image_dir (str, optional): Root directory where images are located. Required if hcast_model is provided.
+        hcast_batch_size (int, optional): Batch size for H-CAST classification. Defaults to 64.
+        hcast_workers (int, optional): Number of workers for H-CAST DataLoader. Defaults to 4.
     
     Returns:
-        pd.DataFrame: A DataFrame of predictions.
+        pd.DataFrame: A DataFrame of predictions with both cropmodel and hcast columns (if hcast_model provided).
     """
     
     #subsample
@@ -62,6 +67,18 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
         return None
 
     preannotations = preannotations[preannotations["score"] >= min_score]
+
+    # Apply hierarchical classification if hcast_model is provided
+    if hcast_model is not None:
+        if image_dir is None:
+            raise ValueError("image_dir is required when hcast_model is provided")
+        preannotations = hierarchical.classify_dataframe(
+            predictions=preannotations,
+            image_dir=image_dir,
+            model=hcast_model,
+            batch_size=hcast_batch_size,
+            num_workers=hcast_workers,
+        )
 
     return preannotations
 

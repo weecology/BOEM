@@ -9,7 +9,7 @@ from tests.conftest import config
 from src import label_studio
 
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
-get_api_key()
+# Removed import-time execution of get_api_key() to prevent hanging during test discovery
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
 @pytest.fixture()

@@ -2,9 +2,10 @@
 name = "boem"
 description = "BOEM bird detection and classification pipeline"
 readme = "README.md"
+requires-python = ">=3.10"
 version = "0.0.0"
 dependencies = [
-  "numpy==1.26.4",
+  "numpy",
   "pandas",
   "scikit-learn",
   "hydra-core",
@@ -21,19 +22,27 @@ dependencies = [
   "label-studio-sdk",
   "label-studio-converter",
   "comet-ml",
-  "deepforest @ /home/b.weinstein/DeepForest",
   "globus-sdk",
+  # H-CAST requirements
+  "timm",
+  "opencv-contrib-python",
+  "deepforest<2.0",
+  # DGL requires CUDA-specific wheels - will be resolved from find-links configured below
+  "dgl",
+  "packaging",
+  'pytest'
 ]
 
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
+[tool.uv]
+# DGL installation: Configure find-links to point to DGL wheel repository
+# DGL requires CUDA-specific wheels. Adjust the URL for your PyTorch/CUDA version.
+# See https://www.dgl.ai/pages/start.html for available versions
+find-links = [
+    "https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html"
+]
+# Exclude
+override-dependencies = [
+  "opencv-python; python_version < '0'",
+  "opencv-python-headless; python_version < '0'",
+]
 
-[tool.uv.sources]
-torch = [
-  { index = "pytorch-cu128"},
-]
-torchvision = [
-  { index = "pytorch-cu128" },
-]

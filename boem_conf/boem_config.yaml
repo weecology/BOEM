@@ -44,7 +44,7 @@ propagate:
 
 detection_model:
   force_train: False
-  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/f3c687c8824f4b9fafa4bafbbe3fad8b.pl"
+  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/af3058efa5a1420a99d340377ae6b7fb.pl"
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0

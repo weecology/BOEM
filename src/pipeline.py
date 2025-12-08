@@ -77,7 +77,10 @@ class Pipeline:
         if self.existing_training is None and self.existing_validation is None and self.existing_reviewed is None:
             self.existing_images = None
             print("No existing annotations, starting from scratch")
-            # Do not auto-upload on empty start
+            # Select 10 random images to upload
+            images_to_upload = random.sample(self.all_images, 10)
+            self.annotator.upload(images=images_to_upload, instance_name="train", preannotations=None)
+
             return False
 
         else:
@@ -169,7 +172,6 @@ class Pipeline:
                     workers=self.config.classification_model.workers,
                     comet_logger=self.comet_logger)
             else:
-                # HOT FIX: For old deepforest, add num_classes to the checkpoint
                 trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
@@ -346,7 +348,7 @@ class Pipeline:
 
         # Use generic annotator to upload for each instance
         for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():
-            if len(image_paths) == 0:
+            if len(image_basenames) == 0:
                 print(f"No images to upload for instance {instance}, skipping")
                 continue
 

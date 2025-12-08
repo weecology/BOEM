@@ -1,4 +1,5 @@
 import os
+import glob
 from typing import Dict, Iterable, List, Optional
 import pandas as pd
 
@@ -6,6 +7,62 @@ from omegaconf import DictConfig
 
 from src import label_studio as ls_mod
 from src import sagemaker_gt as sm_mod
+
+
+def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
+    """
+    Unified function to gather annotations from both SageMaker and LabelStudio sources.
+    
+    Checks for:
+    - SageMaker annotation files (.json, .jsonl, .manifest)
+    - LabelStudio annotation files (.csv)
+    
+    Aggregates data from both sources if present and returns a single DataFrame.
+    
+    Args:
+        annotation_dir: Directory containing annotation files
+        image_dir: Directory containing images
+        
+    Returns:
+        DataFrame with columns: image_path, xmin, ymin, xmax, ymax, label
+        Returns None if no annotation files are found
+    """
+    parts: List[pd.DataFrame] = []
+    
+    # Check for SageMaker files
+    sagemaker_files = sorted(
+        glob.glob(os.path.join(annotation_dir, "**", "*.jsonl"), recursive=True)
+        + glob.glob(os.path.join(annotation_dir, "**", "*.manifest"), recursive=True)
+        + glob.glob(os.path.join(annotation_dir, "**", "*.json"), recursive=True)
+    )
+    
+    # Check for LabelStudio files (non-recursive to match label_studio.gather_data behavior)
+    labelstudio_files = glob.glob(os.path.join(annotation_dir, "*.csv"))
+    
+    # Gather from SageMaker if files are present
+    if sagemaker_files:
+        sagemaker_df = sm_mod.gather_data(annotation_dir=annotation_dir, image_dir=image_dir)
+        if sagemaker_df is not None:
+            parts.append(sagemaker_df)
+    
+    # Gather from LabelStudio if files are present
+    if labelstudio_files:
+        labelstudio_df = ls_mod.gather_data(annotation_dir=annotation_dir, image_dir=image_dir)
+        if labelstudio_df is not None:
+            parts.append(labelstudio_df)
+    
+    # Return None if no data found
+    if not parts:
+        return None
+    
+    # Concatenate all parts
+    df = pd.concat(parts, ignore_index=True)
+    
+    # Remove duplicates and invalid boxes
+    df = df.drop_duplicates().reset_index(drop=True)
+    df = df[(df["xmax"] > df["xmin"]) & (df["ymax"] > df["ymin"])].copy()
+    
+    return df
 
 
 class BaseAnnotator:
@@ -65,7 +122,7 @@ class LabelStudioAnnotator(BaseAnnotator):
 
     def gather_data(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
         instance_csv = self.cfg.annotation.label_studio.instances[instance_name].csv_dir
-        return ls_mod.gather_data(instance_csv, image_dir=image_dir)
+        return gather_data(annotation_dir=instance_csv, image_dir=image_dir)
 
 
 class SageMakerAnnotator(BaseAnnotator):
@@ -143,7 +200,7 @@ class SageMakerAnnotator(BaseAnnotator):
 
     def gather_data(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
         instance_dir = self.cfg.annotation.sagemaker.instances[instance_name].csv_dir
-        return sm_mod.gather_data(annotation_dir=instance_dir, image_dir=image_dir)
+        return gather_data(annotation_dir=instance_dir, image_dir=image_dir)
 
 
 def get_annotator(cfg: DictConfig) -> BaseAnnotator:

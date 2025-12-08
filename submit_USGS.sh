@@ -13,11 +13,6 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus=1
 
-# path to conda environment
-source /blue/ewhite/b.weinstein/miniconda3/etc/profile.d/conda.sh
-conda activate BOEM
-
-cd ~/BOEM/
-#python prepare_USGS.py
-srun python USGS_backbone.py --batch_size 12 --workers 4
+uv run python prepare_USGS.py
+uv run python USGS_backbone.py --batch_size 12 --workers 4
 

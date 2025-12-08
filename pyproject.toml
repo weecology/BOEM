@@ -4,7 +4,7 @@ description = "BOEM bird detection and classification pipeline"
 readme = "README.md"
 version = "0.0.0"
 dependencies = [
-  "numpy==1.26.4",
+  "numpy",
   "pandas",
   "scikit-learn",
   "hydra-core",
@@ -21,8 +21,9 @@ dependencies = [
   "label-studio-sdk",
   "label-studio-converter",
   "comet-ml",
-  "deepforest",
+  "deepforest @ git+https://github.com/weecology/DeepForest.git@copilot/fix-evaluate-boxes-type-error",
   "globus-sdk",
+  'pytest'
 ]
 
 [[tool.uv.index]]

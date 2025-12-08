@@ -13,7 +13,7 @@ def get_latest_checkpoint(checkpoint_dir, num_classes):
         if len(checkpoints) > 0:
             checkpoints.sort()
             checkpoint = checkpoints[-1]
-            m = CropModel.load_from_checkpoint(checkpoint, num_classes=num_classes)
+            m = CropModel.load_from_checkpoint(checkpoint)
             return m
         else:
             return None
@@ -103,7 +103,7 @@ def preprocess_and_train(
         loaded_model = CropModel.load_from_checkpoint(checkpoint_path=checkpoint)
     else:
         num_classes = len(pd.concat([train_df, validation_df]).label.unique())
-        loaded_model = CropModel(num_classes=num_classes)
+        loaded_model = CropModel()
 
     loaded_model.create_trainer()
 

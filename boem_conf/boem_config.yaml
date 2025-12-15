@@ -27,14 +27,14 @@ image_dir: /blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800
 predict:
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0.8
+  min_score: 0.85
   batch_size: 20
   # For web viz, expand pixels on all sides
   buffer: 60
 
 
 pipeline:
-  confidence_threshold: 0.85
+  confidence_threshold: 0.6
   limit_empty_frac: 0.001
   gpus: 1
 
@@ -69,11 +69,11 @@ pipeline_evaluation:
 
 active_learning:
   strategy: rarest
-  n_images: 50
+  n_images: 20
   patch_size: 1000
   patch_overlap: 0
-  min_classification_score: 0.6
-  min_detection_score: 0.85
+  min_classification_score: 0.8
+  min_detection_score: 0.95
   model_checkpoint:
   target_labels:
     - "Object"
@@ -85,11 +85,11 @@ active_learning:
 
 active_testing:
   strategy: random
-  n_images: 20
+  n_images: 10
   m: 
   patch_size: 1000
   patch_overlap: 0
   min_score: 0
 
 human_review: 
-  n: 50
+  n: 20

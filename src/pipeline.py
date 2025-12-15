@@ -272,6 +272,7 @@ class Pipeline:
         # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
         final_predictions = flightline_predictions.copy(deep=True)
         final_predictions["set"] = "prediction"
+        final_predictions["flight_name"] = os.path.basename(self.config.image_dir)
 
         # Add in the existing training and validation annotations
         if self.existing_training is not None:
@@ -280,10 +281,10 @@ class Pipeline:
             # Change label to cropmodel_label
             existing_training.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a cropmodel_score column
-            existing_training["cropmodel_score"] = 1.0
+            existing_training["cropmodel_score"] = 2.0
             # Add an object score
             existing_training["label"] = "Object"
-            existing_training["score"] = 1.0
+            existing_training["score"] = 2.0
 
             if self.config.debug:
                 existing_training = existing_training[:10]
@@ -296,11 +297,11 @@ class Pipeline:
             # Change label to cropmodel_label
             existing_validation.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a cropmodel_score column
-            existing_validation["cropmodel_score"] = 1.0
+            existing_validation["cropmodel_score"] = 2.0
 
             # Add an object score
             existing_validation["label"] = "Object"
-            existing_validation["score"] = 1.0
+            existing_validation["score"] = 2.0
 
             if self.config.debug:
                 existing_validation = existing_validation[:10]
@@ -312,12 +313,12 @@ class Pipeline:
             # Change label to cropmodel_label
             existing_reviewed.rename(columns={"label": "cropmodel_label"}, inplace=True)
             # Add a set column
-            existing_reviewed["cropmodel_score"] = 1.0
+            existing_reviewed["cropmodel_score"] = 2.0
             
             #Set detection column
             existing_reviewed["label"] = "Object"
             # Add an object score
-            existing_reviewed["score"] = 1.0
+            existing_reviewed["score"] = 2.0
             existing_reviewed["set"] = "reviewed"
 
             if self.config.debug:

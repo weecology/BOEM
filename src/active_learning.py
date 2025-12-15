@@ -88,6 +88,7 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
         return [], None
     
     if strategy == "random":
+        n = min(n, len(preannotations["image_path"].unique()))
         chosen_images = random.sample(preannotations["image_path"].unique().tolist(), n)
 
     else:

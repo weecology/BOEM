@@ -11,14 +11,15 @@ from src import label_studio
 IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
 get_api_key()
 
-@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
 @pytest.fixture()
 def label_studio_client(config):
     """Initialize Label Studio client with API key from .comet.config"""
+    if IN_GITHUB_ACTIONS:
+        pytest.skip("Test doesn't work in Github Actions.")
+    
     api_key = get_api_key()
-    if (api_key is None):
-        print("Warning: No Label Studio API key found in .comet.config")
-        return None
+    if api_key is None:
+        pytest.skip("No Label Studio API key found in .comet.config")
 
     os.environ["LABEL_STUDIO_API_KEY"] = api_key
 
@@ -53,18 +54,9 @@ def label_studio_client(config):
 
         return ls
     except Exception as e:
-        print(f"Warning: Failed to initialize Label Studio client: {str(e)}")
-        return None
+        pytest.skip(f"Failed to initialize Label Studio client: {str(e)}")
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test doesn't work in Github Actions.")
-def cleanup_label_studio(label_studio_client, request):
-    """
-    Fixture that runs after all tests are completed to clean up Label Studio projects.
-    This fixture has session scope and runs automatically.
-    """
-    # Setup: yield to allow tests to run
-    yield
-
-@pytest.mark.skip(reason="Integration test requires Hydra config wiring; skipping in unit test run")
 def test_pipeline_run(config, label_studio_client):
-    pass
+    """Integration test for full pipeline run."""
+    pytest.skip("Integration test requires Hydra config wiring; skipping in unit test run")

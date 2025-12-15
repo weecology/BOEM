@@ -81,10 +81,17 @@ Contains test files corresponding to each component in `src/`. Uses pytest for t
 Contains YAML configuration files managed by Hydra:
 - **config.yaml**: Main configuration file defining pipeline parameters
 
-Add Globus Client App to .env file
+### Globus Authentication
 
+For non-interactive Globus uploads:
+
+1. Register a "Confidential" application at [Globus Developers Console](https://developers.globus.org)
+2. Add to your `.env` file:
 ``` .env
-GLOBUS_NATIVE_APP_CLIENT_ID = [your globus ID]
+GLOBUS_CLIENT_ID=your_client_id_here
+GLOBUS_CLIENT_SECRET=your_client_secret_here
+GLOBUS_SOURCE_COLLECTION_ID=your_source_collection_id
+GLOBUS_DEST_COLLECTION_ID=your_dest_collection_id  # Optional, defaults to UMESC-UF Pipeline
 ```
 
 ## Installation (uv)

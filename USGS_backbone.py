@@ -38,7 +38,7 @@ m.config["train"]["fast_dev_run"] = False
 m.config["validation"]["csv_file"] = os.path.join(savedir,"test.csv")
 m.config["validation"]["root_dir"] = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
 m.config["batch_size"] = batch_size
-m.config["train"]["epochs"] = 10
+m.config["train"]["epochs"] = 12
 m.config["workers"] = workers
 m.config["validation"]["val_accuracy_interval"] = 1
 m.config["train"]["scheduler"]["params"]["eps"]  = 0
@@ -97,8 +97,7 @@ m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nod
 #         )
 results = m.evaluate(
     csv_file = m.config["validation"]["csv_file"],
-    root_dir = m.config["validation"]["root_dir"],
-    batch_size=36)
+    root_dir = m.config["validation"]["root_dir"])
 
 print(results)
 
@@ -109,8 +108,7 @@ m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detec
 
 results = m.evaluate(
     csv_file = m.config["validation"]["csv_file"],
-    root_dir = m.config["validation"]["root_dir"],
-    batch_size=36)
+    root_dir = m.config["validation"]["root_dir"])
 
 print(results)
 # Log the evaluation results

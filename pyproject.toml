@@ -4,7 +4,7 @@ description = "BOEM bird detection and classification pipeline"
 readme = "README.md"
 version = "0.0.0"
 dependencies = [
-  "numpy==1.26.4",
+  "numpy",
   "pandas",
   "scikit-learn",
   "hydra-core",
@@ -21,8 +21,10 @@ dependencies = [
   "label-studio-sdk",
   "label-studio-converter",
   "comet-ml",
-  "deepforest @ /home/b.weinstein/DeepForest",
+  "deepforest",
   "globus-sdk",
+  'pytest',
+  "python-dotenv>=1.2.1",
 ]
 
 [[tool.uv.index]]
@@ -37,3 +39,4 @@ torch = [
 torchvision = [
   { index = "pytorch-cu128" },
 ]
+deepforest = { path = "/home/b.weinstein/DeepForest" }

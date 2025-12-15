@@ -5,7 +5,7 @@
 #SBATCH --account=ewhite
 #SBATCH --nodes=1                 # Number of MPI ran
 #SBATCH --cpus-per-task=5
-#SBATCH --mem=60GB
+#SBATCH --mem=200GB
 #SBATCH --time=24:00:00       #Time limit hrs:min:sec
 #SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
 #SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
@@ -14,4 +14,4 @@
 #SBATCH --gpus=1
 
 
-uv run python main.py image_dir=/blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800 check_annotations=True active_learning.pool_limit=10000 active_testing.n_images=1 active_learning.n_images=1 debug=False pipeline.gpus=1
+uv run python main.py image_dir=/blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800 check_annotations=True active_learning.pool_limit=1000 active_testing.n_images=30 active_learning.n_images=1 debug=False pipeline.gpus=1

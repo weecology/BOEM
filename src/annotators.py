@@ -1,4 +1,5 @@
 import os
+import glob
 from typing import Dict, Iterable, List, Optional
 import pandas as pd
 
@@ -6,6 +7,75 @@ from omegaconf import DictConfig
 
 from src import label_studio as ls_mod
 from src import sagemaker_gt as sm_mod
+
+from deepforest.utilities import read_file as df_read_file
+
+def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
+    """
+    Unified function to gather annotations from both SageMaker and LabelStudio sources.
+    
+    Checks for:
+    - SageMaker annotation files (.json, .jsonl, .manifest)
+    - LabelStudio annotation files (.csv)
+    
+    Aggregates data from both sources if present and returns a single DataFrame.
+    
+    Args:
+        annotation_dir: Flight-specific directory containing annotation files
+                       (e.g., /path/to/annotations/train/JPG_20241220_145900)
+        image_dir: Directory containing images
+        
+    Returns:
+        DataFrame with columns: image_path, xmin, ymin, xmax, ymax, label
+        Returns None if no annotation files are found
+    """
+    parts: List[pd.DataFrame] = []
+    
+    # Check for SageMaker files (only in the flight-specific directory, not recursive)
+    sagemaker_files = sorted(
+        glob.glob(os.path.join(annotation_dir, "*.jsonl"))
+        + glob.glob(os.path.join(annotation_dir, "*.manifest"))
+        + glob.glob(os.path.join(annotation_dir, "*.json"))
+    )
+    
+    # Check for LabelStudio files (only in the flight-specific directory, not recursive)
+    labelstudio_files = glob.glob(os.path.join(annotation_dir, "*.csv"))
+    
+    # Gather from SageMaker if files are present
+    if sagemaker_files:
+        sagemaker_df = sm_mod.gather_data(annotation_dir=annotation_dir, image_dir=image_dir)
+        if sagemaker_df is not None:
+            parts.append(sagemaker_df)
+    
+    # Gather from LabelStudio if files are present
+    if labelstudio_files:
+        csv_dfs = []
+        for csv_file in labelstudio_files:
+            try:
+                csv_dfs.append(pd.read_csv(csv_file))
+            except Exception as exc:
+                print(f"Warning: failed to parse CSV {csv_file}: {exc}")
+        
+        if csv_dfs:
+            labelstudio_df = pd.concat(csv_dfs, ignore_index=True)
+            labelstudio_df.drop_duplicates(inplace=True)
+            labelstudio_df.reset_index(drop=True, inplace=True)
+            labelstudio_df = df_read_file(labelstudio_df, image_dir)
+            if labelstudio_df is not None and not labelstudio_df.empty:
+                parts.append(labelstudio_df)
+    
+    # Return None if no data found
+    if not parts:
+        return None
+    
+    # Concatenate all parts
+    df = pd.concat(parts, ignore_index=True)
+    
+    # Remove duplicates and invalid boxes
+    df = df.drop_duplicates().reset_index(drop=True)
+    df = df[(df["xmax"] > df["xmin"]) & (df["ymax"] > df["ymin"])].copy()
+    
+    return df
 
 
 class BaseAnnotator:
@@ -65,12 +135,20 @@ class LabelStudioAnnotator(BaseAnnotator):
 
     def gather_data(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
         instance_csv = self.cfg.annotation.label_studio.instances[instance_name].csv_dir
-        return ls_mod.gather_data(instance_csv, image_dir=image_dir)
+        return gather_data(annotation_dir=instance_csv, image_dir=image_dir)
 
 
 class SageMakerAnnotator(BaseAnnotator):
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
+        # Prepare per-flight directories for SageMaker (similar to LabelStudio)
+        flight_name = os.path.basename(self.cfg.image_dir)
+        self.cfg.annotation.sagemaker.instances.train.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.train.csv_dir, flight_name)
+        self.cfg.annotation.sagemaker.instances.validation.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.validation.csv_dir, flight_name)
+        self.cfg.annotation.sagemaker.instances.review.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.review.csv_dir, flight_name)
+        os.makedirs(self.cfg.annotation.sagemaker.instances.train.csv_dir, exist_ok=True)
+        os.makedirs(self.cfg.annotation.sagemaker.instances.validation.csv_dir, exist_ok=True)
+        os.makedirs(self.cfg.annotation.sagemaker.instances.review.csv_dir, exist_ok=True)
 
     def upload(
         self,
@@ -96,31 +174,53 @@ class SageMakerAnnotator(BaseAnnotator):
             roster_path=roster_path, output_dir=out_dir, num_jobs=jobs_per_day
         )
         sm_mod.write_daily_metadata(selected_uris, output_dir=out_dir)
-        sm_mod.write_daily_annotation_manifest(selected_uris, output_dir=out_dir, job_name=job_name)
+        
+        # Process preannotations if provided
+        preannotations_df = None
+        if preannotations is not None and len(preannotations) > 0:
+            # Extract basenames from selected S3 URIs
+            selected_basenames = {os.path.basename(uri) for uri in selected_uris}
+            
+            # Collect DataFrames for selected images
+            # Note: preannotations dict keys are image_path values (basenames) from the pipeline
+            selected_preannotations = []
+            for basename in selected_basenames:
+                if basename in preannotations:
+                    df = preannotations[basename].copy()
+                    # Ensure image_path uses basename (matching S3 URI basename)
+                    df["image_path"] = basename
+                    selected_preannotations.append(df)
+            
+            # Concatenate all selected preannotations
+            if selected_preannotations:
+                preannotations_df = pd.concat(selected_preannotations, ignore_index=True)
+        
+        sm_mod.write_daily_annotation_manifest(
+            selected_uris, output_dir=out_dir, job_name=job_name, preannotations=preannotations_df
+        )
 
         # Optional Globus upload
-        try:
-            dest_dir = str(getattr(self.cfg.annotation.sagemaker.globus, "dest_dir", "/daily"))
-            client_id = getattr(self.cfg.annotation.sagemaker.globus, "native_app_client_id", None)
-            source_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "source_collection_id", None)
-            dest_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "dest_collection_id", None)
-            sm_mod.globus_upload_files(
-                local_paths=[roster_path, jobs_path, os.path.join(out_dir, f"{sm_mod._today_stamp()}_metadata.txt"), os.path.join(out_dir, f"{sm_mod._today_stamp()}_annotation_manifest.jsonl")],
-                dest_collection_id=dest_collection_id,
-                dest_dir=dest_dir,
-                source_collection_id=source_collection_id,
-                client_id=client_id,
-            )
-        except Exception:
-            pass
+        dest_dir = str(getattr(self.cfg.annotation.sagemaker.globus, "dest_dir", "/daily"))
+        client_id = getattr(self.cfg.annotation.sagemaker.globus, "native_app_client_id", None)
+        source_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "source_collection_id", None)
+        dest_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "dest_collection_id", None)
+        refresh_token = getattr(self.cfg.annotation.sagemaker.globus, "refresh_token", None)
+        sm_mod.globus_upload_files(
+            local_paths=[roster_path, jobs_path, os.path.join(out_dir, f"{sm_mod._today_stamp()}_metadata.txt"), os.path.join(out_dir, f"{sm_mod._today_stamp()}_annotation_manifest.jsonl")],
+            dest_collection_id=dest_collection_id,
+            dest_dir=dest_dir,
+            source_collection_id=source_collection_id,
+            client_id=client_id,
+            refresh_token=refresh_token,
+        )
 
     def check_for_new_annotations(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
         instance_dir = self.cfg.annotation.sagemaker.instances[instance_name].csv_dir
-        return sm_mod.gather_data(annotation_dir=instance_dir, image_dir=image_dir)
+        return gather_data(annotation_dir=instance_dir, image_dir=image_dir)
 
     def gather_data(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
         instance_dir = self.cfg.annotation.sagemaker.instances[instance_name].csv_dir
-        return sm_mod.gather_data(annotation_dir=instance_dir, image_dir=image_dir)
+        return gather_data(annotation_dir=instance_dir, image_dir=image_dir)
 
 
 def get_annotator(cfg: DictConfig) -> BaseAnnotator:

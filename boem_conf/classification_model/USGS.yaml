@@ -9,3 +9,4 @@ max_epochs: 45
 lr: 0.00001
 batch_size: 96
 workers: 8
+expand: 30

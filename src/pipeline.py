@@ -77,7 +77,10 @@ class Pipeline:
         if self.existing_training is None and self.existing_validation is None and self.existing_reviewed is None:
             self.existing_images = None
             print("No existing annotations, starting from scratch")
-            # Do not auto-upload on empty start
+            # Select 10 random images to upload
+            images_to_upload = random.sample(self.all_images, 10)
+            self.annotator.upload(images=images_to_upload, instance_name="train", preannotations=None)
+
             return False
 
         else:
@@ -169,12 +172,11 @@ class Pipeline:
                     workers=self.config.classification_model.workers,
                     comet_logger=self.comet_logger)
             else:
-                trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint )
+                trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
 
-        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG"))  + glob.glob(os.path.join(self.config.image_dir, "*.jpeg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPEG"))  # Get all images in the data directory
-        pool = [image for image in pool if not image.endswith('.csv')]
+        pool = glob.glob(os.path.join(self.config.image_dir, "*")) 
         pool = [image for image in pool if image not in self.existing_images]
 
         if self.config.debug:
@@ -184,6 +186,8 @@ class Pipeline:
                 pool = [os.path.join(self.config.image_dir, image) for image in pool][:10]
             else:
                 pool = random.sample(pool, 10)
+        
+        trained_classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
         flightline_predictions = generate_pool_predictions(
             pool=pool,
@@ -346,15 +350,28 @@ class Pipeline:
 
         # Use generic annotator to upload for each instance
         for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():
-            if len(image_paths) == 0:
+            if len(image_basenames) == 0:
                 print(f"No images to upload for instance {instance}, skipping")
                 continue
 
             image_paths = [os.path.join(self.config.image_dir, x) for x in image_basenames]
-            preannotations = final_predictions[final_predictions.image_path.isin(image_basenames)].copy(deep=True)
+            # Normalize image_path in final_predictions to basenames for comparison
+            final_predictions_normalized = final_predictions.copy()
+            final_predictions_normalized["image_path_basename"] = final_predictions_normalized["image_path"].apply(
+                lambda x: os.path.basename(x) if os.path.sep in str(x) else x
+            )
+            preannotations_df = final_predictions_normalized[
+                final_predictions_normalized["image_path_basename"].isin(image_basenames)
+            ].copy(deep=True)
 
-            # As a dict of lists
-            preannotations = {image_path: group for image_path, group in preannotations.groupby("image_path")}
+            # As a dict with basename as key (matching what SageMaker upload expects)
+            preannotations = {}
+            for basename, group in preannotations_df.groupby("image_path_basename"):
+                # Ensure image_path column uses basename for manifest writing
+                group = group.copy()
+                group["image_path"] = basename
+                # Use basename as key to match the format expected by SageMaker upload
+                preannotations[basename] = group.drop(columns=["image_path_basename"], errors="ignore")
             self.annotator.upload(images=image_paths, instance_name=instance, preannotations=preannotations)
 
         self.comet_logger.experiment.add_tag("complete")

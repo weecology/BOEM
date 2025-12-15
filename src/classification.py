@@ -13,7 +13,7 @@ def get_latest_checkpoint(checkpoint_dir, num_classes):
         if len(checkpoints) > 0:
             checkpoints.sort()
             checkpoint = checkpoints[-1]
-            m = CropModel.load_from_checkpoint(checkpoint, num_classes=num_classes)
+            m = CropModel.load_from_checkpoint(checkpoint)
             return m
         else:
             return None
@@ -66,7 +66,7 @@ def preprocess_images(model, annotations, root_dir, save_dir):
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
     
     # Expand by 20 pixels on all sides
-    boxes = [[box[0]-20, box[1]-20, box[2]+20, box[3]+20] for box in boxes]
+    boxes = [[box[0]-30, box[1]-30, box[2]+30, box[3]+30] for box in boxes]
     
     # Make sure no negative values
     boxes = [[max(0, box[0]), max(0, box[1]), max(0, box[2]), max(0, box[3])] for box in boxes]
@@ -103,7 +103,7 @@ def preprocess_and_train(
         loaded_model = CropModel.load_from_checkpoint(checkpoint_path=checkpoint)
     else:
         num_classes = len(pd.concat([train_df, validation_df]).label.unique())
-        loaded_model = CropModel(num_classes=num_classes)
+        loaded_model = CropModel()
 
     loaded_model.create_trainer()
 

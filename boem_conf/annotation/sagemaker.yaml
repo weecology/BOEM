@@ -4,8 +4,10 @@ sagemaker:
   # Globus defaults with ability to override via environment
   globus:
     source_collection_id: "5dbaf795-8a7e-4dca-91aa-6e10d610c2b3"
-    dest_collection_id: "e9612e0b-677c-4685-a721-7f4c2b6258d0"
-    dest_dir: /daily
+    dest_collection_id: "4b36a7b3-5863-44b1-b00a-b04e362e7bed"
+    dest_dir: /UF_active_learning
+    # refresh_token: optional refresh token for user authentication (authenticates as your identity)
+    # To get a refresh token, run: python -m src.sagemaker_gt get_refresh_token
 
   instances:
     train:

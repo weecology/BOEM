@@ -108,8 +108,19 @@ def main(cfg: DictConfig):
         workers=cfg.classification_model.workers,
     )
     
+
+    # Log the label dictionary
+    comet_logger.experiment.log_parameter("label_dict", trained_model.label_dict)
+
+    # Log the numeric to label dictionary
+    comet_logger.experiment.log_parameter("numeric_to_label_dict", trained_model.numeric_to_label_dict)
+
     checkpoint_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/"
     trained_model.trainer.save_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
+
+    validation_results = trained_model.trainer.validate(trained_model)
+
+    print(validation_results)
 
     image_dataset, true_label, predicted_label = trained_model.val_dataset_confusion(return_images=True)
     comet_logger.experiment.log_confusion_matrix(
@@ -119,6 +130,11 @@ def main(cfg: DictConfig):
             max_categories=len(trained_model.label_dict.keys()),
             labels=list(trained_model.label_dict.keys()),
         )
+
+    # Reload the model from checkpoint and validate
+    trained_model = CropModel.load_from_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
+    validation_results = trained_model.trainer.validate(trained_model)
+    print(validation_results)
 if __name__ == "__main__":
     main()
 

@@ -21,9 +21,10 @@ dependencies = [
   "label-studio-sdk",
   "label-studio-converter",
   "comet-ml",
-  "deepforest @ git+https://github.com/weecology/DeepForest.git@copilot/fix-evaluate-boxes-type-error",
+  "deepforest",
   "globus-sdk",
-  'pytest'
+  'pytest',
+  "python-dotenv>=1.2.1",
 ]
 
 [[tool.uv.index]]
@@ -38,3 +39,4 @@ torch = [
 torchvision = [
   { index = "pytorch-cu128" },
 ]
+deepforest = { path = "/home/b.weinstein/DeepForest" }

@@ -4,10 +4,7 @@ import json
 import datetime as _dt
 from typing import Dict, Iterable, List, Optional, Tuple
 
-try:
-    import globus_sdk  # type: ignore
-except Exception:  # pragma: no cover
-    globus_sdk = None  # lazy optional import
+import globus_sdk
 
 # Default destination collection for UMESC-UF Pipeline
 GLOBUS_UMESC_UF_PIPELINE_COLLECTION_ID = "e9612e0b-677c-4685-a721-7f4c2b6258d0"
@@ -271,18 +268,116 @@ def write_daily_annotation_manifest(
     )
 
 
+def _get_globus_transfer_client(
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+    refresh_token: Optional[str] = None,
+) -> globus_sdk.TransferClient:
+    """
+    Get authenticated Globus Transfer client.
+    
+    If refresh_token is provided, uses refresh token flow (authenticates as user).
+    Otherwise, uses client credentials flow (authenticates as application).
+    """
+    client_id = client_id or os.getenv("GLOBUS_CLIENT_ID")
+    if not client_id:
+        raise ValueError("client_id is required (set GLOBUS_CLIENT_ID)")
+
+    client_secret = client_secret or os.getenv("GLOBUS_CLIENT_SECRET")
+    if not client_secret:
+        raise ValueError("client_secret is required (set GLOBUS_CLIENT_SECRET)")
+
+    client = globus_sdk.ConfidentialAppAuthClient(client_id, client_secret)
+    
+    # Use refresh token if provided (authenticates as user)
+    if refresh_token:
+        token_response = client.oauth2_refresh_token(
+            refresh_token,
+            requested_scopes="urn:globus:auth:scope:transfer.api.globus.org:all"
+        )
+    else:
+        # Fall back to client credentials (authenticates as application)
+        token_response = client.oauth2_client_credentials_tokens(
+            requested_scopes="urn:globus:auth:scope:transfer.api.globus.org:all"
+        )
+    
+    transfer_tokens = token_response.by_resource_server["transfer.api.globus.org"]
+    authorizer = globus_sdk.AccessTokenAuthorizer(transfer_tokens["access_token"])
+    return globus_sdk.TransferClient(authorizer=authorizer)
+
+
+def get_authenticated_identity(
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+    refresh_token: Optional[str] = None,
+) -> Optional[Dict]:
+    """
+    Get information about the authenticated identity.
+    
+    If refresh_token is provided, returns user identity information.
+    Otherwise, returns info about client credentials (no user identity).
+    
+    Returns:
+        Dictionary with identity information
+    """
+    client_id = client_id or os.getenv("GLOBUS_CLIENT_ID")
+    if not client_id:
+        raise ValueError("client_id is required (set GLOBUS_CLIENT_ID)")
+
+    client_secret = client_secret or os.getenv("GLOBUS_CLIENT_SECRET")
+    if not client_secret:
+        raise ValueError("client_secret is required (set GLOBUS_CLIENT_SECRET)")
+
+    client = globus_sdk.ConfidentialAppAuthClient(client_id, client_secret)
+    
+    # Get tokens for both Auth and Transfer APIs
+    if refresh_token:
+        token_response = client.oauth2_refresh_token(
+            refresh_token,
+            requested_scopes=[
+                "urn:globus:auth:scope:transfer.api.globus.org:all",
+                "urn:globus:auth:scope:auth.globus.org:view_identities",
+            ]
+        )
+    else:
+        token_response = client.oauth2_client_credentials_tokens(
+            requested_scopes=[
+                "urn:globus:auth:scope:transfer.api.globus.org:all",
+                "urn:globus:auth:scope:auth.globus.org:view_identities",
+            ]
+        )
+    
+    # Try to get identity from Auth API
+    if "auth.globus.org" in token_response.by_resource_server:
+        auth_tokens = token_response.by_resource_server["auth.globus.org"]
+        auth_client = globus_sdk.AuthClient(
+            authorizer=globus_sdk.AccessTokenAuthorizer(auth_tokens["access_token"])
+        )
+        try:
+            # Get userinfo - works with refresh token, fails with client credentials
+            userinfo = auth_client.oauth2_userinfo()
+            return userinfo.data
+        except Exception:
+            # Client credentials tokens don't have user identity
+            pass
+    
+    # For client credentials, return info about the client
+    return {
+        "client_id": client_id,
+        "note": "Client credentials flow - no user identity associated with this token",
+        "token_type": "client_credentials"
+    }
+
+
 def globus_upload_files(
     local_paths: List[str],
     dest_dir: str,
     dest_collection_id: Optional[str] = None,
     source_collection_id: Optional[str] = None,
     client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+    refresh_token: Optional[str] = None,
 ) -> Optional[str]:
-    if globus_sdk is None:
-        raise RuntimeError(
-            "globus-sdk is not installed. Please add 'globus-sdk' to your dependencies."
-        )
-
     source_collection_id = source_collection_id or os.getenv("GLOBUS_SOURCE_COLLECTION_ID")
     if not source_collection_id:
         raise ValueError("source_collection_id is required (or set GLOBUS_SOURCE_COLLECTION_ID)")
@@ -294,35 +389,53 @@ def globus_upload_files(
         or GLOBUS_UMESC_UF_PIPELINE_COLLECTION_ID
     )
 
-    client_id = client_id or os.getenv("GLOBUS_NATIVE_APP_CLIENT_ID")
-    if not client_id:
-        raise ValueError("client_id is required (or set GLOBUS_NATIVE_APP_CLIENT_ID)")
+    tc = _get_globus_transfer_client(
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=refresh_token,
+    )
 
-    client = globus_sdk.NativeAppAuthClient(client_id)
-    client.oauth2_start_flow(requested_scopes=globus_sdk.scopes.TransferScopes.all)
-    authorize_url = client.oauth2_get_authorize_url()
-    print("Please go to this URL and login:")
-    print(authorize_url)
-    print("Then paste the authorization code here and press Enter.")
-    auth_code = input("Authorization Code: ")
-    token_response = client.oauth2_exchange_code_for_tokens(auth_code)
-
-    transfer_tokens = token_response.by_resource_server["transfer.api.globus.org"]
-    authorizer = globus_sdk.AccessTokenAuthorizer(transfer_tokens["access_token"]) 
-    tc = globus_sdk.TransferClient(authorizer=authorizer)
-
-    tc.endpoint_autoactivate(source_collection_id)
-    tc.endpoint_autoactivate(dest_collection_id)
+    # Note: endpoint_autoactivate removed in globus-sdk 4.x as modern endpoints don't require activation
+    # For Globus Connect Server v5 endpoints, activation is automatic
 
     tdata = globus_sdk.TransferData(
-        tc, source_collection_id, dest_collection_id, label=f"upload_{_today_stamp()}"
+        source_endpoint=source_collection_id,
+        destination_endpoint=dest_collection_id,
+        label=f"upload_{_today_stamp()}"
     )
     for p in local_paths:
         dest_path = os.path.join(dest_dir.rstrip("/"), os.path.basename(p))
         tdata.add_item(p, dest_path)
 
-    submit_result = tc.submit_transfer(tdata)
-    return submit_result.get("task_id")
+    try:
+        submit_result = tc.submit_transfer(tdata)
+        return submit_result.get("task_id")
+    except globus_sdk.TransferAPIError as e:
+        # Provide helpful error message with identity info for 403 errors
+        if e.http_status == 403:
+            identity_info = get_authenticated_identity(
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=refresh_token,
+            )
+            error_msg = (
+                f"Globus transfer failed with 403 Forbidden.\n"
+                f"Source endpoint: {source_collection_id}\n"
+                f"Destination endpoint: {dest_collection_id}\n"
+            )
+            if identity_info.get("sub"):
+                error_msg += (
+                    f"Authenticated as user: {identity_info.get('preferred_username', 'Unknown')}\n"
+                    f"User ID: {identity_info.get('sub', 'Unknown')}\n"
+                )
+            else:
+                error_msg += (
+                    f"Authentication: {identity_info.get('note', 'Unknown')}\n"
+                    f"Client ID: {identity_info.get('client_id', 'Unknown')}\n"
+                )
+            error_msg += f"Original error: {e.message}"
+            raise globus_sdk.TransferAPIError(e.http_status, error_msg, e.code) from e
+        raise
 
 
 def read_sagemaker_manifest(manifest_path: str, image_dir: str) -> pd.DataFrame:
@@ -382,11 +495,16 @@ def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     """
     Aggregate supported annotation files in a directory into a single DataFrame.
     Currently supports only SageMaker manifest JSON-lines (.jsonl/.manifest/.json).
+    
+    Args:
+        annotation_dir: Flight-specific directory containing annotation files
+                       (e.g., /path/to/annotations/train/JPG_20241220_145900)
+        image_dir: Directory containing images
     """
     manifests = sorted(
-        glob.glob(os.path.join(annotation_dir, "**", "*.jsonl"), recursive=True)
-        + glob.glob(os.path.join(annotation_dir, "**", "*.manifest"), recursive=True)
-        + glob.glob(os.path.join(annotation_dir, "**", "*.json"), recursive=True)
+        glob.glob(os.path.join(annotation_dir, "*.jsonl"))
+        + glob.glob(os.path.join(annotation_dir, "*.manifest"))
+        + glob.glob(os.path.join(annotation_dir, "*.json"))
     )
 
     parts: List[pd.DataFrame] = []
@@ -402,3 +520,104 @@ def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     df = pd.concat(parts, ignore_index=True)
     df = df[(df["xmax"] > df["xmin"]) & (df["ymax"] > df["ymin"])].copy()
     return df
+
+
+def get_refresh_token(
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+    redirect_uri: str = "https://auth.globus.org/v2/web/auth-code",
+) -> str:
+    """
+    Interactive helper to obtain a refresh token for user authentication.
+    
+    This function will:
+    1. Generate an authorization URL
+    2. Prompt you to visit it and authorize
+    3. Exchange the authorization code for tokens
+    4. Return the refresh token
+    
+    Args:
+        client_id: Globus client ID (defaults to GLOBUS_CLIENT_ID env var or config)
+        client_secret: Globus client secret (defaults to GLOBUS_CLIENT_SECRET env var or config)
+        redirect_uri: Redirect URI configured in your Globus app (defaults to Globus web auth)
+    
+    Returns:
+        Refresh token string that can be used for authentication
+    """
+    # Try to get from parameters, env vars, or config
+    client_id = client_id or os.getenv("GLOBUS_CLIENT_ID")
+    client_secret = client_secret or os.getenv("GLOBUS_CLIENT_SECRET")
+    
+    # Try loading from Hydra config if available
+    if not client_id or not client_secret:
+        try:
+            from hydra import initialize, compose
+            with initialize(version_base=None, config_path="../boem_conf"):
+                cfg = compose(config_name="boem_config", overrides=["annotation=sagemaker"])
+                if not client_id:
+                    client_id = getattr(cfg.annotation.sagemaker.globus, "native_app_client_id", None)
+                if not client_secret:
+                    # Check if there's a client_secret in config (might be in a different location)
+                    client_secret = getattr(cfg.annotation.sagemaker.globus, "native_app_client_secret", None)
+        except Exception:
+            pass  # Config loading failed, continue with env vars only
+    
+    if not client_id:
+        raise ValueError(
+            "client_id is required. Set GLOBUS_CLIENT_ID environment variable or "
+            "annotation.sagemaker.globus.native_app_client_id in config file."
+        )
+
+    if not client_secret:
+        raise ValueError(
+            "client_secret is required. Set GLOBUS_CLIENT_SECRET environment variable or "
+            "annotation.sagemaker.globus.native_app_client_secret in config file."
+        )
+
+    client = globus_sdk.ConfidentialAppAuthClient(client_id, client_secret)
+    
+    # Generate authorization URL
+    client.oauth2_start_flow(
+        redirect_uri,
+        requested_scopes="urn:globus:auth:scope:transfer.api.globus.org:all"
+    )
+    auth_url = client.oauth2_get_authorize_url()
+    
+    print(f"\nPlease visit this URL to authorize:\n{auth_url}\n")
+    print("After authorizing, you will be redirected to a page with an authorization code.")
+    print("Copy the 'code' parameter from the URL.\n")
+    
+    auth_code = input("Enter the authorization code: ").strip()
+    
+    # Exchange code for tokens
+    token_response = client.oauth2_exchange_code_for_tokens(auth_code)
+    
+    # Extract refresh token
+    refresh_token = token_response.by_resource_server["transfer.api.globus.org"]["refresh_token"]
+    
+    # Get user identity to confirm
+    if "auth.globus.org" in token_response.by_resource_server:
+        auth_tokens = token_response.by_resource_server["auth.globus.org"]
+        auth_client = globus_sdk.AuthClient(
+            authorizer=globus_sdk.AccessTokenAuthorizer(auth_tokens["access_token"])
+        )
+        try:
+            userinfo = auth_client.oauth2_userinfo()
+            print(f"\nRefresh token obtained successfully!")
+            print(f"Authenticated as: {userinfo.data.get('preferred_username', 'Unknown')}")
+            print(f"User ID: {userinfo.data.get('sub', 'Unknown')}")
+        except Exception:
+            pass
+    
+    print(f"\nAdd this to your config file (boem_conf/annotation/sagemaker.yaml):")
+    print(f"  refresh_token: {refresh_token}\n")
+    
+    return refresh_token
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "get_refresh_token":
+        get_refresh_token()
+    else:
+        print("Usage: python -m src.sagemaker_gt get_refresh_token")

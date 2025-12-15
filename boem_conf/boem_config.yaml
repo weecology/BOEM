@@ -1,7 +1,7 @@
 defaults:
   - server: serenity
   - classification_model: finetune.yaml # or hierarchical.yaml
-  - annotation: label_studio
+  - annotation: sagemaker
 
 hydra:
   run:

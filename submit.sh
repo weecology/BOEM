@@ -14,4 +14,4 @@
 #SBATCH --gpus=1
 
 
-uv run python main.py image_dir=/blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800 check_annotations=True active_learning.pool_limit=10 active_testing.n_images=1 active_learning.n_images=1 debug=False pipeline.gpus=1
+uv run python main.py image_dir=/blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800 check_annotations=True active_learning.pool_limit=1000 active_testing.n_images=30 active_learning.n_images=1 debug=False pipeline.gpus=1

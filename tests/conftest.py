@@ -1,6 +1,7 @@
 # Standard library imports
 import os
 import shutil
+from pathlib import Path
 
 # Third party imports
 import pandas as pd
@@ -8,10 +9,19 @@ import pytest
 from hydra import initialize, compose
 from pytorch_lightning.loggers import CometLogger
 
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    pass  # python-dotenv not installed, skip loading .env
+
 @pytest.fixture(scope="session")
 def config(tmpdir_factory):
-    with initialize(version_base=None, config_path="../conf"):
-        cfg = compose(config_name="config", overrides=["classification_model=USGS"])
+    with initialize(version_base=None, config_path="../boem_conf"):
+        cfg = compose(config_name="boem_config", overrides=["classification_model=USGS"])
 
     # Label studio instances
     cfg.label_studio.instances.validation.csv_dir = tmpdir_factory.mktemp("validation_csvs").strpath

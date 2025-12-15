@@ -13,6 +13,6 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus=1
 
-uv run python prepare_USGS.py
+#uv run python prepare_USGS.py
 uv run python USGS_backbone.py --batch_size 12 --workers 4
 

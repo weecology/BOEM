@@ -3,11 +3,6 @@
 # To set up a development environment with all dependencies (including extras for development and testing),
 # use uv (https://github.com/astral-sh/uv):
 
-uv sync
-uv run python
-
-## Debugging arguments
-
 The pipeline is large and we want to not affect downstream users. When running tests or code as an agent, we want to perform end-to-end tests. In addition other testing, always debug the entire pipeline using main.py and the arguments
 
 ```
@@ -16,7 +11,12 @@ The pipeline is large and we want to not affect downstream users. When running t
 "active_learning.pool_limit=10",
 "active_testing.n_images=1",
 "active_learning.n_images=1",
-"debug=True",
+"debug=True"
+```
+
+```python
+uv sync --extra dev
+uv run python
 ```
 
 ## Coding Philosophy
@@ -167,4 +167,10 @@ def process_annotations(data_dir: str) -> Optional[pd.DataFrame]:
     if os.path.exists(treetops_file):
         return gpd.read_file(treetops_file)
     return None  # Silent failure makes debugging harder
+<<<<<<< HEAD
 ```
+=======
+```
+
+Prefer no fallbacks, if module isn't installed, don't hide the import.
+>>>>>>> 9e7c243 (hcast model test passes)

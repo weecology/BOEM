@@ -122,6 +122,12 @@ Notes:
 - If using CPU-only, install CPU wheels instead of cu121. See PyTorch and DGL docs.
 - H-CAST requires `timm==0.4.12` and OpenCV, already included in `pyproject.toml`.
 
+**Important**: After installation, fix OpenCV conflicts (deepforest may install opencv-python-headless):
+```bash
+uv pip uninstall opencv-python opencv-python-headless
+```
+Only `opencv-contrib-python` should remain (required for SEEDS superpixel generation).
+
 ## Usage
 
 ### Running the Pipeline

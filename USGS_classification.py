@@ -6,6 +6,7 @@ from src.classification import preprocess_and_train
 import hydra
 from omegaconf import DictConfig
 import os
+from deepforest.model import CropModel
 
 # Create train test split, split each class into 90% train and 10% test with a minimum of 5 images per class for test and a max of 100
 def train_test_split(df, test_size=0.1, min_test_images=5, max_test_images=100):

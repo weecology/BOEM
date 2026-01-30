@@ -8,15 +8,12 @@ import pandas as pd
 import pytest
 from hydra import initialize, compose
 from pytorch_lightning.loggers import CometLogger
+from dotenv import load_dotenv
 
-# Load .env file if it exists
-try:
-    from dotenv import load_dotenv
-    env_path = Path(__file__).resolve().parents[1] / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass  # python-dotenv not installed, skip loading .env
+
+# Load .env file
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(ENV_PATH)
 
 @pytest.fixture(scope="session")
 def config(tmpdir_factory):

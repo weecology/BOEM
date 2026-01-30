@@ -15,7 +15,7 @@ def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     Unified function to gather annotations from both SageMaker and LabelStudio sources.
     
     Checks for:
-    - SageMaker annotation files (.json, .jsonl, .manifest)
+    - SageMaker annotation files (*_annotation.csv)
     - LabelStudio annotation files (.csv)
     
     Aggregates data from both sources if present and returns a single DataFrame.
@@ -32,14 +32,11 @@ def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     parts: List[pd.DataFrame] = []
     
     # Check for SageMaker files (only in the flight-specific directory, not recursive)
-    sagemaker_files = sorted(
-        glob.glob(os.path.join(annotation_dir, "*.jsonl"))
-        + glob.glob(os.path.join(annotation_dir, "*.manifest"))
-        + glob.glob(os.path.join(annotation_dir, "*.json"))
-    )
+    sagemaker_files = sorted(glob.glob(os.path.join(annotation_dir, "*_annotation.csv")))
     
-    # Check for LabelStudio files (only in the flight-specific directory, not recursive)
-    labelstudio_files = glob.glob(os.path.join(annotation_dir, "*.csv"))
+    # Check for LabelStudio files (exclude SageMaker *_annotation.csv)
+    all_csv = glob.glob(os.path.join(annotation_dir, "*.csv"))
+    labelstudio_files = [f for f in all_csv if not os.path.basename(f).endswith("_annotation.csv")]
     
     # Gather from SageMaker if files are present
     if sagemaker_files:
@@ -142,10 +139,10 @@ class SageMakerAnnotator(BaseAnnotator):
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
         # Prepare per-flight directories for SageMaker (similar to LabelStudio)
-        flight_name = os.path.basename(self.cfg.image_dir)
-        self.cfg.annotation.sagemaker.instances.train.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.train.csv_dir, flight_name)
-        self.cfg.annotation.sagemaker.instances.validation.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.validation.csv_dir, flight_name)
-        self.cfg.annotation.sagemaker.instances.review.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.review.csv_dir, flight_name)
+        self.flight_name = os.path.basename(self.cfg.image_dir)
+        self.cfg.annotation.sagemaker.instances.train.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.train.csv_dir, self.flight_name)
+        self.cfg.annotation.sagemaker.instances.validation.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.validation.csv_dir, self.flight_name)
+        self.cfg.annotation.sagemaker.instances.review.csv_dir = os.path.join(self.cfg.annotation.sagemaker.instances.review.csv_dir, self.flight_name)
         os.makedirs(self.cfg.annotation.sagemaker.instances.train.csv_dir, exist_ok=True)
         os.makedirs(self.cfg.annotation.sagemaker.instances.validation.csv_dir, exist_ok=True)
         os.makedirs(self.cfg.annotation.sagemaker.instances.review.csv_dir, exist_ok=True)
@@ -167,13 +164,12 @@ class SageMakerAnnotator(BaseAnnotator):
         out_dir = getattr(self.cfg.annotation.sagemaker, "output_dir", "outputs")
         os.makedirs(out_dir, exist_ok=True)
         jobs_per_day = int(getattr(self.cfg.annotation.sagemaker, "jobs_per_day", 200))
-        job_name = str(getattr(self.cfg.annotation.sagemaker, "job_name", "annotation"))
 
-        roster_path = sm_mod.write_daily_roster(s3_uris=s3_uris, output_dir=out_dir)
+        roster_path = sm_mod.write_daily_roster(s3_uris=s3_uris, output_dir=out_dir, flight_name=self.flight_name)
         jobs_path, selected_uris = sm_mod.assign_jobs_from_roster(
-            roster_path=roster_path, output_dir=out_dir, num_jobs=jobs_per_day
+            roster_path=roster_path, output_dir=out_dir, num_jobs=jobs_per_day, flight_name=self.flight_name
         )
-        sm_mod.write_daily_metadata(selected_uris, output_dir=out_dir)
+        metadata_path = sm_mod.write_daily_metadata(selected_uris, output_dir=out_dir, flight_name=self.flight_name)
         
         # Process preannotations if provided
         preannotations_df = None
@@ -195,24 +191,36 @@ class SageMakerAnnotator(BaseAnnotator):
             if selected_preannotations:
                 preannotations_df = pd.concat(selected_preannotations, ignore_index=True)
         
-        sm_mod.write_daily_annotation_manifest(
-            selected_uris, output_dir=out_dir, job_name=job_name, preannotations=preannotations_df
+        csv_path = sm_mod.write_daily_annotation_csv(
+            selected_uris,
+            output_dir=out_dir,
+            flight_path=self.flight_name,
+            instance_type=instance_name,
+            preannotations=preannotations_df,
+            flight_name=self.flight_name,
         )
 
-        # Optional Globus upload
-        dest_dir = str(getattr(self.cfg.annotation.sagemaker.globus, "dest_dir", "/daily"))
-        client_id = getattr(self.cfg.annotation.sagemaker.globus, "native_app_client_id", None)
-        source_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "source_collection_id", None)
-        dest_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "dest_collection_id", None)
-        refresh_token = getattr(self.cfg.annotation.sagemaker.globus, "refresh_token", None)
-        sm_mod.globus_upload_files(
-            local_paths=[roster_path, jobs_path, os.path.join(out_dir, f"{sm_mod._today_stamp()}_metadata.txt"), os.path.join(out_dir, f"{sm_mod._today_stamp()}_annotation_manifest.jsonl")],
-            dest_collection_id=dest_collection_id,
-            dest_dir=dest_dir,
-            source_collection_id=source_collection_id,
-            client_id=client_id,
-            refresh_token=refresh_token,
-        )
+        # Files saved to outputs directory for manual Globus upload
+        print(f"Files saved to {out_dir} for manual Globus upload:")
+        print(f"  - Roster: {roster_path}")
+        print(f"  - Jobs: {jobs_path}")
+        print(f"  - Metadata: {metadata_path}")
+        print(f"  - CSV: {csv_path}")
+        
+        # Optional Globus upload (commented out - upload manually via browser)
+        # dest_dir = str(getattr(self.cfg.annotation.sagemaker.globus, "dest_dir", "/daily"))
+        # client_id = getattr(self.cfg.annotation.sagemaker.globus, "native_app_client_id", None)
+        # source_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "source_collection_id", None)
+        # dest_collection_id = getattr(self.cfg.annotation.sagemaker.globus, "dest_collection_id", None)
+        # refresh_token = getattr(self.cfg.annotation.sagemaker.globus, "refresh_token", None)
+        # sm_mod.globus_upload_files(
+        #     local_paths=[roster_path, jobs_path, metadata_path, csv_path],
+        #     dest_collection_id=dest_collection_id,
+        #     dest_dir=dest_dir,
+        #     source_collection_id=source_collection_id,
+        #     client_id=client_id,
+        #     refresh_token=refresh_token,
+        # )
 
     def check_for_new_annotations(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
         instance_dir = self.cfg.annotation.sagemaker.instances[instance_name].csv_dir

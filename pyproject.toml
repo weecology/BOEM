@@ -12,6 +12,7 @@ dependencies = [
   "geopandas",
   "rasterio",
   "dask",
+  "dask_jobqueue",
   "bokeh",
   "matplotlib",
   "paramiko",
@@ -25,6 +26,8 @@ dependencies = [
   "globus-sdk",
   'pytest',
   "python-dotenv>=1.2.1",
+  "dotenv",
+  'scikit-learn'
 ]
 
 [[tool.uv.index]]
@@ -39,4 +42,4 @@ torch = [
 torchvision = [
   { index = "pytorch-cu128" },
 ]
-deepforest = { path = "/home/b.weinstein/DeepForest" }
+deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "main" }

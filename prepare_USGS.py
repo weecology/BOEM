@@ -33,7 +33,7 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-df = pd.read_csv("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/20250923_annotations.csv")
+df = pd.read_csv("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/20260112_annotation_cumulative.csv")
 df.label.value_counts()
 
 # Construct padded crop name
@@ -55,7 +55,7 @@ df["ymax"] = df["top"] + df["height"]
 
 os.makedirs("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops", exist_ok=True)
 crop_annotations =[]
-regenerate_crops = False
+regenerate_crops = True
 if regenerate_crops:
     client = start(cpus=5, mem_size="40GB")
     futures = []

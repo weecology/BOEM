@@ -14,6 +14,5 @@
 #SBATCH --gpus=1
 
 
-#uv run python prepare_USGS.py
+uv run python prepare_USGS.py
 uv run python USGS_classification.py
-

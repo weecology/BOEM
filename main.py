@@ -1,8 +1,14 @@
 import hydra
 import os
+from pathlib import Path
 from omegaconf import DictConfig
 from src.pipeline import Pipeline
 from src.label_studio import get_api_key
+from dotenv import load_dotenv
+
+# Load .env file
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(ENV_PATH)
 
 @hydra.main(config_path="boem_conf", config_name="boem_config")
 def main(cfg: DictConfig):

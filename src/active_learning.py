@@ -65,7 +65,8 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
 
     return preannotations
 
-def select_images(preannotations, strategy, n=10, target_labels=None, min_score=0.3):
+def select_images(preannotations, strategy, n=10, target_labels=None, min_score=0.3, 
+                  drop_n_most_common=1, rarest_confidence_selection="lowest", min_classification_score=None):
     """
     Select images to annotate based on the strategy.
     
@@ -75,9 +76,13 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
             - "random": Choose images randomly from the pool.
             - "most-detections": Choose images with the most detections based on predictions.
             - "target-labels": Choose images with target labels.
+            - "rarest": Choose images with rarest class labels.
         n (int, optional): The number of images to choose. Defaults to 10.
         target_labels (list, optional): A list of target labels to filter images by. Defaults to None.
         min_score (float, optional): The minimum detection score for a prediction to be included. Defaults to 0.3.
+        drop_n_most_common (int, optional): For rarest strategy, number of most common classes to drop. Defaults to 1.
+        rarest_confidence_selection (str, optional): For rarest strategy, "highest" or "lowest" confidence selection. Defaults to "lowest".
+        min_classification_score (float, optional): Minimum classification confidence score. Defaults to None (no filter).
     
     Returns:
         list: A list of image paths.
@@ -103,18 +108,34 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
             # Filter images by target labels
             chosen_images = preannotations[preannotations.cropmodel_label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
         elif strategy == "rarest":
-            # Drop most common class
-            preannotations = preannotations[~preannotations["cropmodel_label"].isin(preannotations["cropmodel_label"].value_counts().nlargest(1).index)]
+            # Filter by minimum classification score if provided
+            if min_classification_score is not None and "cropmodel_score" in preannotations.columns:
+                preannotations = preannotations[preannotations["cropmodel_score"] >= min_classification_score]
+            
+            # Drop n most common classes
+            if drop_n_most_common > 0:
+                most_common_labels = preannotations["cropmodel_label"].value_counts().nlargest(drop_n_most_common).index
+                preannotations = preannotations[~preannotations["cropmodel_label"].isin(most_common_labels)]
+            
+            if preannotations.empty:
+                return [], None
             
             # Sort images by least common label
             label_counts = preannotations.groupby("cropmodel_label").size().sort_values(ascending=True)
             
-            # Sort preannoations by least common label
+            # Sort preannotations by least common label
             preannotations["label_count"] = preannotations["cropmodel_label"].map(label_counts)
-            preannotations.sort_values("label_count", ascending=True, inplace=True)
+            
+            # Sort by label count first, then by confidence score
+            if "cropmodel_score" in preannotations.columns:
+                ascending_conf = rarest_confidence_selection == "lowest"
+                preannotations.sort_values(["label_count", "cropmodel_score"], ascending=[True, ascending_conf], inplace=True)
+            else:
+                preannotations.sort_values("label_count", ascending=True, inplace=True)
+            
             chosen_images = preannotations.drop_duplicates(subset=["image_path"], keep="first").head(n)["image_path"].tolist()
         else:
-            raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', or 'target-labels'.")
+            raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', 'target-labels', or 'rarest'.")
 
     # Get preannotations for chosen images
     chosen_preannotations = preannotations[preannotations["image_path"].isin(chosen_images)]

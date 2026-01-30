@@ -1,6 +1,5 @@
 import os
 import glob
-import json
 import datetime as _dt
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -77,31 +76,28 @@ def _common_s3_prefix_and_basenames(s3_uris: Iterable[str]) -> Tuple[str, List[s
     return s3_prefix, basenames
 
 
-def write_sagemaker_manifest(
+def write_sagemaker_csv(
     images: Iterable[str],
-    output_manifest: str,
-    job_name: str,
+    output_csv: str,
+    flight_path: str,
     s3_prefix: str,
+    instance_type: str = "",
     preannotations: Optional[pd.DataFrame] = None,
     capture_date_col: Optional[str] = None,
     human_annotated: str = "yes",
-    manifest_type: str = "groundtruth/object-detection",
 ) -> str:
     """
-    Write a SageMaker-style manifest (JSON lines). Each object looks like:
-    {
-      "source-ref": "s3://bucket/path/to/image.jpg",
-      "rootmanifest": {"annotations": [{left, top, width, height, label}, ...]},
-      "rootmanifest-metadata": { "capture-date": "...", "job-name": "...", ... }
-    }
+    Write SageMaker annotations to CSV. Columns: bname_parent, label, left, top, width, height,
+    cropmodel_label, score, flight_path, instance_type, human_annotated, creation_date, capture_date.
 
     preannotations (optional) must contain: image_path, xmin, ymin, xmax, ymax
-    and may contain cropmodel_label or label and an optional capture_date_col.
+    and may contain cropmodel_label, score, label, and an optional capture_date_col.
     """
-    os.makedirs(os.path.dirname(output_manifest) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(output_csv) or ".", exist_ok=True)
     creation_date = _now_date_string()
+    has_cropmodel = preannotations is not None and not preannotations.empty and "cropmodel_label" in preannotations.columns
+    has_score = preannotations is not None and not preannotations.empty and "score" in preannotations.columns
 
-    # Build map: stem -> {"annotations": [...], "capture_date": ...}
     pre_map: Dict[str, Dict] = {}
     if preannotations is not None and not preannotations.empty:
         required = {"image_path", "xmin", "ymin", "xmax", "ymax"}
@@ -113,39 +109,65 @@ def write_sagemaker_manifest(
             else ("label" if "label" in preannotations.columns else None)
         )
         for _, row in preannotations.iterrows():
-            stem = _basename_no_ext(str(row["image_path"]))
+            bname = os.path.basename(str(row["image_path"]))
+            stem = _basename_no_ext(bname)
             ann = {
+                "bname_parent": bname,
                 "left": float(row["xmin"]),
                 "top": float(row["ymin"]),
                 "width": float(max(0.0, row["xmax"] - row["xmin"])),
                 "height": float(max(0.0, row["ymax"] - row["ymin"])),
                 "label": str(row[label_col]) if label_col else "",
+                "cropmodel_label": str(row["cropmodel_label"]) if has_cropmodel else "",
+                "score": float(row["score"]) if has_score else None,
             }
             entry = pre_map.setdefault(stem, {"annotations": [], "capture_date": ""})
             entry["annotations"].append(ann)
             if capture_date_col and capture_date_col in row.index:
                 entry["capture_date"] = str(row[capture_date_col])
 
-    with open(output_manifest, "w", encoding="utf-8") as fh:
-        for img in images:
-            stem = _basename_no_ext(img)
-            source_ref = os.path.join(s3_prefix.rstrip("/"), os.path.basename(img))
-            entry = pre_map.get(stem, {"annotations": [], "capture_date": ""})
-            manifest_obj = {
-                "source-ref": source_ref,
-                "rootmanifest": {"annotations": entry["annotations"]},
-                "rootmanifest-metadata": {
-                    "capture-date": entry.get("capture_date", ""),
-                    "unique_x": "",
-                    "unique_y": "",
-                    "job-name": job_name,
-                    "human-annotated": human_annotated,
-                    "creation-date": creation_date,
-                    "type": manifest_type,
-                },
-            }
-            fh.write(json.dumps(manifest_obj) + "\n")
-    return output_manifest
+    rows: List[Dict] = []
+    for img in images:
+        bname = os.path.basename(img)
+        stem = _basename_no_ext(img)
+        entry = pre_map.get(stem, {"annotations": [], "capture_date": ""})
+        capture_date = entry.get("capture_date", "")
+        for a in entry["annotations"]:
+            rows.append({
+                "bname_parent": a["bname_parent"],
+                "label": a["label"],
+                "left": a["left"],
+                "top": a["top"],
+                "width": a["width"],
+                "height": a["height"],
+                "cropmodel_label": a["cropmodel_label"],
+                "score": a["score"],
+                "flight_path": flight_path,
+                "instance_type": instance_type,
+                "human_annotated": human_annotated,
+                "creation_date": creation_date,
+                "capture_date": capture_date,
+            })
+        if not entry["annotations"]:
+            rows.append({
+                "bname_parent": bname,
+                "label": "",
+                "left": 0.0,
+                "top": 0.0,
+                "width": 0.0,
+                "height": 0.0,
+                "cropmodel_label": "",
+                "score": None,
+                "flight_path": flight_path,
+                "instance_type": instance_type,
+                "human_annotated": human_annotated,
+                "creation_date": creation_date,
+                "capture_date": capture_date,
+            })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output_csv, index=False)
+    return output_csv
 
 
 def write_daily_roster(
@@ -153,10 +175,12 @@ def write_daily_roster(
     output_dir: str,
     stamp: Optional[str] = None,
     existing_roster_path: Optional[str] = None,
+    flight_name: Optional[str] = None,
 ) -> str:
     stamp = stamp or _today_stamp()
     os.makedirs(output_dir or ".", exist_ok=True)
-    roster_path = os.path.join(output_dir, f"{stamp}_roster.txt")
+    filename = f"{stamp}_roster.txt" if not flight_name else f"{stamp}_{flight_name}_roster.txt"
+    roster_path = os.path.join(output_dir, filename)
 
     state: Dict[str, Dict[str, str]] = {}
     if existing_roster_path and os.path.exists(existing_roster_path):
@@ -186,10 +210,12 @@ def assign_jobs_from_roster(
     output_dir: str,
     num_jobs: int,
     stamp: Optional[str] = None,
+    flight_name: Optional[str] = None,
 ) -> Tuple[str, List[str]]:
     stamp = stamp or _today_stamp()
     os.makedirs(output_dir or ".", exist_ok=True)
-    jobs_path = os.path.join(output_dir, f"{stamp}_jobs.txt")
+    filename = f"{stamp}_jobs.txt" if not flight_name else f"{stamp}_{flight_name}_jobs.txt"
+    jobs_path = os.path.join(output_dir, filename)
 
     rows: List[Tuple[str, str, int]] = []
     with open(roster_path, "r", encoding="utf-8") as fh:
@@ -236,11 +262,12 @@ def assign_jobs_from_roster(
 
 
 def write_daily_metadata(
-    s3_uris: Iterable[str], output_dir: str, stamp: Optional[str] = None
+    s3_uris: Iterable[str], output_dir: str, stamp: Optional[str] = None, flight_name: Optional[str] = None
 ) -> str:
     stamp = stamp or _today_stamp()
     os.makedirs(output_dir or ".", exist_ok=True)
-    meta_path = os.path.join(output_dir, f"{stamp}_metadata.txt")
+    filename = f"{stamp}_metadata.txt" if not flight_name else f"{stamp}_{flight_name}_metadata.txt"
+    meta_path = os.path.join(output_dir, filename)
     with open(meta_path, "w", encoding="utf-8") as fh:
         for uri in s3_uris:
             _, key = _split_s3_uri(uri)
@@ -248,21 +275,25 @@ def write_daily_metadata(
     return meta_path
 
 
-def write_daily_annotation_manifest(
+def write_daily_annotation_csv(
     s3_uris: Iterable[str],
     output_dir: str,
-    job_name: str,
+    flight_path: str,
+    instance_type: str = "",
     stamp: Optional[str] = None,
     preannotations: Optional[pd.DataFrame] = None,
+    flight_name: Optional[str] = None,
 ) -> str:
     stamp = stamp or _today_stamp()
     os.makedirs(output_dir or ".", exist_ok=True)
-    manifest_path = os.path.join(output_dir, f"{stamp}_annotation_manifest.jsonl")
+    filename = f"{stamp}_annotation.csv" if not flight_name else f"{stamp}_{flight_name}_annotation.csv"
+    csv_path = os.path.join(output_dir, filename)
     s3_prefix, basenames = _common_s3_prefix_and_basenames(s3_uris)
-    return write_sagemaker_manifest(
+    return write_sagemaker_csv(
         images=basenames,
-        output_manifest=manifest_path,
-        job_name=job_name,
+        output_csv=csv_path,
+        flight_path=flight_path,
+        instance_type=instance_type,
         s3_prefix=s3_prefix,
         preannotations=preannotations,
     )
@@ -438,81 +469,48 @@ def globus_upload_files(
         raise
 
 
-def read_sagemaker_manifest(manifest_path: str, image_dir: str) -> pd.DataFrame:
+def read_sagemaker_csv(csv_path: str, image_dir: str) -> pd.DataFrame:
     """
-    Read a SageMaker manifest (JSON lines) and convert to DeepForest-format DataFrame:
-    columns: image_path (relative to image_dir), xmin, ymin, xmax, ymax, label
+    Read a SageMaker annotation CSV and return a DataFrame with all columns.
+    Uses bname_parent (not image_path). Adds xmin, ymin, xmax, ymax, image_path for pipeline compatibility.
     """
-    rows: List[Dict] = []
-    with open(manifest_path, "r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                # skip invalid JSON lines
-                continue
-            src = obj.get("source-ref", "")
-            basename = _basename_no_ext(src)
-            local_path = _ensure_image_path(basename, image_dir)
-            # image_path relative to image_dir
-            try:
-                rel_path = os.path.relpath(local_path, image_dir)
-            except Exception:
-                rel_path = os.path.basename(local_path)
-            anns = obj.get("rootmanifest", {}).get("annotations", []) or []
-            for a in anns:
-                try:
-                    left = float(a.get("left", a.get("xmin", 0.0)))
-                    top = float(a.get("top", a.get("ymin", 0.0)))
-                    width = float(a.get("width", 0.0))
-                    height = float(a.get("height", 0.0))
-                except Exception:
-                    continue
-                rows.append(
-                    {
-                        "image_path": rel_path,
-                        "xmin": left,
-                        "ymin": top,
-                        "xmax": left + width,
-                        "ymax": top + height,
-                        "label": str(a.get("label", "Object")),
-                    }
-                )
-    if not rows:
-        return pd.DataFrame(columns=["image_path", "xmin", "ymin", "xmax", "ymax", "label"])
-    df = pd.DataFrame(rows)
-    # clamp negatives and drop invalid boxes
-    for c in ["xmin", "ymin", "xmax", "ymax"]:
-        df[c] = df[c].clip(lower=0)
+    df = pd.read_csv(csv_path)
+    required = {"bname_parent", "label", "left", "top", "width", "height"}
+    missing = required - set(df.columns)
+    if missing:
+        return pd.DataFrame(columns=["bname_parent", "label", "left", "top", "width", "height", "xmin", "ymin", "xmax", "ymax", "image_path"])
+    df = df.copy()
+    df["xmin"] = df["left"].astype(float).clip(lower=0)
+    df["ymin"] = df["top"].astype(float).clip(lower=0)
+    df["xmax"] = (df["left"] + df["width"]).astype(float).clip(lower=0)
+    df["ymax"] = (df["top"] + df["height"]).astype(float).clip(lower=0)
+    stem = df["bname_parent"].apply(_basename_no_ext)
+    df["image_path"] = stem.apply(lambda s: _ensure_image_path(s, image_dir))
+    try:
+        df["image_path"] = df["image_path"].apply(lambda p: os.path.relpath(p, image_dir))
+    except Exception:
+        df["image_path"] = df["bname_parent"]
     df = df[(df["xmax"] > df["xmin"]) & (df["ymax"] > df["ymin"])].copy()
     return df
 
 
 def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     """
-    Aggregate supported annotation files in a directory into a single DataFrame.
-    Currently supports only SageMaker manifest JSON-lines (.jsonl/.manifest/.json).
-    
+    Aggregate SageMaker annotation CSV files in a directory into a single DataFrame.
+
     Args:
         annotation_dir: Flight-specific directory containing annotation files
                        (e.g., /path/to/annotations/train/JPG_20241220_145900)
         image_dir: Directory containing images
     """
-    manifests = sorted(
-        glob.glob(os.path.join(annotation_dir, "*.jsonl"))
-        + glob.glob(os.path.join(annotation_dir, "*.manifest"))
-        + glob.glob(os.path.join(annotation_dir, "*.json"))
-    )
+    files = sorted(glob.glob(os.path.join(annotation_dir, "*_annotation.csv")))
 
     parts: List[pd.DataFrame] = []
-    for mf in manifests:
+    for fp in files:
         try:
-            parts.append(read_sagemaker_manifest(mf, image_dir=image_dir))
+            parts.append(read_sagemaker_csv(fp, image_dir=image_dir))
         except Exception as exc:
-            print(f"Warning: failed to parse manifest {mf}: {exc}")
+            print(f"Warning: failed to parse CSV {fp}: {exc}")
 
     if not parts:
         return None

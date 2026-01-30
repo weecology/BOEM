@@ -176,7 +176,7 @@ class Pipeline:
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
 
-        pool = glob.glob(os.path.join(self.config.image_dir, "*")) 
+        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG")) 
         pool = [image for image in pool if image not in self.existing_images]
 
         if self.config.debug:
@@ -244,6 +244,10 @@ class Pipeline:
             preannotations=training_preannotations,
             strategy=self.config.active_learning.strategy,
             n=self.config.active_learning.n_images,
+            min_score=self.config.predict.min_score,
+            drop_n_most_common=getattr(self.config.active_learning, "drop_n_most_common", 1),
+            rarest_confidence_selection=getattr(self.config.active_learning, "rarest_confidence_selection", "lowest"),
+            min_classification_score=getattr(self.config.active_learning, "min_classification_score", None),
         )
         
         print(f"Training images to annotate: {len(train_images_to_annotate)}")

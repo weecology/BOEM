@@ -1,6 +1,5 @@
 import sys
 import os
-import json
 import time
 from pathlib import Path
 import pandas as pd
@@ -15,8 +14,9 @@ SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
 from src.sagemaker_gt import (
-    write_sagemaker_manifest,
-    read_sagemaker_manifest,
+    write_sagemaker_csv,
+    read_sagemaker_csv,
+    gather_data,
     globus_upload_files,
     _get_globus_transfer_client,
 )  # noqa: E401
@@ -32,80 +32,101 @@ def make_dummy_images(tmp_path, names):
     return img_dir
 
 
-def test_write_manifest_no_preannotations(tmp_path):
+def test_write_csv_no_preannotations(tmp_path):
     images = ["C1.jpg", "C2.jpg"]
     img_dir = make_dummy_images(tmp_path, images)
-    out_manifest = tmp_path / "manifest_no_pre.jsonl"
+    out_csv = tmp_path / "annotations_no_pre.csv"
     s3_prefix = "s3://bucket/prefix"
 
-    # call writer
-    path = write_sagemaker_manifest(
+    path = write_sagemaker_csv(
         images=images,
-        output_manifest=str(out_manifest),
-        job_name="test-job",
+        output_csv=str(out_csv),
+        flight_path="test_flight",
         s3_prefix=s3_prefix,
+        instance_type="train",
         preannotations=None,
     )
-    assert str(out_manifest) == path
-    assert out_manifest.exists()
+    assert str(out_csv) == path
+    assert out_csv.exists()
 
-    # validate contents
-    lines = out_manifest.read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == 2
-    objs = [json.loads(l) for l in lines]
-    for img, obj in zip(images, objs):
-        assert obj["source-ref"].endswith(img)
-        assert obj["rootmanifest"]["annotations"] == []
-        meta = obj["rootmanifest-metadata"]
-        assert meta["job-name"] == "test-job"
-        assert meta["type"] == "groundtruth/object-detection"
+    df = pd.read_csv(out_csv)
+    assert "bname_parent" in df.columns
+    assert set(df.columns) >= {"bname_parent", "label", "left", "top", "width", "height", "flight_path", "instance_type", "human_annotated", "creation_date", "capture_date"}
+    assert len(df) == 2
+    assert set(df["bname_parent"]) == {"C1.jpg", "C2.jpg"}
+    assert df["flight_path"].iloc[0] == "test_flight"
+    assert df["instance_type"].iloc[0] == "train"
+    assert (df["label"].isna() | (df["label"] == "")).all()
+    assert (df["left"] == 0.0).all() and (df["top"] == 0.0).all() and (df["width"] == 0.0).all() and (df["height"] == 0.0).all()
 
 
-def test_write_manifest_with_preannotations_and_readback(tmp_path):
+def test_write_csv_with_preannotations_and_readback(tmp_path):
     images = ["I1.jpg", "I2.jpg"]
     img_dir = make_dummy_images(tmp_path, images)
-    out_manifest = tmp_path / "manifest_pre.jsonl"
+    out_csv = tmp_path / "annotations_pre.csv"
     s3_prefix = "s3://bucket/pfx"
 
-    # build preannotations dataframe
     rows = [
-        {"image_path": "I1.jpg", "xmin": 10.0, "ymin": 5.0, "xmax": 30.0, "ymax": 25.0, "cropmodel_label": "Anatidae", "capture_date": "2024-01-01 00:00:00"},
-        {"image_path": "I1.jpg", "xmin": 50.0, "ymin": 40.0, "xmax": 70.0, "ymax": 60.0, "cropmodel_label": "Anatidae", "capture_date": "2024-01-01 00:00:00"},
-        {"image_path": "I2.jpg", "xmin": 1.0, "ymin": 2.0, "xmax": 11.0, "ymax": 12.0, "cropmodel_label": "Other", "capture_date": "2024-02-02 00:00:00"},
+        {"image_path": "I1.jpg", "xmin": 10.0, "ymin": 5.0, "xmax": 30.0, "ymax": 25.0, "cropmodel_label": "Anatidae", "score": 0.95, "capture_date": "2024-01-01 00:00:00"},
+        {"image_path": "I1.jpg", "xmin": 50.0, "ymin": 40.0, "xmax": 70.0, "ymax": 60.0, "cropmodel_label": "Anatidae", "score": 0.88, "capture_date": "2024-01-01 00:00:00"},
+        {"image_path": "I2.jpg", "xmin": 1.0, "ymin": 2.0, "xmax": 11.0, "ymax": 12.0, "cropmodel_label": "Other", "score": 0.75, "capture_date": "2024-02-02 00:00:00"},
     ]
     pre = pd.DataFrame(rows)
 
-    # write manifest
-    path = write_sagemaker_manifest(
+    path = write_sagemaker_csv(
         images=images,
-        output_manifest=str(out_manifest),
-        job_name="job-42",
+        output_csv=str(out_csv),
+        flight_path="JPG_20241220_104800",
         s3_prefix=s3_prefix,
+        instance_type="validation",
         preannotations=pre,
         capture_date_col="capture_date",
     )
-    assert out_manifest.exists()
+    assert out_csv.exists()
 
-    # inspect file
-    lines = [json.loads(l) for l in out_manifest.read_text(encoding="utf-8").strip().splitlines()]
-    # I1 should have 2 annotations, I2 one
-    mapping = {Path(obj["source-ref"]).name: obj for obj in lines}
-    assert mapping["I1.jpg"]["rootmanifest"]["annotations"][0]["label"] == "Anatidae"
-    assert len(mapping["I1.jpg"]["rootmanifest"]["annotations"]) == 2
-    assert mapping["I2.jpg"]["rootmanifest"]["annotations"][0]["label"] == "Other"
-    # metadata capture-date populated from preannotations
-    assert mapping["I1.jpg"]["rootmanifest-metadata"]["capture-date"] == "2024-01-01 00:00:00"
-    assert mapping["I2.jpg"]["rootmanifest-metadata"]["capture-date"] == "2024-02-02 00:00:00"
+    raw = pd.read_csv(out_csv)
+    assert "bname_parent" in raw.columns
+    assert set(raw.columns) >= {"bname_parent", "label", "left", "top", "width", "height", "cropmodel_label", "score", "flight_path", "instance_type", "capture_date"}
+    assert len(raw) == 3
+    assert list(raw["bname_parent"].value_counts()) == [2, 1]
+    assert set(raw["label"].unique()) == {"Anatidae", "Other"}
+    assert raw["flight_path"].iloc[0] == "JPG_20241220_104800"
+    assert raw["instance_type"].iloc[0] == "validation"
+    other = raw[raw["label"] == "Other"].iloc[0]
+    assert other["left"] == 1.0 and other["top"] == 2.0 and other["width"] == 10.0 and other["height"] == 10.0
+    assert other["score"] == 0.75
+    assert other["cropmodel_label"] == "Other"
 
-    # round-trip read back into dataframe (use image_dir for resolution)
-    df = read_sagemaker_manifest(str(out_manifest), image_dir=str(img_dir))
-    # should contain three rows matching preannotations (order may differ)
+    df = read_sagemaker_csv(str(out_csv), image_dir=str(img_dir))
     assert len(df) == 3
     assert set(df["label"].unique()) == {"Anatidae", "Other"}
-    
-    # numeric boxes consistent
+    assert "image_path" in df.columns and "bname_parent" in df.columns
     row = df[df["label"] == "Other"].iloc[0]
     assert row["xmin"] == 1.0 and row["ymin"] == 2.0 and row["xmax"] == 11.0 and row["ymax"] == 12.0
+
+
+def test_gather_data_csv(tmp_path):
+    images = ["I1.jpg", "I2.jpg"]
+    img_dir = make_dummy_images(tmp_path, images)
+    ann_dir = tmp_path / "annotations"
+    ann_dir.mkdir()
+    out_csv = ann_dir / "20250101_annotation.csv"
+    write_sagemaker_csv(
+        images=images,
+        output_csv=str(out_csv),
+        flight_path="test_flight",
+        s3_prefix="s3://b/p",
+        instance_type="train",
+        preannotations=pd.DataFrame([
+            {"image_path": "I1.jpg", "xmin": 10, "ymin": 5, "xmax": 30, "ymax": 25, "label": "A"},
+            {"image_path": "I2.jpg", "xmin": 1, "ymin": 2, "xmax": 11, "ymax": 12, "label": "B"},
+        ]),
+    )
+    df = gather_data(str(ann_dir), str(img_dir))
+    assert df is not None
+    assert len(df) == 2
+    assert "bname_parent" in df.columns and "image_path" in df.columns
+    assert set(df["label"]) == {"A", "B"}
 
 
 @pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test requires local Globus credentials and connection")

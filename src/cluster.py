@@ -43,7 +43,7 @@ def start(cpus=0, gpus=0, mem_size="50GB"):
         ]
 
         cluster = SLURMCluster(processes=1,
-                               queue='hpg2-compute',
+                               queue='hpg-default',
                                cores=1,
                                memory=mem_size,
                                walltime='24:00:00',

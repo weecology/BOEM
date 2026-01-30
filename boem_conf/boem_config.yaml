@@ -44,7 +44,7 @@ propagate:
 
 detection_model:
   force_train: False
-  checkpoint: "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/af3058efa5a1420a99d340377ae6b7fb.pl"
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/937537bf5da24d81b2b7e9eaa4f4b574.pl
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -72,11 +72,15 @@ active_learning:
   n_images: 20
   patch_size: 1000
   patch_overlap: 0
-  min_classification_score: 0.8
+  min_classification_score: 0.5
   min_detection_score: 0.95
   model_checkpoint:
   target_labels:
     - "Object"
+  
+  # Rarest strategy parameters:
+  drop_n_most_common: 1  # Number of most common classes to drop
+  rarest_confidence_selection: lowest  # "highest" or "lowest" - select highest or lowest confidence samples from rarest classes
   
   # Optional parameters:
   evaluation: 

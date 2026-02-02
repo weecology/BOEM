@@ -36,7 +36,6 @@ predict:
 pipeline:
   confidence_threshold: 0.6
   limit_empty_frac: 0.001
-  gpus: 1
 
 propagate:
   time_threshold_seconds: 5
@@ -72,15 +71,15 @@ active_learning:
   n_images: 20
   patch_size: 1000
   patch_overlap: 0
-  min_classification_score: 0.5
+  min_classification_score: 0.4
   min_detection_score: 0.95
   model_checkpoint:
   target_labels:
     - "Object"
   
   # Rarest strategy parameters:
-  drop_n_most_common: 1  # Number of most common classes to drop
-  rarest_confidence_selection: lowest  # "highest" or "lowest" - select highest or lowest confidence samples from rarest classes
+  drop_n_most_common: 2  # Number of most common classes to drop
+  rarest_confidence_selection: highest  # "highest" or "lowest" - select highest or lowest confidence samples from rarest classes
   
   # Optional parameters:
   evaluation: 

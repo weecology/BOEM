@@ -30,6 +30,11 @@ class Pipeline:
 
         self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
         self.comet_logger.experiment.add_tag("pipeline")
+
+    def _comet_experiment_id(self) -> str:
+        """Return Comet experiment id as string (handles both property and method API)."""
+        eid = self.comet_logger.experiment.id
+        return eid() if callable(eid) else eid
         flight_name = os.path.basename(self.config.image_dir)
         self.comet_logger.experiment.add_tag(flight_name)
         self.comet_logger.experiment.log_parameters(self.config)

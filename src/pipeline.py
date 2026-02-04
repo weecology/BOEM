@@ -9,6 +9,7 @@ from src import sagemaker_gt
 from src.annotators import get_annotator
 from src import detection
 from src import classification
+from src import hierarchical
 from src.visualization import crop_images
 from src.pipeline_evaluation import PipelineEvaluation
 from pytorch_lightning.loggers import CometLogger
@@ -30,36 +31,27 @@ class Pipeline:
 
         self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
         self.comet_logger.experiment.add_tag("pipeline")
+        flight_name = os.path.basename(self.config.image_dir)
+        self.comet_logger.experiment.add_tag(flight_name)
+        self.comet_logger.experiment.log_parameters(self.config)
+        self.comet_logger.experiment.log_parameter("flight_name", flight_name)
+        self.config.detection_model.crop_image_dir = os.path.join(self.config.detection_model.crop_image_dir, flight_name)
+        self.config.detection_model.checkpoint_dir = os.path.join(self.config.detection_model.checkpoint_dir, flight_name)
+        self.config.classification_model.checkpoint_dir = os.path.join(self.config.classification_model.checkpoint_dir, flight_name)
+        self.config.classification_model.train_crop_image_dir = os.path.join(self.config.classification_model.train_crop_image_dir, flight_name)
+        self.config.classification_model.val_crop_image_dir = os.path.join(self.config.classification_model.val_crop_image_dir, flight_name)
+        os.makedirs(self.config.detection_model.crop_image_dir, exist_ok=True)
+        os.makedirs(self.config.detection_model.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.config.classification_model.checkpoint_dir, exist_ok=True)
+        os.makedirs(self.config.classification_model.train_crop_image_dir, exist_ok=True)
+        os.makedirs(self.config.classification_model.val_crop_image_dir, exist_ok=True)
+        self.comet_logger.experiment.log_code(folder=os.path.join(os.path.dirname(__file__), "../src"), overwrite=True)
 
     def _comet_experiment_id(self) -> str:
         """Return Comet experiment id as string (handles both property and method API)."""
         eid = self.comet_logger.experiment.id
         return eid() if callable(eid) else eid
-        flight_name = os.path.basename(self.config.image_dir)
-        self.comet_logger.experiment.add_tag(flight_name)
-        self.comet_logger.experiment.log_parameters(self.config)
-        self.comet_logger.experiment.log_parameter("flight_name", flight_name)
 
-        # Directories prepared by the annotator impl (for LS)
-
-        self.config.detection_model.crop_image_dir = os.path.join(self.config.detection_model.crop_image_dir, flight_name)
-        self.config.detection_model.checkpoint_dir = os.path.join(self.config.detection_model.checkpoint_dir, flight_name)
-        self.config.classification_model.checkpoint_dir = os.path.join(self.config.classification_model.checkpoint_dir, flight_name)
-        self.config.detection_model.crop_image_dir = os.path.join(self.config.detection_model.crop_image_dir, flight_name)
-        self.config.classification_model.train_crop_image_dir = os.path.join(self.config.classification_model.train_crop_image_dir, flight_name)
-        self.config.classification_model.val_crop_image_dir = os.path.join(self.config.classification_model.val_crop_image_dir, flight_name)
-
-        # make sure the directories exist
-        os.makedirs(self.config.detection_model.crop_image_dir, exist_ok=True)
-        os.makedirs(self.config.detection_model.checkpoint_dir, exist_ok=True)
-        os.makedirs(self.config.classification_model.checkpoint_dir, exist_ok=True)
-        os.makedirs(self.config.detection_model.crop_image_dir, exist_ok=True)
-        os.makedirs(self.config.classification_model.train_crop_image_dir, exist_ok=True)
-        os.makedirs(self.config.classification_model.val_crop_image_dir, exist_ok=True)
-
-        # Log src folder code
-        self.comet_logger.experiment.log_code(folder=os.path.join(os.path.dirname(__file__), "../src"), overwrite=True)
-        
     def check_new_annotations(self, instance_name):
         return self.annotator.check_for_new_annotations(instance_name, image_dir=self.config.image_dir)
     
@@ -194,6 +186,13 @@ class Pipeline:
         
         trained_classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
+        hcast_checkpoint = getattr(self.config.hierarchical, "checkpoint", None)
+        hcast_model = None
+        if hcast_checkpoint:
+            hcast_model = hierarchical.load_hcast_model(checkpoint_path=hcast_checkpoint)
+        hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
+        hcast_workers = getattr(self.config.hierarchical, "workers", 4)
+
         flightline_predictions = generate_pool_predictions(
             pool=pool,
             pool_limit=self.config.active_learning.pool_limit,
@@ -203,6 +202,10 @@ class Pipeline:
             model=trained_detection_model,
             batch_size=self.config.predict.batch_size,
             crop_model=trained_classification_model,
+            hcast_model=hcast_model,
+            image_dir=self.config.image_dir,
+            hcast_batch_size=hcast_batch_size,
+            hcast_workers=hcast_workers,
         )
 
         if flightline_predictions is None:
@@ -356,6 +359,36 @@ class Pipeline:
         
         # give it a complete tag
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
+
+        # Use generic annotator to upload for each instance
+        for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():
+            if len(image_basenames) == 0:
+                print(f"No images to upload for instance {instance}, skipping")
+                continue
+
+            image_paths = [os.path.join(self.config.image_dir, x) for x in image_basenames]
+            # Normalize image_path in final_predictions to basenames for comparison
+            final_predictions_normalized = final_predictions.copy()
+            final_predictions_normalized["image_path_basename"] = final_predictions_normalized["image_path"].apply(
+                lambda x: os.path.basename(x) if os.path.sep in str(x) else x
+            )
+            preannotations_df = final_predictions_normalized[
+                final_predictions_normalized["image_path_basename"].isin(image_basenames)
+            ].copy(deep=True)
+
+            # As a dict with basename as key (matching what SageMaker upload expects)
+            preannotations = {}
+            for basename, group in preannotations_df.groupby("image_path_basename"):
+                # Ensure image_path column uses basename for manifest writing
+                group = group.copy()
+                group["image_path"] = basename
+                # Use basename as key to match the format expected by SageMaker upload
+                preannotations[basename] = group.drop(columns=["image_path_basename"], errors="ignore")
+            self.annotator.upload(images=image_paths, instance_name=instance, preannotations=preannotations)
+
+        self.comet_logger.experiment.add_tag("complete")
+        return None
+_data=final_predictions, filename="final_predictions.csv")
 
         # Use generic annotator to upload for each instance
         for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():

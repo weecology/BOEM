@@ -1,5 +1,6 @@
 import random
 from src import detection
+from src import hierarchical
 
 def human_review(predictions, min_detection_score=0.6, min_classification_score=0.5, confident_threshold=0.5):
     """
@@ -27,10 +28,23 @@ def human_review(predictions, min_detection_score=0.6, min_classification_score=
     
     return confident_predictions, uncertain_predictions
 
-def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score=0.1, model=None, batch_size=16, pool_limit=1000, crop_model=None):
+def generate_pool_predictions(
+    pool,
+    patch_size=512,
+    patch_overlap=0.1,
+    min_score=0.1,
+    model=None,
+    batch_size=16,
+    pool_limit=1000,
+    crop_model=None,
+    hcast_model=None,
+    image_dir=None,
+    hcast_batch_size=None,
+    hcast_workers=None,
+):
     """
     Generate predictions for the flight pool.
-    
+
     Args:
         pool (str): List of image paths to predict on.
         patch_size (int, optional): The size of the image patches to predict on. Defaults to 512.
@@ -38,15 +52,16 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
         min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.1.
         model (main.deepforest, optional): A trained deepforest model. Defaults to None.
         batch_size (int, optional): The batch size for prediction. Defaults to 16.
-        comet_logger (CometLogger, optional): A CometLogger object. Defaults to None.
-        crop_model (bool, optional): A deepforest.model.CropModel object. Defaults to None.
+        crop_model (CropModel, optional): A deepforest.model.CropModel object. Defaults to None.
         pool_limit (int, optional): The maximum number of images to consider. Defaults to 1000.
-    
+        hcast_model (optional): H-CAST hierarchical model wrapper. Defaults to None.
+        image_dir (str, optional): Root directory where images are located. Required if hcast_model is provided.
+        hcast_batch_size (int, optional): Batch size for H-CAST classification.
+        hcast_workers (int, optional): Number of workers for H-CAST DataLoader.
+
     Returns:
-        pd.DataFrame: A DataFrame of predictions.
+        pd.DataFrame: A DataFrame of predictions (with hcast columns if hcast_model provided).
     """
-    
-    #subsample
     if len(pool) > pool_limit:
         pool = random.sample(pool, pool_limit)
 
@@ -56,12 +71,24 @@ def generate_pool_predictions(pool, patch_size=512, patch_overlap=0.1, min_score
         patch_size=patch_size,
         patch_overlap=patch_overlap,
         batch_size=batch_size,
-        crop_model=crop_model)
-    
+        crop_model=crop_model,
+    )
+
     if preannotations is None:
         return None
 
     preannotations = preannotations[preannotations["score"] >= min_score]
+
+    if hcast_model is not None:
+        if image_dir is None:
+            raise ValueError("image_dir is required when hcast_model is provided")
+        preannotations = hierarchical.classify_dataframe(
+            predictions=preannotations,
+            image_dir=image_dir,
+            model=hcast_model,
+            batch_size=hcast_batch_size,
+            num_workers=hcast_workers,
+        )
 
     return preannotations
 

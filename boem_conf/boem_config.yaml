@@ -1,6 +1,8 @@
 defaults:
+  - _self_
   - server: serenity
-  - classification_model: finetune.yaml # or hierarchical.yaml
+  - classification_model: finetune.yaml
+  - hierarchical: hierarchical.yaml
   - annotation: sagemaker
 
 hydra:
@@ -36,6 +38,7 @@ predict:
 pipeline:
   confidence_threshold: 0.6
   limit_empty_frac: 0.001
+  gpus: 1
 
 propagate:
   time_threshold_seconds: 5

@@ -469,6 +469,89 @@ def globus_upload_files(
         raise
 
 
+# Label Studio-style columns so gather_data sees one format from both tools
+LABELSTUDIO_COLUMNS = ["xmin", "ymin", "xmax", "ymax", "label", "image_path", "annotator", "flight_name"]
+
+
+def normalize_sagemaker_output_to_annotation_dirs(
+    sagemaker_output_dir: str,
+    sagemaker_input_dir: str,
+    annotations_base_dir: str,
+) -> List[str]:
+    """
+    Read SageMaker output CSVs, join with job input to get flight_name and instance_type,
+    normalize to Label Studio column format, and write into annotations_base_dir so
+    gather_data picks them up together with Label Studio annotations.
+
+    Output CSVs are written under annotations_base_dir/<instance_type>/<flight_name>/
+    with names like <date>_<instance_type>.csv (not *_annotation.csv) so they are
+    read as Label Studio CSVs.
+
+    Returns:
+        List of paths written.
+    """
+    written: List[str] = []
+    pattern = os.path.join(sagemaker_output_dir, "*_annotation_output.csv")
+    for out_path in sorted(glob.glob(pattern)):
+        base = os.path.basename(out_path)
+        # e.g. 20260131_JPG_20241220_104800_annotation_output.csv -> prefix = 20260131_JPG_20241220_104800
+        if not base.endswith("_annotation_output.csv"):
+            continue
+        prefix = base[: -len("_annotation_output.csv")]
+        parts = prefix.split("_", 1)
+        if len(parts) != 2:
+            continue
+        date_stamp, flight_name = parts
+        input_path = os.path.join(sagemaker_input_dir, f"{prefix}_annotation.csv")
+        if not os.path.isfile(input_path):
+            continue
+        out_df = pd.read_csv(out_path)
+        in_df = pd.read_csv(input_path)
+        if "bname_parent" not in out_df.columns:
+            continue
+        # Input bname_parent has .jpg; output bname_parent is stem only
+        in_df = in_df.copy()
+        in_df["bname_stem"] = in_df["bname_parent"].astype(str).str.replace(r"\.(jpg|jpeg|JPG|JPEG)$", "", regex=True)
+        if "flight_path" in in_df.columns:
+            flight_col = "flight_path"
+        elif "flight_name" in in_df.columns:
+            flight_col = "flight_name"
+        else:
+            flight_col = None
+        if "instance_type" not in in_df.columns or flight_col is None:
+            continue
+        job_info = in_df[["bname_stem", "instance_type", flight_col]].drop_duplicates("bname_stem")
+        merged = out_df.merge(
+            job_info,
+            left_on="bname_parent",
+            right_on="bname_stem",
+            how="left",
+        )
+        # image_path: basename with extension to match Label Studio
+        merged["image_path"] = merged["bname_parent"].astype(str) + ".jpg"
+        merged["xmin"] = pd.to_numeric(merged["left"], errors="coerce")
+        merged["ymin"] = pd.to_numeric(merged["top"], errors="coerce")
+        merged["width"] = pd.to_numeric(merged["width"], errors="coerce").fillna(0)
+        merged["height"] = pd.to_numeric(merged["height"], errors="coerce").fillna(0)
+        merged["xmax"] = merged["xmin"] + merged["width"]
+        merged["ymax"] = merged["ymin"] + merged["height"]
+        valid = (merged["xmax"] > merged["xmin"]) & (merged["ymax"] > merged["ymin"])
+        merged = merged.loc[valid].copy()
+        if merged.empty:
+            continue
+        merged["flight_name"] = merged[flight_col]
+        merged["annotator"] = "SageMaker"
+        instance_type = str(merged["instance_type"].iloc[0]).strip() or "train"
+        out_cols = [c for c in LABELSTUDIO_COLUMNS if c in merged.columns]
+        merged = merged[out_cols]
+        dest_dir = os.path.join(annotations_base_dir, instance_type, flight_name)
+        os.makedirs(dest_dir, exist_ok=True)
+        dest_path = os.path.join(dest_dir, f"{date_stamp}_{instance_type}.csv")
+        merged.to_csv(dest_path, index=False)
+        written.append(dest_path)
+    return written
+
+
 def read_sagemaker_csv(csv_path: str, image_dir: str) -> pd.DataFrame:
     """
     Read a SageMaker annotation CSV and return a DataFrame with all columns.
@@ -617,5 +700,29 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "get_refresh_token":
         get_refresh_token()
+    elif len(sys.argv) > 1 and sys.argv[1] == "normalize_outputs":
+        # Default paths: annotations/sagemaker/{input,output} -> annotations/{train,validation,review}
+        try:
+            from hydra import initialize, compose
+            config_path = "boem_conf" if os.path.isdir("boem_conf") else "../boem_conf"
+            with initialize(version_base=None, config_path=config_path):
+                cfg = compose(config_name="boem_config", overrides=["annotation=sagemaker"])
+                train_dir = str(cfg.annotation.sagemaker.instances.train.csv_dir)
+                annotations_base = os.path.dirname(train_dir)
+                sagemaker_root = os.path.join(annotations_base, "sagemaker")
+                output_dir = os.path.join(sagemaker_root, "output")
+                input_dir = os.path.join(sagemaker_root, "input")
+        except Exception:
+            annotations_base = os.getenv("BOEM_ANNOTATIONS_DIR", "/blue/ewhite/b.weinstein/BOEM/annotations")
+            output_dir = os.path.join(annotations_base, "sagemaker", "output")
+            input_dir = os.path.join(annotations_base, "sagemaker", "input")
+        paths = normalize_sagemaker_output_to_annotation_dirs(
+            sagemaker_output_dir=output_dir,
+            sagemaker_input_dir=input_dir,
+            annotations_base_dir=annotations_base,
+        )
+        for p in paths:
+            print(p)
+        print(f"Wrote {len(paths)} CSV(s) into annotation dirs.")
     else:
-        print("Usage: python -m src.sagemaker_gt get_refresh_token")
+        print("Usage: python -m src.sagemaker_gt get_refresh_token | normalize_outputs")

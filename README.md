@@ -96,31 +96,16 @@ GLOBUS_DEST_COLLECTION_ID=your_dest_collection_id  # Optional, defaults to UMESC
 
 ## Installation (uv)
 
-1. Clone the repository:
+1. Clone the repository and sync dependencies:
 ```bash
 git clone https://github.com/your-username/project-name.git
 cd project-name
+uv sync
 ```
 
-2. Install Python deps with uv (PyPI packages only):
-```bash
-uv venv -p 3.10
-uv pip install -e .
-```
+This installs PyTorch 2.4 + CUDA 12.1 and DGL from the indexes defined in `pyproject.toml`.
 
-3. Install PyTorch (CUDA 12.1) and torchvision from NVIDIA wheels:
-```bash
-uv pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
-```
-
-4. Install DGL matching your CUDA/PyTorch:
-```bash
-uv pip install dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
-```
-
-Notes:
-- If using CPU-only, install CPU wheels instead of cu121. See PyTorch and DGL docs.
-- H-CAST requires `timm==0.4.12` and OpenCV, already included in `pyproject.toml`.
+**DGL on Linux x86_64:** We use DGL from PyPI (the [data.dgl.ai](https://data.dgl.ai) wheel index often returns 403). The PyPI build of DGL 2.1 on Linux does not ship the optional GraphBolt C++ library. A small stub in `src/hcast/cast_models/graph_pool.py` pre-registers a dummy `dgl.graphbolt` so `import dgl` succeeds; the code only uses `dgl.geometry` (e.g. `farthest_point_sampler`), which works. Training and inference are unaffected. For GPU DGL when data.dgl.ai is available, you can switch the project to use that index and matching torch/CUDA versions.
 
 ## Usage
 

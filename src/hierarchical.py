@@ -138,17 +138,16 @@ class HCastWrapper:
 
 
 def load_hcast_model(
-    checkpoint_path, 
+    checkpoint_path,
+    label_csv: str,
     device: Optional[torch.device] = None,
-    label_csv: Optional[str] = None
 ) -> HCastWrapper:
     """Load H-CAST model from checkpoint and return a wrapper ready for inference.
 
     Args:
         checkpoint_path: Path to the checkpoint file
+        label_csv: Path to CSV with columns: species, genus, family (optional "index" = species class index).
         device: Device to load model on. If None, uses 'cuda' if available.
-        label_csv: Optional path to CSV file with columns: species, genus, family.
-                   If None, uses numeric labels (species_0, species_1, etc.)
     """
 
     if device is None:
@@ -209,70 +208,45 @@ def load_hcast_model(
 
     model = model.eval().to(device)
 
-    # Build label dict from CSV if provided, otherwise use numeric labels
-    species_df = None
-    species_to_genus = {}
-    if label_csv and os.path.exists(label_csv):
-        df = pd.read_csv(label_csv)
-        species_df = df.copy()
-        label_dict = {}
-        # Build species labels - map species index to species name
-        if 'species' in df.columns:
-            for idx, row in df.iterrows():
-                label_dict[f"species_{row['species']}"] = idx
-                # Create species index -> genus mapping
-                if 'genus' in df.columns and pd.notna(row['genus']):
-                    species_to_genus[idx] = row['genus']
-        
-        # Build genus labels - map genus index to genus name
-        # Note: Model's "family_head" (nb_classes[1] = 30) is actually genus
-        genus_label_dict = {}
-        if 'genus' in df.columns:
-            genus_df = df.drop_duplicates(subset=['genus']).reset_index(drop=True)
-            for idx, row in genus_df.iterrows():
-                label_dict[f"genus_{row['genus']}"] = idx
-                genus_label_dict[idx] = f"genus_{row['genus']}"
-        
-        # Fill in missing genus indices with numeric fallbacks
-        if len(nb_classes) > 1:
-            num_genus = nb_classes[1]  # Model's "family_head" is actually genus
-            for idx in range(num_genus):
-                if idx not in genus_label_dict:
-                    genus_label_dict[idx] = f"genus_{idx}"
-        
-        # Build family labels - map family index to family name
-        # Note: Model's "manufacturer_head" (nb_classes[2] = 14) is actually family
-        family_label_dict = {}
-        if 'family' in df.columns:
-            family_df = df.drop_duplicates(subset=['family']).reset_index(drop=True)
-            for idx, row in family_df.iterrows():
-                label_dict[f"family_{row['family']}"] = idx
-                family_label_dict[idx] = f"family_{row['family']}"
-        
-        # Fill in missing family indices with numeric fallbacks
-        if len(nb_classes) > 2:
-            num_families = nb_classes[2]  # Model's "manufacturer_head" is actually family
-            for idx in range(num_families):
-                if idx not in family_label_dict:
-                    family_label_dict[idx] = f"family_{idx}"
-    else:
-        # Fall back to numeric labels
-        label_dict = {f"species_{i}": i for i in range(nb_classes[0])}
-        if len(nb_classes) > 1:
-            start_idx = nb_classes[0]
-            for i in range(nb_classes[1]):
-                label_dict[f"family_{i}"] = start_idx + i
-        if len(nb_classes) > 2:
-            start_idx = nb_classes[0] + nb_classes[1]
-            for i in range(nb_classes[2]):
-                label_dict[f"manufacturer_{i}"] = start_idx + i
+    if not os.path.exists(label_csv):
+        raise FileNotFoundError(f"label_csv is required for H-CAST; file not found: {label_csv}")
 
-    # Create fallback label dicts if not provided
-    if not genus_label_dict and len(nb_classes) > 1:
-        genus_label_dict = {i: f"genus_{i}" for i in range(nb_classes[1])}
-    if not family_label_dict and len(nb_classes) > 2:
-        family_label_dict = {i: f"family_{i}" for i in range(nb_classes[2])}
-    
+    df = pd.read_csv(label_csv)
+    df = df.dropna(subset=['species'])
+    species_df = df.copy()
+    species_to_genus = {}
+    label_dict = {}
+    use_index_col = 'index' in df.columns
+    if 'species' not in df.columns:
+        raise ValueError(f"label_csv must contain a 'species' column: {label_csv}")
+    for idx, row in df.iterrows():
+        species_idx = int(row['index']) if use_index_col else idx
+        label_dict[f"species_{row['species']}"] = species_idx
+        if 'genus' in df.columns and pd.notna(row['genus']):
+            species_to_genus[species_idx] = row['genus']
+
+    genus_label_dict = {}
+    if 'genus' in df.columns:
+        genus_df = df.drop_duplicates(subset=['genus']).reset_index(drop=True)
+        for idx, row in genus_df.iterrows():
+            label_dict[f"genus_{row['genus']}"] = idx
+            genus_label_dict[idx] = f"genus_{row['genus']}"
+    if len(nb_classes) > 1:
+        for idx in range(nb_classes[1]):
+            if idx not in genus_label_dict:
+                genus_label_dict[idx] = f"genus_{idx}"
+
+    family_label_dict = {}
+    if 'family' in df.columns:
+        family_df = df.drop_duplicates(subset=['family']).reset_index(drop=True)
+        for idx, row in family_df.iterrows():
+            label_dict[f"family_{row['family']}"] = idx
+            family_label_dict[idx] = f"family_{row['family']}"
+    if len(nb_classes) > 2:
+        for idx in range(nb_classes[2]):
+            if idx not in family_label_dict:
+                family_label_dict[idx] = f"family_{idx}"
+
     return HCastWrapper(model=model, device=device, label_dict=label_dict, image_size=img_size, species_to_genus=species_to_genus, species_df=species_df, genus_label_dict=genus_label_dict, family_label_dict=family_label_dict)
 
 class USGSDataset(Dataset):

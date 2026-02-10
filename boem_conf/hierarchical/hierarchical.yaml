@@ -1,0 +1,7 @@
+# H-CAST hierarchical taxonomy model (optional)
+# Set checkpoint to null to disable; pipeline skips loading when null
+checkpoint:  /blue/ewhite/b.weinstein/src/BOEM/output/usgs_hvit_c2f_b128/best_checkpoint.pth
+# CSV with columns: species, genus, family (optional "index" = species class index). If null, numeric labels are used.
+label_csv: /blue/ewhite/b.weinstein/src/BOEM/output/species.csv
+batch_size: 16
+workers: 4

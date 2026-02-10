@@ -3,7 +3,7 @@ defaults:
   - server: serenity
   - classification_model: finetune.yaml
   - hierarchical: hierarchical.yaml
-  - annotation: sagemaker
+  - annotation: label_studio
 
 hydra:
   run:
@@ -24,13 +24,13 @@ comet:
 check_annotations: false
 # Force upload bypasses the pipeline, useful for debugging and starting a new project
 force_upload: False
-image_dir: /blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800
+image_dir: /blue/ewhite/b.weinstein/BOEM/imagery/JPG_20241107_135800
 
 predict:
   patch_size: 1000
   patch_overlap: 0
   min_score: 0.85
-  batch_size: 20
+  batch_size: 8
   # For web viz, expand pixels on all sides
   buffer: 60
 
@@ -55,7 +55,7 @@ detection_model:
   labels:
     - "Object"
   trainer: 
-    batch_size: 12
+    batch_size: 2
     train:
       fast_dev_run: False
       epochs: 4

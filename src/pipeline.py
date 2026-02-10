@@ -4,12 +4,12 @@ from omegaconf import DictConfig
 
 from src.active_learning import generate_pool_predictions, select_images, human_review
 from deepforest.model import CropModel
-from src import label_studio
 from src import sagemaker_gt
-from src.annotators import get_annotator
+from src.annotators import get_annotator, SageMakerAnnotator
 from src import detection
 from src import classification
 from src import hierarchical
+from src.usgs_annotations import load_usgs_annotated_image_paths
 from src.visualization import crop_images
 from src.pipeline_evaluation import PipelineEvaluation
 from pytorch_lightning.loggers import CometLogger
@@ -62,6 +62,16 @@ class Pipeline:
             self.check_new_annotations("validation")
             self.check_new_annotations("review")
 
+        if isinstance(self.annotator, SageMakerAnnotator):
+            train_dir = str(self.config.annotation.sagemaker.instances.train.csv_dir)
+            annotations_base = os.path.dirname(os.path.dirname(train_dir))
+            sagemaker_root = os.path.join(annotations_base, "sagemaker")
+            sagemaker_gt.normalize_sagemaker_output_to_annotation_dirs(
+                sagemaker_output_dir=os.path.join(sagemaker_root, "output"),
+                sagemaker_input_dir=os.path.join(sagemaker_root, "input"),
+                annotations_base_dir=annotations_base,
+            )
+
         self.existing_training = self.annotator.gather_data("train", image_dir=self.config.image_dir)
         self.existing_validation = self.annotator.gather_data("validation", image_dir=self.config.image_dir)
         self.existing_reviewed = self.annotator.gather_data("review", image_dir=self.config.image_dir)
@@ -70,15 +80,12 @@ class Pipeline:
         self.comet_logger.experiment.log_table(tabular_data=self.existing_training, filename="training_annotations.csv")
         self.comet_logger.experiment.log_table(tabular_data=self.existing_validation, filename="validation_annotations.csv")
         
-        # If a brand new folder, there are no annotations, we need to start the pipeline from scratch, upload random images to label studio
+        # If a brand new folder, there are no annotations. Continue in inference-only mode:
+        # run existing model on full pool and review imagery logic; skip training and eval.
         if self.existing_training is None and self.existing_validation is None and self.existing_reviewed is None:
-            self.existing_images = None
-            print("No existing annotations, starting from scratch")
-            # Select 10 random images to upload
-            images_to_upload = random.sample(self.all_images, 10)
-            self.annotator.upload(images=images_to_upload, instance_name="train", preannotations=None)
-
-            return False
+            self.existing_images = []
+            print("No existing annotations; running inference-only (no training or eval)")
+            return True
 
         else:
             if self.existing_training is not None:
@@ -93,7 +100,11 @@ class Pipeline:
             (self.existing_validation.image_path.tolist() if self.existing_validation is not None else []) +
             (self.existing_reviewed.image_path.tolist() if self.existing_reviewed is not None else [])
         ))
-
+        # Include USGS/UBFAI annotations from crops/train.csv and test.csv so we don't re-review
+        usgs_train_paths, usgs_test_paths = load_usgs_annotated_image_paths(self.config.image_dir)
+        if usgs_train_paths or usgs_test_paths:
+            print(f"Found {len(usgs_train_paths)} USGS/UBFAI train paths and {len(usgs_test_paths)} USGS/UBFAI test paths")
+            self.existing_images = list(set(self.existing_images + usgs_train_paths + usgs_test_paths))
 
         return True
 
@@ -101,16 +112,16 @@ class Pipeline:
         # Check for new annotations if the check_annotations flag is set
         status = self.check_annotations()
         
-        # If no data is available, exit
         if not status:
             return None
 
-        # If there are no annotations in any set, turn off force training
+        # existing_images is always a list after check_annotations ([] when no annotations)
         if len(self.existing_images) == 0:
-            self.config.force_training = False
+            self.config.detection_model.force_train = False
             print("No existing annotations, turning off force training")
-        
-        all_training = pd.concat([self.existing_training, self.existing_reviewed])
+
+        parts = [x for x in [self.existing_training, self.existing_reviewed] if x is not None]
+        all_training = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
         
         if self.config.detection_model.force_train:
             trained_detection_model = detection.preprocess_and_train(
@@ -140,11 +151,11 @@ class Pipeline:
 
         if classification_backend == "deepforest":
             # If there are no train annotations, turn off force training
-            if all_training.xmin[all_training.xmin != 0].empty:
+            if all_training.empty or (all_training.xmin[all_training.xmin != 0].empty):
                 self.config.classification_model.force_train = False
                 print("No training annotations, turning off force training")
-            
-            # If there are no validation annotations, turn off force training
+
+            # If there are no validation annotations, turn off force training (eval skipped later)
             if self.existing_validation is None:
                 self.config.classification_model.force_train = False
                 print("No validation annotations, turning off force training")
@@ -182,14 +193,20 @@ class Pipeline:
                 pool = list(non_empty_validation.image_path.unique())
                 pool = [os.path.join(self.config.image_dir, image) for image in pool][:10]
             else:
-                pool = random.sample(pool, 10)
+                pool = random.sample(pool, min(10, len(pool))) if pool else []
         
         trained_classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
         hcast_checkpoint = getattr(self.config.hierarchical, "checkpoint", None)
+        hcast_label_csv = getattr(self.config.hierarchical, "label_csv", None)
         hcast_model = None
         if hcast_checkpoint:
-            hcast_model = hierarchical.load_hcast_model(checkpoint_path=hcast_checkpoint)
+            if not hcast_label_csv:
+                raise ValueError("hierarchical.label_csv is required when hierarchical.checkpoint is set")
+            hcast_model = hierarchical.load_hcast_model(
+                checkpoint_path=hcast_checkpoint,
+                label_csv=hcast_label_csv,
+            )
         hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
         hcast_workers = getattr(self.config.hierarchical, "workers", 4)
 
@@ -359,36 +376,6 @@ class Pipeline:
         
         # give it a complete tag
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
-
-        # Use generic annotator to upload for each instance
-        for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():
-            if len(image_basenames) == 0:
-                print(f"No images to upload for instance {instance}, skipping")
-                continue
-
-            image_paths = [os.path.join(self.config.image_dir, x) for x in image_basenames]
-            # Normalize image_path in final_predictions to basenames for comparison
-            final_predictions_normalized = final_predictions.copy()
-            final_predictions_normalized["image_path_basename"] = final_predictions_normalized["image_path"].apply(
-                lambda x: os.path.basename(x) if os.path.sep in str(x) else x
-            )
-            preannotations_df = final_predictions_normalized[
-                final_predictions_normalized["image_path_basename"].isin(image_basenames)
-            ].copy(deep=True)
-
-            # As a dict with basename as key (matching what SageMaker upload expects)
-            preannotations = {}
-            for basename, group in preannotations_df.groupby("image_path_basename"):
-                # Ensure image_path column uses basename for manifest writing
-                group = group.copy()
-                group["image_path"] = basename
-                # Use basename as key to match the format expected by SageMaker upload
-                preannotations[basename] = group.drop(columns=["image_path_basename"], errors="ignore")
-            self.annotator.upload(images=image_paths, instance_name=instance, preannotations=preannotations)
-
-        self.comet_logger.experiment.add_tag("complete")
-        return None
-_data=final_predictions, filename="final_predictions.csv")
 
         # Use generic annotator to upload for each instance
         for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():

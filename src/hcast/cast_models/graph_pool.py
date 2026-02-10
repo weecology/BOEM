@@ -1,6 +1,14 @@
 """Define Graph Pooling."""
 import math
+import sys
+import types
 from functools import partial
+
+# Stub dgl.graphbolt so PyPI DGL 2.1 (missing libgraphbolt on Linux x86_64) can be imported
+if "dgl.graphbolt" not in sys.modules:
+    _gb = types.ModuleType("dgl.graphbolt")
+    _gb.load_graphbolt = lambda: None
+    sys.modules["dgl.graphbolt"] = _gb
 
 import torch
 import torch.nn as nn

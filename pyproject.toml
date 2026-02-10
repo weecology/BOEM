@@ -17,7 +17,8 @@ dependencies = [
   "bokeh",
   "matplotlib",
   "paramiko",
-  "torch",
+  "torch>=2.4,<2.5",
+  "torchvision>=0.19,<0.20",
   "torchmetrics",
   "pytorch-lightning",
   "label-studio-sdk",
@@ -27,30 +28,25 @@ dependencies = [
   "globus-sdk",
   "timm",
   "opencv-contrib-python",
-  "dgl",
+  "dgl>=2.0,<2.2",
+  "torchdata>=0.5,<0.9",
   "pytest",
   "python-dotenv>=1.2.1",
   "dotenv",
   "scikit-learn",
 ]
 
+# PyTorch 2.4 + CUDA 12.1. DGL from PyPI (CPU); for GPU DGL see README (data.dgl.ai wheels often return 403).
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
 explicit = true
-
-[[tool.uv.index]]
-name = "dgl-cu121"
-url = "https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html"
-explicit = true
-format = "flat"
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu128"},
+  { index = "pytorch-cu121" },
 ]
 torchvision = [
-  { index = "pytorch-cu128" },
+  { index = "pytorch-cu121" },
 ]
-dgl = [{ index = "dgl-cu121" }]
 deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "main" }

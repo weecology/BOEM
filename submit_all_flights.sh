@@ -106,10 +106,10 @@ while IFS= read -r -d '' folder; do
 #SBATCH --output=/home/b.weinstein/logs/BOEM_%j.out
 #SBATCH --error=/home/b.weinstein/logs/BOEM_%j.err
 #SBATCH --ntasks-per-node=1
-#SBATCH --partition=hpg-b200
+#SBATCH --partition=hpg-turin
 #SBATCH --gpus=1
 
-uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100000 debug=False
+uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=1000 debug=False
 EOF
   sleep "$SLEEP_SEC"
 done < <(find "${find_args[@]}" -print0 | sort -z)

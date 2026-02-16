@@ -108,6 +108,71 @@ def label_studio_bbox_format(local_image_dir, preannotations):
     # As a dict
     return {"result": predictions}
 
+
+def format_prediction_summary_for_task(prediction_df: pd.DataFrame) -> str:
+    """Format crop model + hierarchical model predictions as read-only text for Label Studio task data.
+
+    When the prediction DataFrame has hcast_* columns, includes species/genus/family and scores.
+    Display in Label Studio via a Header or Text tag with value=$prediction_summary.
+    """
+    if prediction_df is None or prediction_df.empty:
+        return "No detections for this image."
+    lines = []
+    for i, (_, row) in enumerate(prediction_df.iterrows(), 1):
+        crop_label = row.get("cropmodel_label", row.get("label", "—"))
+        score = row.get("score", row.get("cropmodel_score", ""))
+        if isinstance(score, (int, float)):
+            parts = [f"Crop {i}: {crop_label} (score={score:.2f})"]
+        else:
+            parts = [f"Crop {i}: {crop_label}"]
+        if "hcast_species" in row and pd.notna(row.get("hcast_species")):
+            sp = row["hcast_species"]
+            gn = row.get("hcast_genus")
+            fa = row.get("hcast_family")
+            sp_s = row.get("hcast_species_score")
+            parts.append(f"  H-CAST: species={sp}")
+            if pd.notna(gn):
+                parts.append(f", genus={gn}")
+            if pd.notna(fa):
+                parts.append(f", family={fa}")
+            if sp_s is not None and isinstance(sp_s, (int, float)):
+                parts.append(f" (species_score={sp_s:.2f})")
+        lines.append("".join(parts))
+    return "\n".join(lines) if lines else "No detections for this image."
+
+
+def format_prediction_summary_for_task(prediction_df: pd.DataFrame) -> str:
+    """Format crop model + hierarchical (H-CAST) predictions as read-only text for Label Studio task data.
+
+    Add the result to task data as prediction_summary and display it with
+    <Text value="$prediction_summary" valueType="text"/> or <Header value="$prediction_summary"/> in the label config.
+    """
+    if prediction_df is None or prediction_df.empty:
+        return "No detections for this image."
+    lines = []
+    for i, (_, row) in enumerate(prediction_df.iterrows(), 1):
+        crop_label = row.get("cropmodel_label", row.get("label", "\u2014"))
+        score = row.get("score", row.get("cropmodel_score", ""))
+        if isinstance(score, (int, float)):
+            parts = [f"Crop {i}: {crop_label} (score={score:.2f})"]
+        else:
+            parts = [f"Crop {i}: {crop_label}"]
+        if "hcast_species" in row and pd.notna(row.get("hcast_species")):
+            sp = row["hcast_species"]
+            gn = row.get("hcast_genus")
+            fa = row.get("hcast_family")
+            sp_s = row.get("hcast_species_score")
+            parts.append(f"  H-CAST: species={sp}")
+            if pd.notna(gn):
+                parts.append(f", genus={gn}")
+            if pd.notna(fa):
+                parts.append(f", family={fa}")
+            if sp_s is not None and isinstance(sp_s, (int, float)):
+                parts.append(f" (species_score={sp_s:.2f})")
+        lines.append("".join(parts))
+    return "\n".join(lines) if lines else "No detections for this image."
+
+
 # check_if_complete label studio images are done
 def check_if_complete(annotations):
     """Check if any new images have been labeled.
@@ -282,9 +347,13 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
         print(f"Importing {image_name} into Label Studio")
         basename = os.path.basename(image_name)
         flight_name = os.path.dirname(image_name).split("/")[-1]
-        data_dict = {'image': os.path.join("/data/local-files/?d=BOEM/input/",basename ), 'flight_name':flight_name}
+        data_dict = {
+            'image': os.path.join("/data/local-files/?d=BOEM/input/", basename),
+            'flight_name': flight_name,
+        }
         if predictions is not None:
-            prediction = predictions[basename]
+            prediction = predictions.get(basename, pd.DataFrame())
+            data_dict["prediction_summary"] = format_prediction_summary_for_task(prediction)
             # Skip predictions if there are none
             if prediction.empty:
                 result_dict = []
@@ -292,6 +361,7 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
                 result_dict = [label_studio_bbox_format(local_image_dir, prediction)]
             upload_dict = {"data": data_dict, "predictions": result_dict}
         else:
+            data_dict["prediction_summary"] = "No prediction data for this task."
             upload_dict = {"data": data_dict}
         tasks.append(upload_dict)
     

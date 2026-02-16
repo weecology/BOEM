@@ -1,4 +1,6 @@
 import os
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import torch
@@ -9,25 +11,27 @@ from torchvision.ops.boxes import box_iou
 from torchvision.models.detection._utils import Matcher
 
 class PipelineEvaluation:
-    def __init__(self, predictions, annotations, classification_label_dict, detection_true_positive_threshold=0.85, classification_threshold=0.5):
+    def __init__(self, predictions, annotations, classification_label_dict, detection_true_positive_threshold=0.85, classification_threshold=0.5, species_to_genus=None):
         """Initialize pipeline evaluation.
-        
+
         Args:
             predictions: DataFrame containing the predictions
             annotations: DataFrame containing the annotations
-            classification_label_dict: Dictionary mapping classification labels to integers 
+            classification_label_dict: Dictionary mapping classification labels to integers
             detection_true_positive_threshold (float): IoU threshold for considering a detection a true positive
             classification_threshold (float): Threshold for classification confidence score
+            species_to_genus: Optional dict mapping species name (str) to genus name (str), for genus agreement when hcast columns exist.
         """
-        self.detection_true_positive_threshold = detection_true_positive_threshold 
-        self.classification_threshold = classification_threshold 
+        self.detection_true_positive_threshold = detection_true_positive_threshold
+        self.classification_threshold = classification_threshold
         self.predictions = predictions
         self.annotations = annotations
         self.classification_label_dict = classification_label_dict
+        self.species_to_genus = species_to_genus if species_to_genus is not None else {}
 
     def _format_targets(self, annotations_df, label_column="cropmodel_label"):
         targets = {}
-        
+
         if annotations_df.empty:
             targets["boxes"] = torch.tensor([])
             targets["labels"] = torch.tensor([])
@@ -46,26 +50,26 @@ class PipelineEvaluation:
                 targets["scores"] = torch.tensor(annotations_df["score"].tolist())
 
         return targets
-    
+
     def match_predictions_and_targets(self, pred, target):
         """
         Matches predicted bounding boxes with source bounding boxes using Intersection over Union (IoU).
-        
+
         Args:
             pred (Tensor): A tensor containing the source bounding boxes.
             target (Tensor): A tensor containing the predicted bounding boxes.
-        
+
         Returns:
             DataFrame: A dataframe containing the matched predictions and targets.
         """
         # Match predictions and targets
         matcher = Matcher(0.3, 0.3, allow_low_quality_matches=False)
-        
+
         pred_boxes = pred["boxes"]
         src_boxes = target["boxes"]
 
         match_quality_matrix = box_iou(src_boxes, pred_boxes)
-        
+
         results = matcher(match_quality_matrix)
 
         matched_pred = []
@@ -82,11 +86,102 @@ class PipelineEvaluation:
                 matched_target.append(None)
                 matched_score.append(pred["scores"][i].item())
 
-        matches = pd.DataFrame({"pred": matched_pred, "target": matched_target, "score":matched_score})
+        matches = pd.DataFrame({"pred": matched_pred, "target": matched_target, "score": matched_score})
         matches = matches.dropna(subset=["target"])
 
         return matches
-            
+
+    def _match_boxes_to_targets_with_indices(self, pred_boxes, pred_labels, pred_scores, target):
+        """Like match_predictions_and_targets but returns DataFrame with pred_idx (prediction row index)."""
+        matcher = Matcher(0.3, 0.3, allow_low_quality_matches=False)
+        match_quality_matrix = box_iou(target["boxes"], pred_boxes)
+        results = matcher(match_quality_matrix)
+        rows = []
+        for pred_idx, match in enumerate(results):
+            if match >= 0:
+                rows.append({
+                    "pred_idx": pred_idx,
+                    "pred": int(pred_labels[pred_idx].item()),
+                    "target": int(target["labels"][match].item()),
+                    "score": pred_scores[pred_idx].item(),
+                })
+        return pd.DataFrame(rows)
+
+    def _evaluate_hierarchical_metrics(self):
+        """Compute species agreement (crop vs hcast), genus agreement (crop genus vs hcast genus), and hierarchical model accuracy.
+        Only runs when predictions have hcast_species. Logged like flat crop classifier metrics.
+        """
+        if "hcast_species" not in self.predictions.columns:
+            return {}
+
+        ann = self.annotations.copy(deep=True)
+        ann = ann[~ann.label.isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
+        ann = ann[ann.xmin != 0]
+        ann = ann[~ann.label.isnull()]
+        ann["label"] = ann["label"].apply(lambda x: " ".join(x.split()[:2]))
+        ann = ann[ann["label"].apply(lambda x: len(x.split()) == 2)]
+        ann = ann[ann["label"].isin(self.classification_label_dict.keys())]
+        if ann.empty:
+            return {"species_agreement": None, "genus_agreement": None, "hierarchical_micro_accuracy": None, "hierarchical_macro_accuracy": None}
+
+        preds = self.predictions[self.predictions.image_path.isin(ann.image_path)].copy()
+        preds = preds[preds["hcast_species"].notna() & preds["cropmodel_label"].isin(self.classification_label_dict.keys())]
+        if preds.empty:
+            return {"species_agreement": None, "genus_agreement": None, "hierarchical_micro_accuracy": None, "hierarchical_macro_accuracy": None}
+
+        ann["cropmodel_label"] = ann["label"].apply(lambda x: self.classification_label_dict[x])
+        num_classes = max(len(self.classification_label_dict), 1)
+        micro_acc = Accuracy(average="micro", task="multiclass", num_classes=num_classes) if num_classes > 1 else Accuracy(average="micro", task="binary")
+        macro_acc = Accuracy(average="macro", task="multiclass", num_classes=num_classes) if num_classes > 1 else Accuracy(average="micro", task="binary")
+
+        species_agree = []
+        genus_agree = []
+        hcast_pred_labels = []
+        hcast_target_labels = []
+
+        for image_path in preds.drop_duplicates("image_path").image_path.tolist():
+            img_ann = ann.loc[ann.image_path == os.path.basename(image_path)]
+            img_pred = preds.loc[preds.image_path == image_path].reset_index(drop=True)
+            if img_pred.empty or img_ann.empty:
+                continue
+            target = self._format_targets(img_ann, label_column="cropmodel_label")
+            pred_boxes = torch.tensor(img_pred[["xmin", "ymin", "xmax", "ymax"]].values.astype("float32"))
+            pred_labels = torch.tensor(img_pred["cropmodel_label"].apply(lambda x: self.classification_label_dict[x]).values)
+            pred_scores = torch.tensor(img_pred["cropmodel_score"].values) if "cropmodel_score" in img_pred.columns else torch.ones(len(img_pred))
+            if len(target["labels"]) == 0:
+                continue
+            matches = self._match_boxes_to_targets_with_indices(pred_boxes, pred_labels, pred_scores, target)
+            if matches.empty:
+                continue
+
+            for _, row in matches.iterrows():
+                pred_idx = int(row["pred_idx"])
+                target_label_int = int(row["target"])
+                pred_row = img_pred.iloc[pred_idx]
+                crop_label_str = str(pred_row["cropmodel_label"])
+                hcast_sp = pred_row.get("hcast_species")
+                hcast_gn = pred_row.get("hcast_genus")
+                if hcast_sp is None or pd.isna(hcast_sp):
+                    continue
+                species_agree.append(crop_label_str == hcast_sp)
+                crop_genus = self.species_to_genus.get(crop_label_str)
+                if crop_genus is not None and hcast_gn is not None and not pd.isna(hcast_gn):
+                    genus_agree.append(crop_genus == str(hcast_gn))
+                hcast_label_int = self.classification_label_dict.get(hcast_sp)
+                if hcast_label_int is not None:
+                    hcast_pred_labels.append(hcast_label_int)
+                    hcast_target_labels.append(target_label_int)
+                    micro_acc.update(preds=torch.tensor([hcast_label_int]), target=torch.tensor([target_label_int]))
+                    macro_acc.update(preds=torch.tensor([hcast_label_int]), target=torch.tensor([target_label_int]))
+
+        out = {
+            "species_agreement": float(np.mean(species_agree)) if species_agree else None,
+            "genus_agreement": float(np.mean(genus_agree)) if genus_agree else None,
+            "hierarchical_micro_accuracy": float(micro_acc.compute()) if hcast_pred_labels else None,
+            "hierarchical_macro_accuracy": float(macro_acc.compute()) if hcast_pred_labels else None,
+        }
+        return out
+
     def evaluate_confident_classification(self, predictions):
         """Evaluate confident classification performance"""
         return self._evaluate_classification(predictions)
@@ -97,11 +192,11 @@ class PipelineEvaluation:
 
     def _evaluate_classification(self, predictions):
         """Helper function to evaluate classification performance.
-        
+
         Args:
             predictions (DataFrame): DataFrame containing the predictions.
             accuracy_metric (torchmetrics.Metric): Metric to evaluate accuracy.
-        
+
         Returns:
             dict: Dictionary containing the computed accuracy metric.
         """
@@ -112,14 +207,14 @@ class PipelineEvaluation:
         self.classification_annotations = self.classification_annotations[~self.classification_annotations.label.isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
         self.classification_annotations = self.classification_annotations[self.classification_annotations.xmin != 0]
         self.classification_annotations = self.classification_annotations[~self.classification_annotations.label.isnull()]
-        
+
         if self.classification_annotations.empty:
             return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
-        
+
         # Only two word labels
         self.classification_annotations["label"] = self.classification_annotations["label"].apply(lambda x: ' '.join(x.split()[:2]))
         self.classification_annotations = self.classification_annotations[self.classification_annotations["label"].apply(lambda x: len(x.split()) == 2)]
-    
+
         if self.classification_annotations.empty:
             return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
 
@@ -130,25 +225,25 @@ class PipelineEvaluation:
 
         # Metrics
         num_classes = len(self.classification_label_dict)
-        
+
         if num_classes == 0:
             return {"accuracy": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
         elif num_classes == 1:
             micro_accuracy = Accuracy(average="micro", task="binary")
             # In a single class scenario, micro and macro accuracy are the same
             macro_accuracy = micro_accuracy
-        else:  
+        else:
             micro_accuracy = Accuracy(average="micro", task="multiclass", num_classes=num_classes)
             macro_accuracy = Accuracy(average="macro", task="multiclass", num_classes=num_classes)
-        
+
         true_positive_scores = []
         false_positive_scores = []
         for image_path in predictions.drop_duplicates("image_path").image_path.tolist():
             image_targets = self.classification_annotations.loc[self.classification_annotations.image_path == os.path.basename(image_path)]
-            image_predictions = predictions.loc[predictions.image_path == os.path.basename(image_path)]            
+            image_predictions = predictions.loc[predictions.image_path == os.path.basename(image_path)]
             if image_predictions.empty:
                 continue
-            
+
             target = self._format_targets(image_targets, label_column="cropmodel_label")
             pred = self._format_targets(image_predictions, label_column="cropmodel_label")
             if len(target["labels"]) == 0:
@@ -156,7 +251,7 @@ class PipelineEvaluation:
             matches = self.match_predictions_and_targets(pred, target)
             if matches.empty:
                 continue
-            
+
             true_positive_scores.append(matches.loc[matches.target == matches.pred,"score"])
             false_positive_scores.append(matches.loc[~(matches.target == matches.pred),"score"])
 
@@ -164,18 +259,18 @@ class PipelineEvaluation:
             macro_accuracy.update(preds=torch.tensor(matches["pred"].values), target=torch.tensor(matches["target"].values))
 
         results = {
-            "micro_accuracy": micro_accuracy.compute(), 
+            "micro_accuracy": micro_accuracy.compute(),
             "macro_accuracy": macro_accuracy.compute(),
-            "avg_true_classification_score": round(float(np.mean([score.mean() for score in true_positive_scores])), 2), 
+            "avg_true_classification_score": round(float(np.mean([score.mean() for score in true_positive_scores])), 2),
             "avg_false_classification_score": round(float(np.mean([score.mean() for score in false_positive_scores])), 2)
         }
-        
+
         return results
-    
+
     def evaluate_detection(self):
         """Evaluate detection performance"""
         detection_predictions = self.predictions[self.predictions.image_path.isin(self.annotations.image_path)]
-        detection_predictions = detection_predictions[detection_predictions.xmin != 0]   
+        detection_predictions = detection_predictions[detection_predictions.xmin != 0]
         detection_predictions = detection_predictions[~detection_predictions.label.isnull()]
         combined_predictions = gpd.GeoDataFrame(detection_predictions)
 
@@ -192,7 +287,7 @@ class PipelineEvaluation:
             ground_truth,
             iou_threshold=self.detection_true_positive_threshold
         )
-        
+
         non_empty_results = iou_results["results"][~iou_results["results"]["score"].isna()]
         if non_empty_results.empty:
             return {"recall": None, "precision": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
@@ -201,11 +296,11 @@ class PipelineEvaluation:
             non_empty_results["match"] = non_empty_results["match"].astype(bool)
             avg_score_true_positive = non_empty_results.loc[non_empty_results["match"]].score.mean()
             avg_score_false_positive = non_empty_results.loc[~non_empty_results["match"]].score.mean()
-        
+
         results = {
-            "recall": iou_results["box_recall"], 
-            "precision": iou_results["box_precision"], 
-            "avg_score_true_positive": avg_score_true_positive, 
+            "recall": iou_results["box_recall"],
+            "precision": iou_results["box_precision"],
+            "avg_score_true_positive": avg_score_true_positive,
             "avg_score_false_positive": avg_score_false_positive
         }
 
@@ -221,16 +316,20 @@ class PipelineEvaluation:
         else:
             self.confident_predictions = self.predictions[self.predictions.cropmodel_score > self.classification_threshold]
             self.uncertain_predictions = self.predictions[self.predictions.cropmodel_score <= self.classification_threshold]
+
+            hierarchical_metrics = self._evaluate_hierarchical_metrics()
+
             self.predictions["cropmodel_label"] = self.predictions["cropmodel_label"].apply(lambda x: self.classification_label_dict[x])
 
             detection_results = self.evaluate_detection()
             confident_classification_results = self.evaluate_confident_classification(self.confident_predictions)
             uncertain_classification_results = self.evaluate_uncertain_classification(self.uncertain_predictions)
             self.results = {
-                "detection": detection_results, 
+                "detection": detection_results,
                 "classification": {
-                    "confident": confident_classification_results, 
-                    "uncertain": uncertain_classification_results
+                    "confident": confident_classification_results,
+                    "uncertain": uncertain_classification_results,
+                    **hierarchical_metrics,
                 }
             }
 

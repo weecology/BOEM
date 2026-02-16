@@ -5,10 +5,10 @@
 #SBATCH --account=ewhite
 #SBATCH --nodes=1                 # Number of MPI ran
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=100GB
+#SBATCH --mem=80GB
 #SBATCH --time=48:00:00       #Time limit hrs:min:sec
-#SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
-#SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
+#SBATCH --output=/home/b.weinstein/logs/detection_BOEM%j.out   # Standard output and error log
+#SBATCH --error=/home/b.weinstein/logs/detection_BOEM%j.err
 #SBATCH --partition=hpg-b200
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus=1

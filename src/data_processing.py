@@ -170,7 +170,7 @@ def process_image(
     # Update geometry for FalsePositives
     crop_annotation.drop(columns=["geometry"], inplace=True)
     crop_annotation = pd.DataFrame(crop_annotation)
-    crop_annotation = read_file(crop_annotation)
+    crop_annotation = read_file(crop_annotation, root_dir=save_dir)
     
     # Remove duplicates
     crop_annotation = crop_annotation.drop_duplicates(subset=["image_path", "xmin", "ymin", "xmax", "ymax", "label"])

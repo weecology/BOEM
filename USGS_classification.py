@@ -8,6 +8,24 @@ from omegaconf import DictConfig
 import os
 from deepforest.model import CropModel
 
+def gentle_class_balance(df, factor=3.0, random_state=None):
+    """
+    Gently reduce majority-class dominance by capping each class at factor * median(class_counts).
+    Not full balance: small classes are unchanged; only large classes are downsampled.
+    """
+    counts = df.groupby("label").size()
+    median_count = int(counts.median())
+    cap = max(median_count, int(median_count * factor))
+    balanced = []
+    for label in df["label"].unique():
+        class_df = df[df["label"] == label]
+        if len(class_df) <= cap:
+            balanced.append(class_df)
+        else:
+            balanced.append(class_df.sample(n=cap, random_state=random_state))
+    return pd.concat(balanced, ignore_index=True)
+
+
 # Create train test split, split each class into 90% train and 10% test with a minimum of 5 images per class for test and a max of 100
 def train_test_split(df, test_size=0.1, min_test_images=5, max_test_images=100):
     train_df = pd.DataFrame()
@@ -69,9 +87,19 @@ def main(cfg: DictConfig):
     crop_annotations["xmax"] += 30
     crop_annotations["ymax"] += 30
 
+    # Gentle class balance: cap each class at 3x median size to reduce majority-class dominance (e.g. larus argentinus)
+    n_before = len(crop_annotations)
+    crop_annotations = gentle_class_balance(crop_annotations, factor=3.0, random_state=42)
+    n_after = len(crop_annotations)
+    if n_before > n_after:
+        print(f"[class balance] downsampled training pool {n_before} -> {n_after} (cap = 3x median per class)")
+
     train_df, validation_df = train_test_split(crop_annotations)
 
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
+    comet_logger.experiment.log_parameter("class_balance_applied", True)
+    comet_logger.experiment.log_parameter("class_balance_cap_factor", 3.0)
+    comet_logger.experiment.log_parameter("train_pool_size_after_balance", n_after)
 
     # Log train and val dataframes to comet
     train_csv_path = "/tmp/train_annotations.csv"

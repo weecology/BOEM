@@ -186,6 +186,8 @@ class Pipeline:
 
         pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG")) 
         pool = [image for image in pool if image not in self.existing_images]
+        pool_limit = getattr(self.config.active_learning, "pool_limit", None)
+        print(f"Pool: {len(pool)} images (after excluding existing), pool_limit={pool_limit}")
 
         if self.config.debug:
             if self.existing_validation is not None:
@@ -228,6 +230,10 @@ class Pipeline:
         if flightline_predictions is None:
             print("No predictions")
             return None
+
+        n_images_with_detections = flightline_predictions["image_path"].nunique()
+        n_detections = len(flightline_predictions)
+        print(f"Pool: {n_images_with_detections} images with ≥{self.config.predict.min_score} detections ({n_detections} total boxes)")
         
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id
 
@@ -239,11 +245,16 @@ class Pipeline:
 
 
             label_dict = trained_classification_model.label_dict
-                
-            pipeline_monitor = PipelineEvaluation(
+            species_to_genus = {}
+            if hcast_label_csv and os.path.exists(hcast_label_csv):
+                label_df = pd.read_csv(hcast_label_csv).dropna(subset=["species"])
+                if "genus" in label_df.columns:
+                    species_to_genus = dict(zip(label_df["species"], label_df["genus"]))
+            pipeline_monitor = PipelineEvaluation(  # species_to_genus added for hierarchical metrics
                 predictions=evaluation_predictions,
                 annotations=evaluation_annotations,
                 classification_label_dict=label_dict,
+                species_to_genus=species_to_genus,
                 **self.config.pipeline_evaluation)
 
             performance = pipeline_monitor.evaluate()
@@ -259,6 +270,8 @@ class Pipeline:
             strategy="random",
            n=self.config.active_testing.n_images,
         )
+        if len(test_images_to_annotate) < self.config.active_testing.n_images and len(test_images_to_annotate) > 0:
+            print(f"Test: requested {self.config.active_testing.n_images} images but only {flightline_predictions['image_path'].nunique()} images have any detection ≥min_score; using all {len(test_images_to_annotate)}")
 
         print(f"Test images to annotate: {len(test_images_to_annotate)}")
 
@@ -274,6 +287,8 @@ class Pipeline:
             rarest_confidence_selection=getattr(self.config.active_learning, "rarest_confidence_selection", "lowest"),
             min_classification_score=getattr(self.config.active_learning, "min_classification_score", None),
         )
+        if len(train_images_to_annotate) == 0 and training_preannotations.empty:
+            print("Training images to annotate: 0 (all images with detections ≥min_score were assigned to test)")
         
         print(f"Training images to annotate: {len(train_images_to_annotate)}")
         human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]

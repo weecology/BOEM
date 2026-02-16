@@ -111,7 +111,7 @@ def compute_loss_for_image(model, annotations_df, image_path, image_dir, iou_thr
     return loss
 
 
-def find_high_loss_images(csv_dir, checkpoint_path, image_dir, n=5000, top_n=100):
+def find_high_loss_images(csv_dir, checkpoint_path, image_dir, n=10, top_n=100):
     """Find images with highest loss from train and test CSVs.
     
     Args:
@@ -396,7 +396,7 @@ def run():
     parser.add_argument('--image_dir', type=str,
                        default='/blue/ewhite/b.weinstein/bird_detector_retrain/2022paper_expanded',
                        help='Directory containing images')
-    parser.add_argument('--top_n', type=int, default=100,
+    parser.add_argument('--top_n', type=int, default=1,
                        help='Number of top images to select')
     parser.add_argument('--project_name', type=str,
                        default='Global Bird Detector',

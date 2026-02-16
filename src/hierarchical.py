@@ -17,7 +17,7 @@ def _infer_head_sizes_from_checkpoint(ckpt: Dict[str, torch.Tensor]) -> Tuple[in
     family = None
     manufacturer = None
 
-    # Common head names used in CAST hierarchical models
+    # Common head names used in hierarchical models
     if "head.weight" in ckpt:
         species = ckpt["head.weight"].shape[0]
     # Try other possible keys
@@ -142,7 +142,10 @@ def load_hcast_model(
     label_csv: str,
     device: Optional[torch.device] = None,
 ) -> HCastWrapper:
-    """Load H-CAST model from checkpoint and return a wrapper ready for inference.
+    """Load hierarchical DeiT ViT model from checkpoint and return a wrapper ready for inference.
+
+    Only DeiT hierarchical checkpoints (e.g. deit_small_patch16_224 from main_hier.py) are
+    supported. CAST checkpoints (DGL/graph pooling) are not supported.
 
     Args:
         checkpoint_path: Path to the checkpoint file
@@ -153,12 +156,8 @@ def load_hcast_model(
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Import cast models to register them with timm (required for create_model)
-    from src.hcast.cast_models import cast_deit_hier
-    from src.hcast.deit import models_hier
-    
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    
+
     # Extract model state dict
     if "model" in checkpoint:
         model_state_dict = checkpoint["model"]
@@ -166,29 +165,42 @@ def load_hcast_model(
         model_state_dict = checkpoint["state_dict"]
     else:
         model_state_dict = checkpoint
-    
-    if 'args' in checkpoint:
-        args = checkpoint['args']
-        # Create model using the saved arguments (most reliable)
+
+    # Only DeiT hierarchical (ViT) checkpoints are supported; CAST (DGL) checkpoints are not.
+    is_cast = any("pool" in k for k in model_state_dict.keys())
+    if is_cast:
+        raise ValueError(
+            "This checkpoint is a CAST model (uses graph pooling/DGL). "
+            "Only DeiT hierarchical ViT checkpoints are supported. "
+            "Use a checkpoint trained with main_hier.py (e.g. deit_small_patch16_224)."
+        )
+    args = checkpoint.get("args")
+    if args is not None and getattr(args, "model", "").startswith("cast_"):
+        raise ValueError(
+            f"Checkpoint requests CAST model {args.model}. "
+            "Only DeiT hierarchical ViT models are supported (e.g. deit_small_patch16_224)."
+        )
+
+    # Register and use DeiT hierarchical models only (no DGL)
+    from src.hcast.deit import models_hier
+
+    if args is not None:
         model = create_model(
             args.model,
             pretrained=False,
             num_classes=args.nb_classes[0],
-            drop_rate=getattr(args, 'drop', 0.0),
-            drop_path_rate=getattr(args, 'drop_path', 0.0),
+            drop_rate=getattr(args, "drop", 0.0),
+            drop_path_rate=getattr(args, "drop_path", 0.0),
             drop_block_rate=None,
-            img_size=getattr(args, 'input_size', 224),
-            nb_classes=args.nb_classes
+            img_size=getattr(args, "input_size", 224),
+            nb_classes=args.nb_classes,
         )
-        img_size = getattr(args, 'input_size', 224)
+        img_size = getattr(args, "input_size", 224)
         nb_classes = args.nb_classes
     else:
-        # Fallback: try to infer from state dict
         species_classes, family_classes, manu_classes = _infer_head_sizes_from_checkpoint(model_state_dict)
         nb_classes = [c for c in [species_classes, family_classes, manu_classes] if c is not None]
-        
-        # Default to cast_small if we can't determine
-        model_name = 'cast_small'
+        model_name = "deit_small_patch16_224"
         model = create_model(
             model_name,
             pretrained=False,

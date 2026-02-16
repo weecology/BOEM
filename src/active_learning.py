@@ -64,6 +64,7 @@ def generate_pool_predictions(
     """
     if len(pool) > pool_limit:
         pool = random.sample(pool, pool_limit)
+    print(f"Predicting on {len(pool)} images (pool_limit={pool_limit})")
 
     preannotations = detection.predict(
         m=model,

@@ -19,7 +19,7 @@ batch_size = args.batch_size
 workers = args.workers
 
 savedir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
-train = pd.read_csv(os.path.join(savedir,"train.csv"))
+train =pd.read_csv(os.path.join(savedir,"train.csv"))
 test = pd.read_csv(os.path.join(savedir,"test.csv"))
 
 # Print the number of empty images in train and test sets
@@ -38,9 +38,9 @@ m.config["train"]["fast_dev_run"] = False
 m.config["validation"]["csv_file"] = os.path.join(savedir,"test.csv")
 m.config["validation"]["root_dir"] = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
 m.config["batch_size"] = batch_size
-m.config["train"]["epochs"] = 12
+m.config["train"]["epochs"] = 30
 m.config["workers"] = workers
-m.config["validation"]["val_accuracy_interval"] = 1
+m.config["validation"]["val_accuracy_interval"] = 2
 m.config["train"]["scheduler"]["params"]["eps"]  = 0
 m.config["train"]["lr"] = 0.001
 

@@ -1,6 +1,9 @@
 import os
 import glob
 
+import numpy as np
+import rasterio
+from PIL import Image
 from deepforest.model import CropModel
 import torch
 import datetime
@@ -62,19 +65,42 @@ def filter_annotations(crop_annotations):
     
     return crop_annotations
 
+def write_crops(model, boxes, root_dir, images, labels, savedir):
+    """Write crops to disk using PIL to preserve RGB channel order.
+
+    CropModel.write_crops uses cv2.imwrite which interprets the RGB array
+    from rasterio as BGR, swapping the R and B channels in saved PNGs.
+    This function avoids that by saving with PIL.
+    """
+    for label in set(labels):
+        os.makedirs(os.path.join(savedir, label), exist_ok=True)
+
+    for index, box in enumerate(boxes):
+        label = labels[index]
+        image = images[index]
+        with rasterio.open(os.path.join(root_dir, image)) as src:
+            square_box = model.expand_bbox_to_square(box, src.width, src.height)
+            xmin, ymin, xmax, ymax = [int(v) for v in square_box]
+            img = src.read(window=((ymin, ymax), (xmin, xmax)))
+            img = np.rollaxis(img, 0, 3)  # (C, H, W) -> (H, W, C), RGB
+            image_basename = os.path.splitext(os.path.basename(image))[0]
+            img_path = os.path.join(savedir, label, f"{image_basename}_{index}.png")
+            Image.fromarray(img).save(img_path)
+
+
 def preprocess_images(model, annotations, root_dir, save_dir):
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
-    
-    # Expand by 20 pixels on all sides
+
+    # Expand by 30 pixels on all sides for context
     boxes = [[box[0]-30, box[1]-30, box[2]+30, box[3]+30] for box in boxes]
-    
+
     # Make sure no negative values
     boxes = [[max(0, box[0]), max(0, box[1]), max(0, box[2]), max(0, box[3])] for box in boxes]
-    
+
     images = annotations["image_path"].values
     labels = annotations["label"].values
-    
-    model.write_crops(boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
+
+    write_crops(model=model, boxes=boxes, root_dir=root_dir, images=images, labels=labels, savedir=save_dir)
 
     return annotations
 

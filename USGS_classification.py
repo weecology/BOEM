@@ -58,7 +58,7 @@ def main(cfg: DictConfig):
     crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 25)
 
     # Only keep two word labels
-    crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
+    crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ", na=False)]
     crop_annotations = crop_annotations[~crop_annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]
     
     def normalize_label(l):
@@ -80,12 +80,6 @@ def main(cfg: DictConfig):
 
     # Remove any negative values
     crop_annotations = crop_annotations[(crop_annotations['xmin'] >= 0) & (crop_annotations['ymin'] >= 0) & (crop_annotations['xmax'] >= 0) & (crop_annotations['ymax'] >= 0)]
-
-    # Expand bounding boxes by 30 pixels on all sides
-    crop_annotations["xmin"] -= 30
-    crop_annotations["ymin"] -= 30
-    crop_annotations["xmax"] += 30
-    crop_annotations["ymax"] += 30
 
     # Gentle class balance: cap each class at 3x median size to reduce majority-class dominance (e.g. larus argentinus)
     n_before = len(crop_annotations)

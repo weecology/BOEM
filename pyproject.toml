@@ -57,4 +57,4 @@ torch = [
 torchvision = [
   { index = "pytorch-cu128" },
 ]
-deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "bug_multiimage_batch" }
+deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "main" }

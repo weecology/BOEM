@@ -278,14 +278,19 @@ class Pipeline:
         # Select images to annotate based on the strategy
         training_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate)]
         
+        # Default taxonomy path: project root transformed_taxonomy.json (for strategy "taxonomy")
+        _default_taxonomy_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "transformed_taxonomy.json")
         train_images_to_annotate, preannotations = select_images(
             preannotations=training_preannotations,
             strategy=self.config.active_learning.strategy,
             n=self.config.active_learning.n_images,
             min_score=self.config.predict.min_score,
+            target_labels=getattr(self.config.active_learning, "target_labels", None),
             drop_n_most_common=getattr(self.config.active_learning, "drop_n_most_common", 1),
             rarest_confidence_selection=getattr(self.config.active_learning, "rarest_confidence_selection", "lowest"),
             min_classification_score=getattr(self.config.active_learning, "min_classification_score", None),
+            taxonomy_path=getattr(self.config.active_learning, "taxonomy_path", None) or _default_taxonomy_path,
+            taxonomy_aliases=getattr(self.config.active_learning, "taxonomy_aliases", None),
         )
         if len(train_images_to_annotate) == 0 and training_preannotations.empty:
             print("Training images to annotate: 0 (all images with detections ≥min_score were assigned to test)")

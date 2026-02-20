@@ -79,14 +79,19 @@ active_learning:
   model_checkpoint:
   target_labels:
     - "Object"
-  
+
+  # Taxonomy strategy: set strategy: taxonomy and taxonomy_aliases to select images by higher taxon
+  # (uses transformed_taxonomy.json to expand e.g. Aves -> all bird species, Cepphus -> guillemots).
+  taxonomy_path: null  # optional; defaults to project root transformed_taxonomy.json
+  taxonomy_aliases: []  # e.g. [Aves, Mammalia, Cepphus] for Birds, Mammals, or Guillemots
+
   # Rarest strategy parameters:
   drop_n_most_common: 2  # Number of most common classes to drop
   rarest_confidence_selection: highest  # "highest" or "lowest" - select highest or lowest confidence samples from rarest classes
-  
+
   # Optional parameters:
-  evaluation: 
-  dask_client: 
+  evaluation:
+  dask_client:
   pool_limit: 500
 
 active_testing:

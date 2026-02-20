@@ -1,6 +1,45 @@
+import json
 import random
+from pathlib import Path
+
 from src import detection
 from src import hierarchical
+
+
+def _collect_leaf_aliases(node: dict) -> list[str]:
+    """Collect all leaf (species) alias strings under a taxonomy node."""
+    if node.get("isLeaf"):
+        return [node["alias"]] if node.get("alias") else []
+    return [
+        a
+        for child in node.get("children", [])
+        for a in _collect_leaf_aliases(child)
+    ]
+
+
+def get_leaf_labels_for_taxonomy_aliases(
+    taxonomy_path: str | Path,
+    taxonomy_aliases: list[str],
+) -> set[str]:
+    """
+    Expand taxonomy aliases (e.g. Aves, Mammalia, Cepphus) to all leaf (species) labels
+    under those nodes in transformed_taxonomy.json. Use for strategy \"taxonomy\".
+    """
+    path = Path(taxonomy_path)
+    data = json.loads(path.read_text())
+    items = data.get("items", [])
+    requested = set(taxonomy_aliases)
+    result = set()
+
+    def walk(node: dict) -> None:
+        if node.get("alias") in requested:
+            result.update(_collect_leaf_aliases(node))
+        for child in node.get("children", []):
+            walk(child)
+
+    for item in items:
+        walk(item)
+    return result
 
 def human_review(predictions, min_detection_score=0.6, min_classification_score=0.5, confident_threshold=0.5):
     """
@@ -93,39 +132,66 @@ def generate_pool_predictions(
 
     return preannotations
 
-def select_images(preannotations, strategy, n=10, target_labels=None, min_score=0.3, 
-                  drop_n_most_common=1, rarest_confidence_selection="lowest", min_classification_score=None):
+def select_images(
+    preannotations,
+    strategy,
+    n=10,
+    target_labels=None,
+    min_score=0.3,
+    drop_n_most_common=1,
+    rarest_confidence_selection="lowest",
+    min_classification_score=None,
+    taxonomy_path=None,
+    taxonomy_aliases=None,
+):
     """
     Select images to annotate based on the strategy.
-    
+
     Args:
         preannotations (pd.DataFrame): A DataFrame of predictions.
         strategy (str): The strategy for choosing images. Available strategies are:
             - "random": Choose images randomly from the pool.
             - "most-detections": Choose images with the most detections based on predictions.
-            - "target-labels": Choose images with target labels.
+            - "target-labels": Choose images with target labels (species-level).
+            - "taxonomy": Like target-labels but taxonomy_aliases (e.g. Aves, Mammalia, Cepphus)
+              are expanded to all leaf species under those nodes using transformed_taxonomy.json.
             - "rarest": Choose images with rarest class labels.
         n (int, optional): The number of images to choose. Defaults to 10.
-        target_labels (list, optional): A list of target labels to filter images by. Defaults to None.
+        target_labels (list, optional): For target-labels: list of species labels. Defaults to None.
         min_score (float, optional): The minimum detection score for a prediction to be included. Defaults to 0.3.
         drop_n_most_common (int, optional): For rarest strategy, number of most common classes to drop. Defaults to 1.
         rarest_confidence_selection (str, optional): For rarest strategy, "highest" or "lowest" confidence selection. Defaults to "lowest".
         min_classification_score (float, optional): Minimum classification confidence score. Defaults to None (no filter).
-    
+        taxonomy_path (str | Path, optional): Path to transformed_taxonomy.json. Required for strategy "taxonomy".
+        taxonomy_aliases (list[str], optional): For strategy "taxonomy": e.g. ["Aves", "Mammalia", "Cepphus"]. Defaults to None.
+
     Returns:
         list: A list of image paths.
         pd.DataFrame: A DataFrame of preannotations for the chosen images.
     """
-    
     if preannotations.empty:
         return [], None
-    
+
     if strategy == "random":
         n = min(n, len(preannotations["image_path"].unique()))
         chosen_images = random.sample(preannotations["image_path"].unique().tolist(), n)
 
     else:
         preannotations = preannotations[preannotations["score"] >= min_score]
+
+        if strategy == "taxonomy":
+            if taxonomy_aliases is None or not taxonomy_aliases:
+                raise ValueError(
+                    "taxonomy_aliases (e.g. ['Aves', 'Mammalia', 'Cepphus']) are required for the 'taxonomy' strategy."
+                )
+            if taxonomy_path is None:
+                raise ValueError(
+                    "taxonomy_path (path to transformed_taxonomy.json) is required for the 'taxonomy' strategy."
+                )
+            target_labels = list(get_leaf_labels_for_taxonomy_aliases(taxonomy_path, taxonomy_aliases))
+            if not target_labels:
+                return [], None
+            strategy = "target-labels"
 
         if strategy == "most-detections":
             # Sort images by total number of predictions
@@ -163,7 +229,9 @@ def select_images(preannotations, strategy, n=10, target_labels=None, min_score=
             
             chosen_images = preannotations.drop_duplicates(subset=["image_path"], keep="first").head(n)["image_path"].tolist()
         else:
-            raise ValueError("Invalid strategy. Must be one of 'random', 'most-detections', 'target-labels', or 'rarest'.")
+            raise ValueError(
+                "Invalid strategy. Must be one of 'random', 'most-detections', 'target-labels', 'taxonomy', or 'rarest'."
+            )
 
     # Get preannotations for chosen images
     chosen_preannotations = preannotations[preannotations["image_path"].isin(chosen_images)]

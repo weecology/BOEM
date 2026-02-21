@@ -132,6 +132,20 @@ def generate_pool_predictions(
 
     return preannotations
 
+def _validate_target_labels(target_labels: list[str], valid_labels: set[str] | list[str] | None) -> None:
+    """Raise ValueError if any target label is not in the crop model's label set (catches typos)."""
+    if valid_labels is None:
+        return
+    valid = set(valid_labels)
+    invalid = [lbl for lbl in target_labels if lbl not in valid]
+    if invalid:
+        raise ValueError(
+            f"Target label(s) not in crop model label dict: {invalid}. "
+            f"Valid labels ({len(valid)}): {sorted(valid)[:10]}{'...' if len(valid) > 10 else ''}. "
+            "Check for typos or use a label that exists in the classification model."
+        )
+
+
 def select_images(
     preannotations,
     strategy,
@@ -143,6 +157,7 @@ def select_images(
     min_classification_score=None,
     taxonomy_path=None,
     taxonomy_aliases=None,
+    valid_labels=None,
 ):
     """
     Select images to annotate based on the strategy.
@@ -164,6 +179,8 @@ def select_images(
         min_classification_score (float, optional): Minimum classification confidence score. Defaults to None (no filter).
         taxonomy_path (str | Path, optional): Path to transformed_taxonomy.json. Required for strategy "taxonomy".
         taxonomy_aliases (list[str], optional): For strategy "taxonomy": e.g. ["Aves", "Mammalia", "Cepphus"]. Defaults to None.
+        valid_labels (set | list, optional): Crop model label set (e.g. label_dict.keys()). If provided, target-labels
+            and taxonomy-expanded labels are validated to catch typos/misspellings.
 
     Returns:
         list: A list of image paths.
@@ -191,15 +208,26 @@ def select_images(
             target_labels = list(get_leaf_labels_for_taxonomy_aliases(taxonomy_path, taxonomy_aliases))
             if not target_labels:
                 return [], None
+            if valid_labels is not None:
+                valid_set = set(valid_labels)
+                target_labels = [lbl for lbl in target_labels if lbl in valid_set]
+                if not target_labels:
+                    raise ValueError(
+                        "None of the taxonomy-expanded species are in the crop model label dict. "
+                        "Check that the model was trained on species under the given taxonomy_aliases."
+                    )
             strategy = "target-labels"
+
+        if strategy == "target-labels":
+            if target_labels is None:
+                raise ValueError("Target labels are required for the 'target-labels' strategy.")
+            _validate_target_labels(target_labels, valid_labels)
 
         if strategy == "most-detections":
             # Sort images by total number of predictions
             chosen_images = preannotations.groupby("image_path").size().sort_values(ascending=False).head(n).index.tolist()
         elif strategy == "target-labels":
-            if target_labels is None:
-                raise ValueError("Target labels are required for the 'target-labels' strategy.")
-            # Filter images by target labels
+            # Filter images by target labels (already validated above if valid_labels provided)
             chosen_images = preannotations[preannotations.cropmodel_label.isin(target_labels)].groupby("image_path")["score"].mean().sort_values(ascending=False).head(n).index.tolist()
         elif strategy == "rarest":
             # Filter by minimum classification score if provided

@@ -136,10 +136,15 @@ class Pipeline:
                 checkpoint_dir=self.config.detection_model.checkpoint_dir,
                 trainer_config=self.config.detection_model.trainer,
                 comet_logger=self.comet_logger)
+            actual_detection_checkpoint = os.path.join(
+                self.config.detection_model.checkpoint_dir,
+                self._comet_experiment_id() + ".ckpt",
+            )
         else:
             trained_detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
-            self.comet_logger.experiment.log_parameter("detection_checkpoint_path",self.config.detection_model.checkpoint)
-        
+            actual_detection_checkpoint = self.config.detection_model.checkpoint
+            self.comet_logger.experiment.log_parameter("detection_checkpoint_path", self.config.detection_model.checkpoint)
+
         classification_backend = getattr(self.config.classification_model, "backend", "deepforest")
 
         # Create crop image directories if they don't exist
@@ -196,7 +201,39 @@ class Pipeline:
                 pool = [os.path.join(self.config.image_dir, image) for image in pool][:10]
             else:
                 pool = random.sample(pool, min(10, len(pool))) if pool else []
-        
+
+        # Prediction cache: reuse detection results when only classification model changes.
+        # Cache is invalidated when detection checkpoint changes.
+        cache_dir = os.path.join(self.config.image_dir, ".prediction_cache")
+        prediction_pool = pool
+        use_cached_pool = False
+        if os.path.isdir(cache_dir):
+            ckpt_file = os.path.join(cache_dir, "detection_checkpoint.txt")
+            pred_file = os.path.join(cache_dir, "pool_predictions.csv")
+            if os.path.isfile(ckpt_file) and os.path.isfile(pred_file):
+                with open(ckpt_file) as f:
+                    cached_ckpt = f.read().strip()
+                if cached_ckpt == actual_detection_checkpoint:
+                    cached_df = pd.read_csv(pred_file)
+                    if "score" in cached_df.columns:
+                        min_score = self.config.predict.min_score
+                        cached_above = cached_df[cached_df["score"] >= min_score]
+                        cached_paths = set(cached_above["image_path"].astype(str).unique())
+                        cached_basenames = {os.path.basename(p) for p in cached_paths}
+                        prediction_pool = [
+                            p for p in pool
+                            if p in cached_paths or os.path.basename(p) in cached_basenames
+                        ]
+                        if prediction_pool:
+                            use_cached_pool = True
+                            print(
+                                f"Using prediction cache (same detection checkpoint): "
+                                f"running detection+classification on {len(prediction_pool)} images "
+                                f"(previously had ≥{min_score} detections) instead of {len(pool)}"
+                            )
+        if not use_cached_pool and os.path.isdir(cache_dir):
+            print("Prediction cache skipped (new or different detection checkpoint, or no cached predictions)")
+
         trained_classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
         hcast_checkpoint = getattr(self.config.hierarchical, "checkpoint", None)
@@ -212,9 +249,15 @@ class Pipeline:
         hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
         hcast_workers = getattr(self.config.hierarchical, "workers", 4)
 
+        # When using cache, do not apply pool_limit (cached set is already the small subset to run)
+        pool_limit = (
+            len(prediction_pool)
+            if use_cached_pool
+            else getattr(self.config.active_learning, "pool_limit", None)
+        )
         flightline_predictions = generate_pool_predictions(
-            pool=pool,
-            pool_limit=self.config.active_learning.pool_limit,
+            pool=prediction_pool,
+            pool_limit=pool_limit,
             patch_size=self.config.active_learning.patch_size,
             patch_overlap=self.config.active_learning.patch_overlap,
             min_score=self.config.predict.min_score,
@@ -234,7 +277,13 @@ class Pipeline:
         n_images_with_detections = flightline_predictions["image_path"].nunique()
         n_detections = len(flightline_predictions)
         print(f"Pool: {n_images_with_detections} images with ≥{self.config.predict.min_score} detections ({n_detections} total boxes)")
-        
+
+        # Save prediction cache for this flight (detection checkpoint + pool predictions CSV)
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(os.path.join(cache_dir, "detection_checkpoint.txt"), "w") as f:
+            f.write(actual_detection_checkpoint)
+        flightline_predictions.to_csv(os.path.join(cache_dir, "pool_predictions.csv"), index=False)
+
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id
 
         if self.existing_validation is None:
@@ -291,6 +340,7 @@ class Pipeline:
             min_classification_score=getattr(self.config.active_learning, "min_classification_score", None),
             taxonomy_path=getattr(self.config.active_learning, "taxonomy_path", None) or _default_taxonomy_path,
             taxonomy_aliases=getattr(self.config.active_learning, "taxonomy_aliases", None),
+            valid_labels=list(trained_classification_model.label_dict.keys()),
         )
         if len(train_images_to_annotate) == 0 and training_preannotations.empty:
             print("Training images to annotate: 0 (all images with detections ≥min_score were assigned to test)")

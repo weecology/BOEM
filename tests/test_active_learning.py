@@ -128,3 +128,33 @@ def test_select_images_taxonomy_strategy():
     assert "img1.jpg" in chosen_images
     # Only Cepphus grylle is under Cepphus; img2 has Object so should not be selected
     assert "img2.jpg" not in chosen_images
+
+
+def test_select_images_target_labels_validates_against_crop_model():
+    """Target-labels strategy raises when a label is not in the crop model (typo check)."""
+    preannotations = pd.DataFrame({
+        "image_path": ["img1.jpg"],
+        "cropmodel_label": ["Cepphus grylle"],
+        "score": [0.9],
+    })
+    valid = {"Cepphus grylle", "Actitis macularius"}
+
+    # All valid: succeeds
+    chosen_images, _ = select_images(
+        preannotations=preannotations,
+        strategy="target-labels",
+        n=5,
+        target_labels=["Cepphus grylle"],
+        valid_labels=valid,
+    )
+    assert "img1.jpg" in chosen_images
+
+    # Typo / unknown label: raises
+    with pytest.raises(ValueError, match="not in crop model label dict"):
+        select_images(
+            preannotations=preannotations,
+            strategy="target-labels",
+            n=5,
+            target_labels=["Cepphus grille"],  # typo: grille vs grylle
+            valid_labels=valid,
+        )

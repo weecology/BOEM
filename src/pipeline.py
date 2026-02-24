@@ -11,6 +11,7 @@ from src import classification
 from src import hierarchical
 from src.usgs_annotations import load_usgs_annotated_image_paths
 from src.visualization import crop_images
+from src import bulk_annotations as bulk_mod
 from src.pipeline_evaluation import PipelineEvaluation
 from pytorch_lightning.loggers import CometLogger
 import glob
@@ -75,6 +76,30 @@ class Pipeline:
         self.existing_training = self.annotator.gather_data("train", image_dir=self.config.image_dir)
         self.existing_validation = self.annotator.gather_data("validation", image_dir=self.config.image_dir)
         self.existing_reviewed = self.annotator.gather_data("review", image_dir=self.config.image_dir)
+
+        # Apply Serenity bulk annotator overrides (and optionally add new rows from predictions manifest)
+        server_cfg = getattr(self.config, "server", None)
+        bulk_path = getattr(server_cfg, "bulk_annotations_path", None) if server_cfg is not None else None
+        if server_cfg is not None and bulk_path:
+            bulk_df = bulk_mod.fetch_bulk_annotations_csv(server_cfg, bulk_path)
+            if bulk_df is not None and not bulk_df.empty:
+                bulk_reduced = bulk_mod.reduce_bulk_to_latest(bulk_df)
+                predictions_path = getattr(server_cfg, "bulk_predictions_path", None)
+                predictions_df = bulk_mod.fetch_predictions_csv(server_cfg, predictions_path) if predictions_path else None
+                train, val, review, n_overrides, n_added = bulk_mod.apply_bulk_overrides(
+                    self.existing_training,
+                    self.existing_validation,
+                    self.existing_reviewed,
+                    bulk_reduced,
+                    self.config.image_dir,
+                    predictions_df=predictions_df,
+                )
+                self.existing_training = train
+                self.existing_validation = val
+                self.existing_reviewed = review
+                print(f"Applied {n_overrides} bulk annotation overrides from Serenity.")
+                if n_added > 0:
+                    print(f"Added {n_added} new annotation rows from bulk (predictions manifest).")
 
         self.comet_logger.experiment.log_table(tabular_data=self.existing_reviewed, filename="human_reviewed_annotations.csv")
         self.comet_logger.experiment.log_table(tabular_data=self.existing_training, filename="training_annotations.csv")

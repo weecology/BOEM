@@ -2,3 +2,6 @@
 user: 'retrieverdash'
 host: 'serenity.ifas.ufl.edu'
 key_filename: '/home/b.weinstein/.ssh/id_ed25519'
+# BOEM-webapp bulk annotator CSVs (fetch via SFTP when gathering annotations)
+bulk_annotations_path: '/pgsql/boem-webapp/BOEM-webapp/app/data/annotations.csv'
+bulk_predictions_path: '/pgsql/boem-webapp/BOEM-webapp/app/data/most_recent_all_flight_predictions.csv'

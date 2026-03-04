@@ -8,15 +8,18 @@ uv run python
 
 ## Debugging arguments
 
-The pipeline is large and we want to not affect downstream users. When running tests or code as an agent, we want to perform end-to-end tests. In addition other testing, always debug the entire pipeline using main.py and the arguments
+The pipeline is large and we want to not affect downstream users. When running tests or code as an agent, we want to perform end-to-end tests. Use the same flight and argument style as in `.vscode/launch.json` (Debug Pipeline). For example:
 
 ```
-"image_dir=/blue/ewhite/b.weinstein/BOEM/GulfMexico/JPG_20241220_104800",
-"check_annotations=False",
-"active_learning.pool_limit=10",
-"active_testing.n_images=1",
-"active_learning.n_images=1",
-"debug=True",
+image_dir=/blue/ewhite/b.weinstein/BOEM/imagery/JPG_20241219_120500
+check_annotations=True
+active_learning.pool_limit=100
+active_testing.n_images=1
+active_learning.n_images=1
+debug=False
+pipeline.gpus=1
+predict.batch_size=2
+annotation=label_studio
 ```
 
 ## Coding Philosophy

@@ -7,8 +7,8 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=60GB
 #SBATCH --time=48:00:00       #Time limit hrs:min:sec
-#SBATCH --output=/home/b.weinstein/logs/BOEM%j.out   # Standard output and error log
-#SBATCH --error=/home/b.weinstein/logs/BOEM%j.err
+#SBATCH --output=/home/b.weinstein/logs/classification_BOEM%j.out   # Standard output and error log
+#SBATCH --error=/home/b.weinstein/logs/classification_BOEM%j.err
 #SBATCH --ntasks-per-node=1
 #SBATCH --partition=hpg-b200
 #SBATCH --gpus=1

@@ -91,10 +91,15 @@ class BaseAnnotator:
         raise NotImplementedError
 
 
+def _sftp_client_kwargs(server_cfg) -> dict:
+    """Extract only user, host, key_filename for create_sftp_client (server may have bulk_* paths)."""
+    return {k: server_cfg[k] for k in ("user", "host", "key_filename") if k in server_cfg}
+
+
 class LabelStudioAnnotator(BaseAnnotator):
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
-        self.sftp_client = ls_mod.create_sftp_client(**self.cfg.server)
+        self.sftp_client = ls_mod.create_sftp_client(**_sftp_client_kwargs(self.cfg.server))
         # Prepare per-flight directories for LS
         flight_name = os.path.basename(self.cfg.image_dir)
         self.cfg.annotation.label_studio.instances.train.csv_dir = os.path.join(self.cfg.annotation.label_studio.instances.train.csv_dir, flight_name)

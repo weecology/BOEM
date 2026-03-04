@@ -33,6 +33,9 @@ dependencies = [
   "python-dotenv>=1.2.1",
   "dotenv",
   "scikit-learn",
+  "folium",
+  "contextily",
+  "pillow",
 ]
 
 # PyTorch + CUDA 12.8 (for A100/H100 and other large GPUs)
@@ -57,4 +60,4 @@ torch = [
 torchvision = [
   { index = "pytorch-cu128" },
 ]
-deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "bug_multiimage_batch" }
+deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "main" }

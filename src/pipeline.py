@@ -11,6 +11,8 @@ from src import classification
 from src import hierarchical
 from src.usgs_annotations import load_usgs_annotated_image_paths
 from src.visualization import crop_images
+from src.report import generate_report, load_geospatial_metadata, georeference_predictions
+from src import bulk_annotations as bulk_mod
 from src.pipeline_evaluation import PipelineEvaluation
 from pytorch_lightning.loggers import CometLogger
 import glob
@@ -76,6 +78,30 @@ class Pipeline:
         self.existing_validation = self.annotator.gather_data("validation", image_dir=self.config.image_dir)
         self.existing_reviewed = self.annotator.gather_data("review", image_dir=self.config.image_dir)
 
+        # Apply Serenity bulk annotator overrides (and optionally add new rows from predictions manifest)
+        server_cfg = getattr(self.config, "server", None)
+        bulk_path = getattr(server_cfg, "bulk_annotations_path", None) if server_cfg is not None else None
+        if server_cfg is not None and bulk_path:
+            bulk_df = bulk_mod.fetch_bulk_annotations_csv(server_cfg, bulk_path)
+            if bulk_df is not None and not bulk_df.empty:
+                bulk_reduced = bulk_mod.reduce_bulk_to_latest(bulk_df)
+                predictions_path = getattr(server_cfg, "bulk_predictions_path", None)
+                predictions_df = bulk_mod.fetch_predictions_csv(server_cfg, predictions_path) if predictions_path else None
+                train, val, review, n_overrides, n_added = bulk_mod.apply_bulk_overrides(
+                    self.existing_training,
+                    self.existing_validation,
+                    self.existing_reviewed,
+                    bulk_reduced,
+                    self.config.image_dir,
+                    predictions_df=predictions_df,
+                )
+                self.existing_training = train
+                self.existing_validation = val
+                self.existing_reviewed = review
+                print(f"Applied {n_overrides} bulk annotation overrides from Serenity.")
+                if n_added > 0:
+                    print(f"Added {n_added} new annotation rows from bulk (predictions manifest).")
+
         self.comet_logger.experiment.log_table(tabular_data=self.existing_reviewed, filename="human_reviewed_annotations.csv")
         self.comet_logger.experiment.log_table(tabular_data=self.existing_training, filename="training_annotations.csv")
         self.comet_logger.experiment.log_table(tabular_data=self.existing_validation, filename="validation_annotations.csv")
@@ -136,10 +162,15 @@ class Pipeline:
                 checkpoint_dir=self.config.detection_model.checkpoint_dir,
                 trainer_config=self.config.detection_model.trainer,
                 comet_logger=self.comet_logger)
+            actual_detection_checkpoint = os.path.join(
+                self.config.detection_model.checkpoint_dir,
+                self._comet_experiment_id() + ".ckpt",
+            )
         else:
             trained_detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
-            self.comet_logger.experiment.log_parameter("detection_checkpoint_path",self.config.detection_model.checkpoint)
-        
+            actual_detection_checkpoint = self.config.detection_model.checkpoint
+            self.comet_logger.experiment.log_parameter("detection_checkpoint_path", self.config.detection_model.checkpoint)
+
         classification_backend = getattr(self.config.classification_model, "backend", "deepforest")
 
         # Create crop image directories if they don't exist
@@ -196,7 +227,39 @@ class Pipeline:
                 pool = [os.path.join(self.config.image_dir, image) for image in pool][:10]
             else:
                 pool = random.sample(pool, min(10, len(pool))) if pool else []
-        
+
+        # Prediction cache: reuse detection results when only classification model changes.
+        # Cache is invalidated when detection checkpoint changes.
+        cache_dir = os.path.join(self.config.image_dir, ".prediction_cache")
+        prediction_pool = pool
+        use_cached_pool = False
+        if os.path.isdir(cache_dir):
+            ckpt_file = os.path.join(cache_dir, "detection_checkpoint.txt")
+            pred_file = os.path.join(cache_dir, "pool_predictions.csv")
+            if os.path.isfile(ckpt_file) and os.path.isfile(pred_file):
+                with open(ckpt_file) as f:
+                    cached_ckpt = f.read().strip()
+                if cached_ckpt == actual_detection_checkpoint:
+                    cached_df = pd.read_csv(pred_file)
+                    if "score" in cached_df.columns:
+                        min_score = self.config.predict.min_score
+                        cached_above = cached_df[cached_df["score"] >= min_score]
+                        cached_paths = set(cached_above["image_path"].astype(str).unique())
+                        cached_basenames = {os.path.basename(p) for p in cached_paths}
+                        prediction_pool = [
+                            p for p in pool
+                            if p in cached_paths or os.path.basename(p) in cached_basenames
+                        ]
+                        if prediction_pool:
+                            use_cached_pool = True
+                            print(
+                                f"Using prediction cache (same detection checkpoint): "
+                                f"running detection+classification on {len(prediction_pool)} images "
+                                f"(previously had ≥{min_score} detections) instead of {len(pool)}"
+                            )
+        if not use_cached_pool and os.path.isdir(cache_dir):
+            print("Prediction cache skipped (new or different detection checkpoint, or no cached predictions)")
+
         trained_classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
         hcast_checkpoint = getattr(self.config.hierarchical, "checkpoint", None)
@@ -212,9 +275,15 @@ class Pipeline:
         hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
         hcast_workers = getattr(self.config.hierarchical, "workers", 4)
 
+        # When using cache, do not apply pool_limit (cached set is already the small subset to run)
+        pool_limit = (
+            len(prediction_pool)
+            if use_cached_pool
+            else getattr(self.config.active_learning, "pool_limit", None)
+        )
         flightline_predictions = generate_pool_predictions(
-            pool=pool,
-            pool_limit=self.config.active_learning.pool_limit,
+            pool=prediction_pool,
+            pool_limit=pool_limit,
             patch_size=self.config.active_learning.patch_size,
             patch_overlap=self.config.active_learning.patch_overlap,
             min_score=self.config.predict.min_score,
@@ -234,7 +303,13 @@ class Pipeline:
         n_images_with_detections = flightline_predictions["image_path"].nunique()
         n_detections = len(flightline_predictions)
         print(f"Pool: {n_images_with_detections} images with ≥{self.config.predict.min_score} detections ({n_detections} total boxes)")
-        
+
+        # Save prediction cache for this flight (detection checkpoint + pool predictions CSV)
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(os.path.join(cache_dir, "detection_checkpoint.txt"), "w") as f:
+            f.write(actual_detection_checkpoint)
+        flightline_predictions.to_csv(os.path.join(cache_dir, "pool_predictions.csv"), index=False)
+
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id
 
         if self.existing_validation is None:
@@ -278,14 +353,20 @@ class Pipeline:
         # Select images to annotate based on the strategy
         training_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate)]
         
+        # Default taxonomy path: project root transformed_taxonomy.json (for strategy "taxonomy")
+        _default_taxonomy_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "transformed_taxonomy.json")
         train_images_to_annotate, preannotations = select_images(
             preannotations=training_preannotations,
             strategy=self.config.active_learning.strategy,
             n=self.config.active_learning.n_images,
             min_score=self.config.predict.min_score,
+            target_labels=getattr(self.config.active_learning, "target_labels", None),
             drop_n_most_common=getattr(self.config.active_learning, "drop_n_most_common", 1),
             rarest_confidence_selection=getattr(self.config.active_learning, "rarest_confidence_selection", "lowest"),
             min_classification_score=getattr(self.config.active_learning, "min_classification_score", None),
+            taxonomy_path=getattr(self.config.active_learning, "taxonomy_path", None) or _default_taxonomy_path,
+            taxonomy_aliases=getattr(self.config.active_learning, "taxonomy_aliases", None),
+            valid_labels=list(trained_classification_model.label_dict.keys()),
         )
         if len(train_images_to_annotate) == 0 and training_preannotations.empty:
             print("Training images to annotate: 0 (all images with detections ≥min_score were assigned to test)")
@@ -382,7 +463,21 @@ class Pipeline:
         if final_predictions.empty:
             print("No predictions")
             return None
-        
+
+        # Add geospatial coordinates so the dashboard has lat/lon per detection
+        report_cfg = getattr(self.config, "report", None)
+        metadata_dir = getattr(report_cfg, "metadata_dir", None) if report_cfg else None
+        if metadata_dir:
+            try:
+                captures, img_w, img_h = load_geospatial_metadata(
+                    os.path.basename(self.config.image_dir), metadata_dir,
+                )
+                final_predictions = georeference_predictions(
+                    final_predictions, captures, img_w, img_h,
+                )
+            except FileNotFoundError:
+                print("Could not load geospatial metadata for final_predictions")
+
         # Write crops to disk
         image_paths = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
 
@@ -391,6 +486,15 @@ class Pipeline:
         
         # give it a complete tag
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
+
+        # Generate report
+        if getattr(self.config, "report", None) and getattr(self.config.report, "enabled", False):
+            generate_report(
+                predictions=final_predictions,
+                config=self.config,
+                comet_logger=self.comet_logger,
+                image_dir=self.config.image_dir,
+            )
 
         # Use generic annotator to upload for each instance
         for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():

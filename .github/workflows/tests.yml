@@ -4,16 +4,20 @@ on: [push, pull_request]
 
 jobs:
   test:
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      run: uv python install
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
 
-    - name: Install package
-      run: uv sync --all-extras --dev
+      - name: Set up Python
+        run: uv python install
 
-    - name: Run pytest
-      run: uv run pytest -v
+      - name: Install package
+        run: uv sync --all-extras --dev
+
+      - name: Run pytest
+        run: uv run pytest tests/ -v

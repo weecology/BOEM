@@ -11,6 +11,7 @@ from src import classification
 from src import hierarchical
 from src.usgs_annotations import load_usgs_annotated_image_paths
 from src.visualization import crop_images
+from src.report import generate_report, load_geospatial_metadata, georeference_predictions
 from src import bulk_annotations as bulk_mod
 from src.pipeline_evaluation import PipelineEvaluation
 from pytorch_lightning.loggers import CometLogger
@@ -462,7 +463,21 @@ class Pipeline:
         if final_predictions.empty:
             print("No predictions")
             return None
-        
+
+        # Add geospatial coordinates so the dashboard has lat/lon per detection
+        report_cfg = getattr(self.config, "report", None)
+        metadata_dir = getattr(report_cfg, "metadata_dir", None) if report_cfg else None
+        if metadata_dir:
+            try:
+                captures, img_w, img_h = load_geospatial_metadata(
+                    os.path.basename(self.config.image_dir), metadata_dir,
+                )
+                final_predictions = georeference_predictions(
+                    final_predictions, captures, img_w, img_h,
+                )
+            except FileNotFoundError:
+                print("Could not load geospatial metadata for final_predictions")
+
         # Write crops to disk
         image_paths = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
 
@@ -471,6 +486,15 @@ class Pipeline:
         
         # give it a complete tag
         self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
+
+        # Generate report
+        if getattr(self.config, "report", None) and getattr(self.config.report, "enabled", False):
+            generate_report(
+                predictions=final_predictions,
+                config=self.config,
+                comet_logger=self.comet_logger,
+                image_dir=self.config.image_dir,
+            )
 
         # Use generic annotator to upload for each instance
         for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():

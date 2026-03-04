@@ -281,6 +281,10 @@ class PipelineEvaluation:
         combined_predictions = combined_predictions
         ground_truth = self.annotations.copy(deep=True)
 
+        empty_detection_result = {"recall": None, "precision": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
+        if combined_predictions.empty:
+            return empty_detection_result
+
         # deepforest.evaluate.evaluate_boxes requires root_dir when image_path is relative
         iou_results = evaluate_boxes(
             combined_predictions,
@@ -288,9 +292,12 @@ class PipelineEvaluation:
             iou_threshold=self.detection_true_positive_threshold
         )
 
+        if iou_results is None or iou_results.get("results") is None:
+            return empty_detection_result
+
         non_empty_results = iou_results["results"][~iou_results["results"]["score"].isna()]
         if non_empty_results.empty:
-            return {"recall": None, "precision": None, "avg_score_true_positive": None, "avg_score_false_positive": None}
+            return empty_detection_result
         else:
             # Convert match to boolean
             non_empty_results["match"] = non_empty_results["match"].astype(bool)

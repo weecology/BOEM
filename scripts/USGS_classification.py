@@ -242,6 +242,7 @@ def main(cfg: DictConfig):
 
     # Reload the model from checkpoint and validate
     trained_model = CropModel.load_from_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
+    trained_model.create_trainer()
     validation_results = trained_model.trainer.validate(trained_model)
     print(validation_results)
 

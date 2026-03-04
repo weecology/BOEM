@@ -83,9 +83,9 @@ m.config["train"]["fast_dev_run"] = False
 m.config["validation"]["csv_file"] = os.path.join(savedir,"test.csv")
 m.config["validation"]["root_dir"] = root_dir
 m.config["batch_size"] = batch_size
-m.config["train"]["epochs"] = 23
+m.config["train"]["epochs"] = 12
 m.config["workers"] = workers
-m.config["validation"]["val_accuracy_interval"] = 2
+m.config["validation"]["val_accuracy_interval"] = 1
 m.config["train"]["scheduler"]["params"]["eps"]  = 0
 m.config["train"]["lr"] = 0.001
 m.config["train"]["scheduler"]["params"]["patience"] = 3
@@ -143,41 +143,22 @@ m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nod
 #             os.path.join(tmpdir, short_name),
 #             metadata={"name": short_name, "context": "detection_validation"}
 #         )
-results = m.evaluate(
-    csv_file = m.config["validation"]["csv_file"],
-    root_dir = m.config["validation"]["root_dir"])
-
-print(results)
 
 m.trainer.fit(m)
 
 # Save the model
 m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/{}.pl".format(comet_logger.experiment.id))
 
-results = m.evaluate(
-    csv_file = m.config["validation"]["csv_file"],
-    root_dir = m.config["validation"]["root_dir"])
-
-print(results)
-# Log the evaluation results
-comet_logger.experiment.log_metric("box_precision_after", results["box_precision"])
-comet_logger.experiment.log_metric("box_recall_after", results["box_recall"])
-
 # Zero-shot evaluation on held-out flights (generalization to unseen flights)
 zeroshot_csv = os.path.join(savedir, "zero_shot.csv")
-if os.path.isfile(zeroshot_csv):
-    zeroshot_df = pd.read_csv(zeroshot_csv)
-    comet_logger.experiment.log_parameter("zero_shot_size", len(zeroshot_df))
-    zeroshot_results = m.evaluate(
-        csv_file=zeroshot_csv,
-        root_dir=m.config["validation"]["root_dir"],
-    )
-    print("Zero-shot (held-out flights) results:", zeroshot_results)
-    comet_logger.experiment.log_metric("zero_shot_box_precision", zeroshot_results["box_precision"])
-    comet_logger.experiment.log_metric("zero_shot_box_recall", zeroshot_results["box_recall"])
-else:
-    print("No zero_shot.csv found; skipping zero-shot metrics.")
-
-# Gather the number of steps taken from all GPUs
-global_steps = torch.tensor(m.trainer.global_step, dtype=torch.int32, device=m.device)
-comet_logger.experiment.log_metric("global_steps", global_steps)
+with comet_logger.experiment.context_manager("zero_shot_evaluation"):
+    m.config["validation"]["csv_file"] = zeroshot_csv
+    m.config["validation"]["root_dir"] = savedir
+    m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices, fast_dev_run=False)
+    zero_shot_results = m.trainer.validate(m)
+    zero_shot_metrics = zero_shot_results[0] if zero_shot_results else {}
+    print("\nZero-shot evaluation results:")
+    print(f"  Box Precision: {zero_shot_metrics.get('box_precision', 'N/A')}")
+    print(f"  Box Recall: {zero_shot_metrics.get('box_recall', 'N/A')}")
+    print(f"  Empty Frame Accuracy: {zero_shot_metrics.get('empty_frame_accuracy', 'N/A')}")
+    

@@ -46,7 +46,7 @@ propagate:
 
 detection_model:
   force_train: False
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/757e45d3919444e79d84d2c8cd70b216.pl
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/a6f9a548a0d64264828cfcc9be5c9de5.pl
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -104,3 +104,10 @@ active_testing:
 
 human_review: 
   n: 1
+
+report:
+  enabled: true
+  metadata_dir: /blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs
+  n_sample_crops: 5
+  n_rare_species: 2
+  rare_species_min_score: 0.7

@@ -4,6 +4,29 @@ Three stages:
 1. Process pre-workflow annotations from the UBFAI cumulative CSV into crops
 2. Collect workflow annotations from detection/crops/ pipeline output
 3. Combine both sources and create train/test splits
+
+Usage:
+  # Normal run: refresh detection crops (where annotation is newer), then copy into UBFAI
+  uv run python prepare_USGS.py
+
+  # Skip detection crop generation (use existing detection/crops only)
+  uv run python prepare_USGS.py --no-generate-detection-crops
+
+  # Skip overwriting UBFAI from detection/crops (use existing UBFAI when dest exists)
+  uv run python prepare_USGS.py --no-update-labels
+
+We default to generating detection crops (only where annotation CSV is newer)
+and to updating labels (overwriting UBFAI from detection/crops). Use
+--no-generate-detection-crops or --no-update-labels to skip either step.
+
+Why new Label Studio annotations might not appear in classification:
+- Stage 0 (generate detection crops): runs by default; only regenerates a crop
+  CSV when that image's annotation CSV is newer (or the crop is missing).
+- Stage 2 (collect_workflow_annotations): we copy detection/crops/*.csv into
+  UBFAI crops. By default we overwrite so labels stay current; use
+  --no-update-labels to keep existing UBFAI when the dest file already exists.
+- USGS_classification.py reads only from UBFAI crops and applies filters
+  (e.g. >25 images per class, two-word labels, split-by-image); see that script.
 """
 
 import argparse
@@ -36,10 +59,10 @@ def parse_args():
         description="Prepare USGS detection data for training"
     )
     parser.add_argument(
-        "--generate-detection-crops",
+        "--no-generate-detection-crops",
         action="store_true",
-        help="Generate detection/crops/<flight>/ from existing annotations "
-        "(train/validation/review) before the main preparation.",
+        help="Skip generating detection/crops from annotations. Default is to "
+        "run it (only refreshes crop CSVs when annotation CSV is newer).",
     )
     parser.add_argument(
         "--regenerate-crops",
@@ -61,14 +84,20 @@ def parse_args():
     parser.add_argument(
         "--max-test-images",
         type=int,
-        default=100,
-        help="Max unique images in test.csv (default: 100).",
+        default=None,
+        help="Max unique images in test.csv (default: no limit).",
     )
     parser.add_argument(
         "--max-zeroshot-images",
         type=int,
         default=100,
         help="Max unique images in zero_shot.csv (default: 100).",
+    )
+    parser.add_argument(
+        "--no-update-labels",
+        action="store_true",
+        help="Do not overwrite UBFAI crop CSVs from detection/crops when dest exists. "
+        "Default is to update (overwrite) so labels stay current.",
     )
     return parser.parse_args()
 
@@ -152,6 +181,10 @@ def generate_detection_crops():
 
     Discovers flights from train/validation/review annotation subdirs,
     then preprocesses their images into crops via data_processing.
+
+    Only regenerates crop CSVs when the source annotation CSV for that image
+    is newer than the existing crop CSV (or the crop CSV is missing). Crops
+    whose annotations have not changed are left untouched.
     """
     from src import data_processing
 
@@ -166,7 +199,7 @@ def generate_detection_crops():
     flights = sorted(flight_dirs)
     print(
         f"Generating detection crops for {len(flights)} flights "
-        "from existing annotations."
+        "from existing annotations (only where annotation CSV is newer)."
     )
 
     for flight_name in flights:
@@ -185,9 +218,13 @@ def generate_detection_crops():
             print(f"  Skip {flight_name}: no annotation CSVs")
             continue
 
-        combined = pd.concat(
-            [pd.read_csv(f) for f in csvs], ignore_index=True
-        ).drop_duplicates()
+        # Build combined and record each row's source CSV mtime
+        parts = []
+        for f in csvs:
+            df = pd.read_csv(f)
+            df["_source_mtime"] = os.path.getmtime(f)
+            parts.append(df)
+        combined = pd.concat(parts, ignore_index=True).drop_duplicates()
         combined = _normalize_annotation_columns(combined)
 
         # Keep only annotations whose images actually exist on disk
@@ -201,9 +238,29 @@ def generate_detection_crops():
             print(f"  Skip {flight_name}: no annotations with existing images")
             continue
 
+        # Per image: max mtime of any annotation CSV that contains it
+        image_ann_mtime = combined.groupby("image_path")["_source_mtime"].max()
+        combined = combined.drop(columns=["_source_mtime"])
+
+        # Only refresh images whose annotation is newer than existing crop CSV (or missing)
         os.makedirs(save_dir, exist_ok=True)
+        images_to_refresh = []
+        for image_path in combined["image_path"].unique():
+            image_stem = os.path.splitext(os.path.basename(image_path))[0]
+            crop_csv = os.path.join(save_dir, f"{image_stem}.csv")
+            ann_mtime = image_ann_mtime.loc[image_path]
+            if not os.path.exists(crop_csv) or os.path.getmtime(crop_csv) < ann_mtime:
+                images_to_refresh.append(image_path)
+                if os.path.exists(crop_csv):
+                    os.remove(crop_csv)
+
+        if not images_to_refresh:
+            print(f"  {flight_name}: no images need refresh (all crop CSVs up to date)")
+            continue
+
+        combined_refresh = combined[combined["image_path"].isin(images_to_refresh)]
         data_processing.preprocess_images(
-            combined,
+            combined_refresh,
             root_dir=root_dir,
             save_dir=save_dir,
             patch_size=PATCH_SIZE,
@@ -211,7 +268,8 @@ def generate_detection_crops():
             allow_empty=True,
         )
         print(
-            f"  {flight_name}: {combined['image_path'].nunique()} images -> {save_dir}"
+            f"  {flight_name}: refreshed {len(images_to_refresh)} images (of "
+            f"{combined['image_path'].nunique()} total) -> {save_dir}"
         )
 
     print("Detection crop generation done.")
@@ -301,11 +359,12 @@ def process_preworkflow_annotations(
 # ---------------------------------------------------------------------------
 
 
-def collect_workflow_annotations() -> pd.DataFrame:
+def collect_workflow_annotations(update_labels: bool = True) -> pd.DataFrame:
     """Collect annotations produced by the active-learning workflow.
 
     Sweeps detection/crops/ for per-flight CSVs, copies them (and their
     associated crop images) into UBFAI_CROPS so everything lives in one place.
+    When update_labels is True (default), always overwrite dest so labels stay current.
 
     Returns:
         Combined DataFrame of all workflow flight annotations.
@@ -327,7 +386,12 @@ def collect_workflow_annotations() -> pd.DataFrame:
         )
         dest_csv = os.path.join(UBFAI_CROPS, os.path.basename(csv_file))
 
-        if os.path.exists(dest_csv):
+        src_mtime = os.path.getmtime(csv_file)
+        dest_exists = os.path.exists(dest_csv)
+        dest_older = dest_exists and os.path.getmtime(dest_csv) < src_mtime
+        skip = dest_exists and not update_labels and not dest_older
+
+        if skip:
             print(f"Skipping {csv_file}, already exists in {dest_csv}")
             annotations = pd.read_csv(dest_csv)
             annotations["flight"] = flight_name
@@ -335,6 +399,8 @@ def collect_workflow_annotations() -> pd.DataFrame:
                 os.path.basename
             )
         else:
+            if dest_older:
+                print(f"Overwriting {dest_csv} (source {csv_file} is newer)")
             annotations.to_csv(dest_csv, index=False)
             # Copy associated crop images that aren't already present
             for src in annotations["image_path"].unique():
@@ -442,10 +508,11 @@ def create_train_test_split(
     print(f"Number of size 2000 images in test set: {len(oversized)}")
     combined_test = combined_test[~combined_test.image_path.isin(oversized)]
 
-    # Limit test to max_test_images unique images
-    test_images = combined_test.image_path.unique().tolist()
-    keep_test = set(random.sample(test_images, min(max_test_images, len(test_images))))
-    combined_test = combined_test[combined_test.image_path.isin(keep_test)]
+    # Optionally limit test to max_test_images unique images
+    if max_test_images is not None:
+        test_images = combined_test.image_path.unique().tolist()
+        keep_test = set(random.sample(test_images, min(max_test_images, len(test_images))))
+        combined_test = combined_test[combined_test.image_path.isin(keep_test)]
 
     # Drop geometry column and use read_file to recreate for all
     combined_train.drop(columns="geometry", inplace=True)
@@ -500,8 +567,8 @@ def main():
     args = parse_args()
     set_seed(args.seed)
 
-    # Optional: generate detection crops from existing annotation directories
-    if args.generate_detection_crops:
+    # Generate detection crops from annotations (default: on; only refreshes when newer)
+    if not args.no_generate_detection_crops:
         generate_detection_crops()
 
     # Stage 1: crop and label-normalise pre-workflow annotations
@@ -510,7 +577,9 @@ def main():
     )
 
     # Stage 2: collect annotations from the active-learning workflow
-    flight_annotations = collect_workflow_annotations()
+    flight_annotations = collect_workflow_annotations(
+        update_labels=not args.no_update_labels
+    )
 
     # Stage 3: combine everything and produce final train/test splits
     create_train_test_split(

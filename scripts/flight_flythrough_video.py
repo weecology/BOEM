@@ -64,9 +64,9 @@ def _resize_frame(frame, out_w, out_h):
 
 
 def _draw_arrow(frame, target_x, target_y):
-    """Compact arrow that stops 80px short of the target so it does not obscure it."""
+    """Arrow tip stops ~35px short of the target so it points at it without covering it."""
     h, w = frame.shape[:2]
-    offset, arrow_len = 80, 180
+    offset, arrow_len = 35, 180
     dx, dy = target_x - w // 2, target_y - h // 4
     dist = math.hypot(dx, dy) or 1
     ux, uy = dx / dist, dy / dist
@@ -163,7 +163,7 @@ def _paste_zoom(base, zoomed, margin=20):
     return out
 
 
-def _plan_frames(has_det, fps, skip_gap_sec=60.0,
+def _plan_frames(has_det, fps, skip_gap_sec=30.0,
                  runway_sec=10.0, trail_sec=2.0):
     """Decide which thinned frames to include and where to insert skip cards."""
     n = len(has_det)
@@ -212,9 +212,10 @@ def _plan_frames(has_det, fps, skip_gap_sec=60.0,
 
 def generate_flythrough(
     flight_dir, output_path=None, output_dir=None, camera="auto",
-    width=1280, height=720, fps=10, thin=5,
-    pause_seconds=2.0, zoom_seconds=2.5,
-    skip_card_seconds=5.0, min_score=0.3,
+    width=1280, height=720, fps=10, thin=4,
+    pause_seconds=2.0, zoom_seconds=4.0,
+    skip_card_seconds=5.0, min_score=0.92,
+    max_gap_seconds=30.0,
 ):
     flight_dir = Path(flight_dir).resolve()
     if not flight_dir.is_dir():
@@ -274,7 +275,7 @@ def generate_flythrough(
     n_det_frames = sum(has_det)
     print(f"Frames to consider: {len(frame_list)} (thinned + all detection frames; {n_det_frames} have >=1 detection).")
 
-    include, skip_cards = _plan_frames(has_det, fps)
+    include, skip_cards = _plan_frames(has_det, fps, skip_gap_sec=max_gap_seconds)
     print(f"Rendering {sum(include)} frames, "
           f"{len(skip_cards)} skip cards "
           f"({sum(skip_cards.values()):,} skipped)")
@@ -364,12 +365,17 @@ def main():
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--fps", type=int, default=10)
-    p.add_argument("--thin", type=int, default=5)
+    p.add_argument("--thin", type=int, default=4,
+                   help="Use every Nth image (default: 4)")
     p.add_argument("--pause-seconds", type=float, default=2.0,
                    help="Seconds to show arrow on detection (default: 2)")
-    p.add_argument("--zoom-seconds", type=float, default=2.5)
-    p.add_argument("--skip-card-seconds", type=float, default=5.0)
-    p.add_argument("--min-score", type=float, default=0.3)
+    p.add_argument("--zoom-seconds", type=float, default=4.0,
+                   help="Seconds to show zoom crop (default: 4)")
+    p.add_argument("--skip-card-seconds", type=float, default=3.0)
+    p.add_argument("--min-score", type=float, default=0.92,
+                   help="Min detection score to show (default: 0.92)")
+    p.add_argument("--max-gap-seconds", type=float, default=30.0,
+                   help="Max video seconds without a detection before skip card (default: 30)")
     args = p.parse_args()
     out = generate_flythrough(
         flight_dir=args.flight_dir, output_path=args.output,
@@ -379,6 +385,7 @@ def main():
         zoom_seconds=args.zoom_seconds,
         skip_card_seconds=args.skip_card_seconds,
         min_score=args.min_score,
+        max_gap_seconds=args.max_gap_seconds,
     )
     print(f"Wrote: {out}")
 

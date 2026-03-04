@@ -479,7 +479,7 @@ def _render_pdf_page1(pdf, gdf, species_list, colors, summary_map_path,
 
 
 def _render_pdf_page2(pdf, predictions, crop_info, species_list, colors,
-                      flight_name, report_meta=None):
+                      flight_name, report_meta=None, fullsize_example_path=None):
     """Page 2: species bar chart, stats, sample crops."""
     report_meta = report_meta or {}
     fig = plt.figure(figsize=(11, 8.5))
@@ -540,6 +540,7 @@ def generate_pdf_report(gdf, predictions, crop_info, summary_map_path,
             n_detections=n_detections,
             flight_date=flight_date,
         )
+        
         _render_pdf_page2(
             pdf, predictions, crop_info, species_list, colors, flight_name,
             report_meta={},
@@ -579,8 +580,11 @@ def generate_report(predictions, config, comet_logger, image_dir):
         print("Report: no predictions pass score filters, skipping")
         return None
 
-    georeffed = georeference_predictions(rp, captures, img_w, img_h)
-    georeffed = georeffed.dropna(subset=["pred_lat", "pred_lon"])
+    if "pred_lat" in rp.columns and "pred_lon" in rp.columns:
+        georeffed = rp.dropna(subset=["pred_lat", "pred_lon"])
+    else:
+        georeffed = georeference_predictions(rp, captures, img_w, img_h)
+        georeffed = georeffed.dropna(subset=["pred_lat", "pred_lon"])
 
     if georeffed.empty:
         print("Report: no predictions could be georeferenced, skipping")

@@ -114,5 +114,5 @@ report:
 
 # Flythrough video: generate from cached predictions and log to Comet at end of run.
 flythrough_video:
-  enabled: false
+  enabled: true
   # output_dir: null  # default: /blue/ewhite/b.weinstein/BOEM/flight_videos

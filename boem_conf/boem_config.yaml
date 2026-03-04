@@ -111,3 +111,8 @@ report:
   n_sample_crops: 5
   n_rare_species: 2
   rare_species_min_score: 0.7
+
+# Flythrough video: generate from cached predictions and log to Comet at end of run.
+flythrough_video:
+  enabled: false
+  # output_dir: null  # default: /blue/ewhite/b.weinstein/BOEM/flight_videos

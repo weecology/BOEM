@@ -263,10 +263,16 @@ def generate_flythrough(
     images = [p for p, _ in cam_imgs]
     print(f"Camera {camera}: {len(images)} images total.")
 
+    # Never drop frames that have detections: thinned list plus every frame that has a detection.
     thinned = images[::thin]
-    has_det = [p.name in det_bns for p in thinned]
+    detection_frames = [p for p in images if p.name in det_bns]
+    frame_list = sorted(
+        set(thinned) | set(detection_frames),
+        key=lambda p: images.index(p),
+    )
+    has_det = [p.name in det_bns for p in frame_list]
     n_det_frames = sum(has_det)
-    print(f"After thin={thin}: {len(thinned)} frames, {n_det_frames} of those frames have >=1 detection.")
+    print(f"Frames to consider: {len(frame_list)} (thinned + all detection frames; {n_det_frames} have >=1 detection).")
 
     include, skip_cards = _plan_frames(has_det, fps)
     print(f"Rendering {sum(include)} frames, "
@@ -297,7 +303,7 @@ def generate_flythrough(
 
     try:
         written = 0
-        for i, img_path in enumerate(thinned):
+        for i, img_path in enumerate(frame_list):
             if not include[i]:
                 continue
             if i in skip_cards:
@@ -322,16 +328,16 @@ def generate_flythrough(
                 written += 1
                 continue
 
-            # Arrow at the start: show frame with arrow for pause_seconds, then zoom.
-            first = preds.iloc[0]
-            tx = int(round((first["xmin"] + first["xmax"]) / 2 * scale)) + lx
-            ty = int(round((first["ymin"] + first["ymax"]) / 2 * scale)) + ly
+            # Arrows for all detections; zoom on one only (first).
             arrow_frame = resized.copy()
-            _draw_arrow(arrow_frame, tx, ty)
+            for _, row in preds.iterrows():
+                tx = int(round((row["xmin"] + row["xmax"]) / 2 * scale)) + lx
+                ty = int(round((row["ymin"] + row["ymax"]) / 2 * scale)) + ly
+                _draw_arrow(arrow_frame, tx, ty)
             for _ in range(n_arrow_frames):
                 writer.write(arrow_frame)
 
-            zoomed = _zoomed_crop(frame, preds, fw, fh)
+            zoomed = _zoomed_crop(frame, preds.iloc[:1], fw, fh)
             overlay = _paste_zoom(resized, zoomed)
             for _ in range(n_zoom):
                 writer.write(overlay)

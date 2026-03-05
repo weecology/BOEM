@@ -9,4 +9,10 @@ max_epochs: 45
 lr: 0.00001
 batch_size: 96
 workers: 8
+# Pixels to add on each side of every bbox when extracting classification crops.
+# Use 0 for tight crops, 30 (default) for moderate context, 100–200+ for large context.
+# Outputs are written to buffer-specific subdirs (e.g. .../buffer_0/, .../buffer_200/).
+# Example: run small vs large buffer experiments without overwriting:
+#   uv run python scripts/USGS_classification.py classification_model.expand=0
+#   uv run python scripts/USGS_classification.py classification_model.expand=200
 expand: 30

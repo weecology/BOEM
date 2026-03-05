@@ -204,6 +204,7 @@ class Pipeline:
                     checkpoint_dir=self.config.classification_model.checkpoint_dir,
                     train_crop_image_dir=train_crop_image_dir,
                     val_crop_image_dir=val_crop_image_dir,
+                    expand_pixels=int(getattr(self.config.classification_model, "expand", 30)),
                     fast_dev_run=self.config.classification_model.fast_dev_run,
                     max_epochs=self.config.classification_model.max_epochs,
                     lr=self.config.classification_model.lr,

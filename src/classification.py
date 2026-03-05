@@ -88,14 +88,22 @@ def write_crops(model, boxes, root_dir, images, labels, savedir):
             Image.fromarray(img).save(img_path)
 
 
-def preprocess_images(model, annotations, root_dir, save_dir):
+def preprocess_images(model, annotations, root_dir, save_dir, expand_pixels: int = 30):
+    """Extract crop regions from images using bbox + expand_pixels on each side.
+
+    Each bounding box is expanded by expand_pixels on all sides before making
+    the crop square (via model.expand_bbox_to_square). This buffer controls how
+    much context surrounds the object in the classification crop.
+    """
     boxes = annotations[['xmin', 'ymin', 'xmax', 'ymax']].values.tolist()
 
-    # Expand by 30 pixels on all sides for context
-    boxes = [[box[0]-30, box[1]-30, box[2]+30, box[3]+30] for box in boxes]
+    boxes = [
+        [box[0] - expand_pixels, box[1] - expand_pixels, box[2] + expand_pixels, box[3] + expand_pixels]
+        for box in boxes
+    ]
 
-    # Make sure no negative values
-    boxes = [[max(0, box[0]), max(0, box[1]), max(0, box[2]), max(0, box[3])] for box in boxes]
+    # Clamp to non-negative coordinates (expand_bbox_to_square will handle image bounds)
+    boxes = [[max(0, b[0]), max(0, b[1]), max(0, b[2]), max(0, b[3])] for b in boxes]
 
     images = annotations["image_path"].values
     labels = annotations["label"].values
@@ -112,15 +120,21 @@ def preprocess_and_train(
     image_dir,
     train_crop_image_dir,
     val_crop_image_dir,
+    expand_pixels: int = 30,
     lr=0.0001,
     batch_size=4,
     fast_dev_run=False,
     max_epochs=10,
     workers=0,
     comet_logger=None,
+    **kwargs,
 ):
-    """Preprocess data and train a crop model."""
-    
+    """Preprocess data and train a crop model.
+
+    expand_pixels: pixels to add on each side of every bounding box when
+    extracting classification crops (default 30). Use 0 for tight crops,
+    larger values (e.g. 100–200) for more context.
+    """
     # Filter annotations
     train_df = filter_annotations(train_df)
     validation_df = filter_annotations(validation_df)
@@ -139,6 +153,7 @@ def preprocess_and_train(
         annotations=train_df,
         root_dir=image_dir,
         save_dir=train_crop_image_dir,
+        expand_pixels=expand_pixels,
     )
 
     preprocessed_validation = preprocess_images(
@@ -146,6 +161,7 @@ def preprocess_and_train(
         annotations=validation_df,
         root_dir=image_dir,
         save_dir=val_crop_image_dir,
+        expand_pixels=expand_pixels,
     )
 
     loaded_model.load_from_disk(

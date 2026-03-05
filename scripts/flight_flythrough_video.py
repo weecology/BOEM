@@ -158,7 +158,7 @@ def _paste_zoom(base, zoomed, margin=20):
         zh, zw = zoomed.shape[:2]
     x0, y0 = (ow - zw) // 2, (oh - zh) // 2
     cv2.rectangle(out, (x0 - 2, y0 - 2), (x0 + zw + 2, y0 + zh + 2),
-                  (0, 255, 160), 2)
+                  (0, 0, 0), 2)
     out[y0:y0 + zh, x0:x0 + zw] = zoomed
     return out
 
@@ -283,7 +283,7 @@ def generate_flythrough(
     if output_path is None:
         out_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
         out_dir.mkdir(parents=True, exist_ok=True)
-        output_path = out_dir / f"{flight_dir.name}_flythrough.avi"
+        output_path = out_dir / f"{flight_dir.name}_flythrough.mp4"
     output_path = Path(output_path)
     if output_path.suffix.lower() == ".mp4":
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")

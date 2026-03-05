@@ -204,6 +204,7 @@ class Pipeline:
                     checkpoint_dir=self.config.classification_model.checkpoint_dir,
                     train_crop_image_dir=train_crop_image_dir,
                     val_crop_image_dir=val_crop_image_dir,
+                    expand_pixels=int(getattr(self.config.classification_model, "expand", 30)),
                     fast_dev_run=self.config.classification_model.fast_dev_run,
                     max_epochs=self.config.classification_model.max_epochs,
                     lr=self.config.classification_model.lr,
@@ -275,12 +276,14 @@ class Pipeline:
         hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
         hcast_workers = getattr(self.config.hierarchical, "workers", 4)
 
-        # When using cache, do not apply pool_limit (cached set is already the small subset to run)
-        pool_limit = (
-            len(prediction_pool)
-            if use_cached_pool
-            else getattr(self.config.active_learning, "pool_limit", None)
-        )
+        # Apply pool_limit: when using cache, still honor config so debug/small runs stay fast
+        configured_pool_limit = getattr(self.config.active_learning, "pool_limit", None)
+        if use_cached_pool and configured_pool_limit is not None:
+            pool_limit = min(configured_pool_limit, len(prediction_pool))
+        elif use_cached_pool:
+            pool_limit = len(prediction_pool)
+        else:
+            pool_limit = configured_pool_limit
         flightline_predictions = generate_pool_predictions(
             pool=prediction_pool,
             pool_limit=pool_limit,
@@ -495,6 +498,39 @@ class Pipeline:
                 comet_logger=self.comet_logger,
                 image_dir=self.config.image_dir,
             )
+
+        # Flythrough video (uses cached pool_predictions) and upload to Comet
+        flythrough_cfg = getattr(self.config, "flythrough_video", None)
+        if flythrough_cfg and getattr(flythrough_cfg, "enabled", False):
+            try:
+                import importlib.util
+                script_path = os.path.join(
+                    os.path.dirname(os.path.dirname(__file__)),
+                    "scripts", "flight_flythrough_video.py",
+                )
+                if os.path.isfile(script_path):
+                    spec = importlib.util.spec_from_file_location(
+                        "flight_flythrough_video", script_path,
+                    )
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    output_dir = getattr(flythrough_cfg, "output_dir", None)
+                    video_path = mod.generate_flythrough(
+                        flight_dir=self.config.image_dir,
+                        output_dir=output_dir,
+                    )
+                    if video_path and os.path.isfile(video_path):
+                        self.comet_logger.experiment.log_asset(
+                            file_data=video_path,
+                            file_name=os.path.basename(video_path),
+                        )
+                        print(f"Logged flythrough video to Comet: {video_path}")
+                    else:
+                        print(f"Flythrough video not produced: {video_path}")
+                else:
+                    print(f"Flythrough script not found: {script_path}")
+            except Exception as e:
+                print(f"Flythrough video failed (non-fatal): {e}")
 
         # Use generic annotator to upload for each instance
         for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():

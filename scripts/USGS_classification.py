@@ -1,3 +1,18 @@
+"""USGS species classification training on UBFAI crop annotations.
+
+Classification crops are extracted from UBFAI crop images using each annotation's
+bounding box plus a configurable buffer (expand_pixels) on all sides. Buffering is
+done in src.classification.preprocess_images; prepare_USGS.py only produces
+detection crops (patch-based, no bbox buffer).
+
+To explore buffer size: use classification_model.expand. Outputs are written to
+buffer-specific subdirs so runs do not overwrite (e.g. .../checkpoints/buffer_0/,
+.../crops/train/buffer_200/<comet_id>/). Example:
+
+  uv run python scripts/USGS_classification.py classification_model.expand=0    # tight
+  uv run python scripts/USGS_classification.py classification_model.expand=30  # default
+  uv run python scripts/USGS_classification.py classification_model.expand=200 # large context
+"""
 import re
 import numpy as np
 import pandas as pd
@@ -194,22 +209,36 @@ def main(cfg: DictConfig):
     comet_logger.experiment.add_tag("classification")
     comet_id = comet_logger.experiment.id
 
-    # Add a experiment stamp to not use the same image_dir for different runs
-    train_crop_image_dir = os.path.join(cfg.classification_model.train_crop_image_dir, comet_id)
+    # Buffer (expand) in pixels around each bbox when extracting classification crops.
+    # Different buffer sizes save to different dirs so runs do not overwrite each other.
+    expand_pixels = int(cfg.classification_model.get("expand", 30))
+    buffer_suffix = f"buffer_{expand_pixels}"
+    comet_logger.experiment.log_parameter("classification_bbox_expand_pixels", expand_pixels)
+
+    # Output dirs are buffer-specific: .../buffer_0/, .../buffer_30/, .../buffer_200/, etc.
+    train_crop_image_dir = os.path.join(
+        cfg.classification_model.train_crop_image_dir, buffer_suffix, comet_id
+    )
     os.makedirs(train_crop_image_dir, exist_ok=True)
 
-    val_crop_image_dir = os.path.join(cfg.classification_model.val_crop_image_dir, comet_id)
+    val_crop_image_dir = os.path.join(
+        cfg.classification_model.val_crop_image_dir, buffer_suffix, comet_id
+    )
     os.makedirs(val_crop_image_dir, exist_ok=True)
+
+    checkpoint_dir = os.path.join(cfg.classification_model.checkpoint_dir, buffer_suffix)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     trained_model = preprocess_and_train(
         train_df=train_df,
         validation_df=validation_df,
         comet_logger=comet_logger,
         checkpoint=cfg.classification_model.checkpoint,
-        checkpoint_dir=cfg.classification_model.checkpoint_dir,
+        checkpoint_dir=checkpoint_dir,
         image_dir=cfg.classification_model.image_dir,
         train_crop_image_dir=train_crop_image_dir,
         val_crop_image_dir=val_crop_image_dir,
+        expand_pixels=expand_pixels,
         fast_dev_run=cfg.classification_model.fast_dev_run,
         max_epochs=cfg.classification_model.max_epochs,
         lr=cfg.classification_model.lr,
@@ -224,8 +253,7 @@ def main(cfg: DictConfig):
     # Log the numeric to label dictionary
     comet_logger.experiment.log_parameter("numeric_to_label_dict", trained_model.numeric_to_label_dict)
 
-    checkpoint_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/"
-    trained_model.trainer.save_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
+    trained_model.trainer.save_checkpoint(os.path.join(checkpoint_dir, f"{comet_id}.ckpt"))
 
     validation_results = trained_model.trainer.validate(trained_model)
 
@@ -241,7 +269,7 @@ def main(cfg: DictConfig):
         )
 
     # Reload the model from checkpoint and validate
-    trained_model = CropModel.load_from_checkpoint(os.path.join(checkpoint_dir,f"{comet_id}.ckpt"))
+    trained_model = CropModel.load_from_checkpoint(os.path.join(checkpoint_dir, f"{comet_id}.ckpt"))
     trained_model.create_trainer()
     validation_results = trained_model.trainer.validate(trained_model)
     print(validation_results)

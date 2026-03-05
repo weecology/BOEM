@@ -64,9 +64,9 @@ def _resize_frame(frame, out_w, out_h):
 
 
 def _draw_arrow(frame, target_x, target_y):
-    """Compact arrow that stops 80px short of the target so it does not obscure it."""
+    """Arrow tip stops ~35px short of the target so it points at it without covering it."""
     h, w = frame.shape[:2]
-    offset, arrow_len = 80, 180
+    offset, arrow_len = 35, 180
     dx, dy = target_x - w // 2, target_y - h // 4
     dist = math.hypot(dx, dy) or 1
     ux, uy = dx / dist, dy / dist
@@ -158,12 +158,12 @@ def _paste_zoom(base, zoomed, margin=20):
         zh, zw = zoomed.shape[:2]
     x0, y0 = (ow - zw) // 2, (oh - zh) // 2
     cv2.rectangle(out, (x0 - 2, y0 - 2), (x0 + zw + 2, y0 + zh + 2),
-                  (0, 255, 160), 2)
+                  (0, 0, 0), 2)
     out[y0:y0 + zh, x0:x0 + zw] = zoomed
     return out
 
 
-def _plan_frames(has_det, fps, skip_gap_sec=60.0,
+def _plan_frames(has_det, fps, skip_gap_sec=30.0,
                  runway_sec=10.0, trail_sec=2.0):
     """Decide which thinned frames to include and where to insert skip cards."""
     n = len(has_det)
@@ -212,9 +212,10 @@ def _plan_frames(has_det, fps, skip_gap_sec=60.0,
 
 def generate_flythrough(
     flight_dir, output_path=None, output_dir=None, camera="auto",
-    width=1280, height=720, fps=10, thin=5,
-    pause_seconds=2.0, zoom_seconds=2.5,
-    skip_card_seconds=5.0, min_score=0.3,
+    width=1280, height=720, fps=10, thin=4,
+    pause_seconds=2.0, zoom_seconds=4.0,
+    skip_card_seconds=5.0, min_score=0.92,
+    max_gap_seconds=30.0,
 ):
     flight_dir = Path(flight_dir).resolve()
     if not flight_dir.is_dir():
@@ -263,12 +264,18 @@ def generate_flythrough(
     images = [p for p, _ in cam_imgs]
     print(f"Camera {camera}: {len(images)} images total.")
 
+    # Never drop frames that have detections: thinned list plus every frame that has a detection.
     thinned = images[::thin]
-    has_det = [p.name in det_bns for p in thinned]
+    detection_frames = [p for p in images if p.name in det_bns]
+    frame_list = sorted(
+        set(thinned) | set(detection_frames),
+        key=lambda p: images.index(p),
+    )
+    has_det = [p.name in det_bns for p in frame_list]
     n_det_frames = sum(has_det)
-    print(f"After thin={thin}: {len(thinned)} frames, {n_det_frames} of those frames have >=1 detection.")
+    print(f"Frames to consider: {len(frame_list)} (thinned + all detection frames; {n_det_frames} have >=1 detection).")
 
-    include, skip_cards = _plan_frames(has_det, fps)
+    include, skip_cards = _plan_frames(has_det, fps, skip_gap_sec=max_gap_seconds)
     print(f"Rendering {sum(include)} frames, "
           f"{len(skip_cards)} skip cards "
           f"({sum(skip_cards.values()):,} skipped)")
@@ -276,7 +283,7 @@ def generate_flythrough(
     if output_path is None:
         out_dir = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
         out_dir.mkdir(parents=True, exist_ok=True)
-        output_path = out_dir / f"{flight_dir.name}_flythrough.avi"
+        output_path = out_dir / f"{flight_dir.name}_flythrough.mp4"
     output_path = Path(output_path)
     if output_path.suffix.lower() == ".mp4":
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -297,7 +304,7 @@ def generate_flythrough(
 
     try:
         written = 0
-        for i, img_path in enumerate(thinned):
+        for i, img_path in enumerate(frame_list):
             if not include[i]:
                 continue
             if i in skip_cards:
@@ -322,16 +329,16 @@ def generate_flythrough(
                 written += 1
                 continue
 
-            # Arrow at the start: show frame with arrow for pause_seconds, then zoom.
-            first = preds.iloc[0]
-            tx = int(round((first["xmin"] + first["xmax"]) / 2 * scale)) + lx
-            ty = int(round((first["ymin"] + first["ymax"]) / 2 * scale)) + ly
+            # Arrows for all detections; zoom on one only (first).
             arrow_frame = resized.copy()
-            _draw_arrow(arrow_frame, tx, ty)
+            for _, row in preds.iterrows():
+                tx = int(round((row["xmin"] + row["xmax"]) / 2 * scale)) + lx
+                ty = int(round((row["ymin"] + row["ymax"]) / 2 * scale)) + ly
+                _draw_arrow(arrow_frame, tx, ty)
             for _ in range(n_arrow_frames):
                 writer.write(arrow_frame)
 
-            zoomed = _zoomed_crop(frame, preds, fw, fh)
+            zoomed = _zoomed_crop(frame, preds.iloc[:1], fw, fh)
             overlay = _paste_zoom(resized, zoomed)
             for _ in range(n_zoom):
                 writer.write(overlay)
@@ -358,12 +365,17 @@ def main():
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     p.add_argument("--fps", type=int, default=10)
-    p.add_argument("--thin", type=int, default=5)
+    p.add_argument("--thin", type=int, default=4,
+                   help="Use every Nth image (default: 4)")
     p.add_argument("--pause-seconds", type=float, default=2.0,
                    help="Seconds to show arrow on detection (default: 2)")
-    p.add_argument("--zoom-seconds", type=float, default=2.5)
-    p.add_argument("--skip-card-seconds", type=float, default=5.0)
-    p.add_argument("--min-score", type=float, default=0.3)
+    p.add_argument("--zoom-seconds", type=float, default=4.0,
+                   help="Seconds to show zoom crop (default: 4)")
+    p.add_argument("--skip-card-seconds", type=float, default=3.0)
+    p.add_argument("--min-score", type=float, default=0.92,
+                   help="Min detection score to show (default: 0.92)")
+    p.add_argument("--max-gap-seconds", type=float, default=30.0,
+                   help="Max video seconds without a detection before skip card (default: 30)")
     args = p.parse_args()
     out = generate_flythrough(
         flight_dir=args.flight_dir, output_path=args.output,
@@ -373,6 +385,7 @@ def main():
         zoom_seconds=args.zoom_seconds,
         skip_card_seconds=args.skip_card_seconds,
         min_score=args.min_score,
+        max_gap_seconds=args.max_gap_seconds,
     )
     print(f"Wrote: {out}")
 

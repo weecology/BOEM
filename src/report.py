@@ -80,46 +80,20 @@ def load_geospatial_metadata(flight_name, metadata_dir):
 
 
 def georeference_predictions(predictions, captures, image_width, image_height):
-    """Merge predictions with captures and compute lat/lon via bilinear
-    interpolation of each bbox centre within the image corner footprint."""
+    """Merge predictions with captures and assign image center (Lat, Lon) to pred_lat/pred_lon."""
     preds = predictions.copy()
     preds["_merge_key"] = preds["image_path"].apply(
         lambda x: os.path.splitext(os.path.basename(x))[0]
     )
-
-    geo_cols = [
-        "Basename", "BLLat", "BLLon", "BRLat", "BRLon",
-        "TLLat", "TLLon", "TRLat", "TRLon", "Lat", "Lon", "FlightLine",
-    ]
-    available = [c for c in geo_cols if c in captures.columns]
+    cols = ["Basename", "Lat", "Lon", "FlightLine"]
+    available = [c for c in cols if c in captures.columns]
     captures_subset = captures[available].drop_duplicates(subset=["Basename"])
 
     merged = preds.merge(
         captures_subset, left_on="_merge_key", right_on="Basename", how="left",
     )
-
-    cx = (merged["xmin"] + merged["xmax"]) / 2.0
-    cy = (merged["ymin"] + merged["ymax"]) / 2.0
-    fx = cx / image_width
-    fy = cy / image_height
-
-    merged["pred_lat"] = (
-        (1 - fy) * (1 - fx) * merged["TLLat"]
-        + (1 - fy) * fx * merged["TRLat"]
-        + fy * (1 - fx) * merged["BLLat"]
-        + fy * fx * merged["BRLat"]
-    )
-    merged["pred_lon"] = (
-        (1 - fy) * (1 - fx) * merged["TLLon"]
-        + (1 - fy) * fx * merged["TRLon"]
-        + fy * (1 - fx) * merged["BLLon"]
-        + fy * fx * merged["BRLon"]
-    )
-
-    fallback = merged["pred_lat"].isna() & merged["Lat"].notna()
-    merged.loc[fallback, "pred_lat"] = merged.loc[fallback, "Lat"]
-    merged.loc[fallback, "pred_lon"] = merged.loc[fallback, "Lon"]
-
+    merged["pred_lat"] = merged["Lat"] if "Lat" in merged.columns else np.nan
+    merged["pred_lon"] = merged["Lon"] if "Lon" in merged.columns else np.nan
     merged.drop(columns=["_merge_key"], inplace=True)
     return merged
 
@@ -505,7 +479,7 @@ def _render_pdf_page1(pdf, gdf, species_list, colors, summary_map_path,
 
 
 def _render_pdf_page2(pdf, predictions, crop_info, species_list, colors,
-                      flight_name, report_meta=None):
+                      flight_name, report_meta=None, fullsize_example_path=None):
     """Page 2: species bar chart, stats, sample crops."""
     report_meta = report_meta or {}
     fig = plt.figure(figsize=(11, 8.5))
@@ -566,6 +540,7 @@ def generate_pdf_report(gdf, predictions, crop_info, summary_map_path,
             n_detections=n_detections,
             flight_date=flight_date,
         )
+        
         _render_pdf_page2(
             pdf, predictions, crop_info, species_list, colors, flight_name,
             report_meta={},
@@ -605,8 +580,11 @@ def generate_report(predictions, config, comet_logger, image_dir):
         print("Report: no predictions pass score filters, skipping")
         return None
 
-    georeffed = georeference_predictions(rp, captures, img_w, img_h)
-    georeffed = georeffed.dropna(subset=["pred_lat", "pred_lon"])
+    if "pred_lat" in rp.columns and "pred_lon" in rp.columns:
+        georeffed = rp.dropna(subset=["pred_lat", "pred_lon"])
+    else:
+        georeffed = georeference_predictions(rp, captures, img_w, img_h)
+        georeffed = georeffed.dropna(subset=["pred_lat", "pred_lon"])
 
     if georeffed.empty:
         print("Report: no predictions could be georeferenced, skipping")

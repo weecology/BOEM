@@ -1,11 +1,17 @@
 import os
+import sys
+from pathlib import Path
+
+# Resolve config from project root (script may run from any cwd)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 import hydra
 from omegaconf import DictConfig
 import pandas as pd
 from deepforest import main
 from deepforest.visualize import plot_results
 
-@hydra.main(config_path="boem_conf", config_name="boem_config.yaml")
+@hydra.main(config_path=str(PROJECT_ROOT / "boem_conf"), config_name="boem_config.yaml")
 def main_inspect(cfg: DictConfig):
     # Load model from checkpoint
     checkpoint_path = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/9a203c4f18b942f3a946ea5db0670524.pl"

@@ -122,6 +122,33 @@ def _species_color_map(species_list):
     }
 
 
+def generate_observations_table(gdf, output_path):
+    """Write a CSV table of every observation: det/cls score, predicted label, hierarchical label, lat/lon, image name."""
+    lat = gdf.geometry.y
+    lon = gdf.geometry.x
+    image_name = gdf["image_path"].apply(lambda p: os.path.basename(str(p)))
+
+    table = pd.DataFrame({
+        "det_score": gdf["score"].values,
+        "cls_score": gdf["cropmodel_score"].values,
+        "predicted_label": gdf["cropmodel_label"].values,
+        "lat": lat.values,
+        "lon": lon.values,
+        "image_name": image_name.values,
+    })
+
+    if "hcast_species" in gdf.columns:
+        table["hcast_species"] = gdf["hcast_species"].values
+    if "hcast_genus" in gdf.columns:
+        table["hcast_genus"] = gdf["hcast_genus"].values
+    if "hcast_family" in gdf.columns:
+        table["hcast_family"] = gdf["hcast_family"].values
+
+    table.to_csv(output_path, index=False)
+    print("Observations table written to " + output_path)
+    return output_path
+
+
 def generate_shapefile(gdf, output_path):
     """Save GeoDataFrame as ESRI Shapefile with short column names."""
     rename_map = {
@@ -596,6 +623,7 @@ def generate_report(predictions, config, comet_logger, image_dir):
     ]
     gdf = gpd.GeoDataFrame(georeffed, geometry=geometry, crs="EPSG:4326")
 
+    generate_observations_table(gdf, os.path.join(report_dir, "observations_table.csv"))
     generate_shapefile(gdf, os.path.join(report_dir, "predictions.shp"))
 
     generate_interactive_map(

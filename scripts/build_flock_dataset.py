@@ -8,9 +8,15 @@ and optionally zips the result for sharing.
 import argparse
 import os
 import shutil
+import sys
 import zipfile
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+# Add project root so we can import src
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import pandas as pd

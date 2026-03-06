@@ -10,7 +10,7 @@ from src import detection
 from src import classification
 from src import hierarchical
 from src.usgs_annotations import load_usgs_annotated_image_paths
-from src.visualization import crop_images
+from src.visualization import crop_images, convert_codec
 from src.report import generate_report, load_geospatial_metadata, georeference_predictions
 from src import bulk_annotations as bulk_mod
 from src.pipeline_evaluation import PipelineEvaluation
@@ -18,6 +18,7 @@ from pytorch_lightning.loggers import CometLogger
 import glob
 import pandas as pd
 import random
+import tempfile
 
 class Pipeline:
     """Pipeline for training and evaluating a detection and classification model"""
@@ -520,6 +521,19 @@ class Pipeline:
                         output_dir=output_dir,
                     )
                     if video_path and os.path.isfile(video_path):
+                        # Re-encode to H.264 for Streamlit/browser playback (script writes mp4v)
+                        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+                            tmp_path = f.name
+                        try:
+                            convert_codec(video_path, tmp_path)
+                            os.replace(tmp_path, video_path)
+                        except Exception as e:
+                            if os.path.isfile(tmp_path):
+                                try:
+                                    os.remove(tmp_path)
+                                except OSError:
+                                    pass
+                            print(f"Flythrough H.264 conversion failed (logging original): {e}")
                         self.comet_logger.experiment.log_asset(
                             file_data=video_path,
                             file_name=os.path.basename(video_path),

@@ -27,7 +27,6 @@ from .samplers import RASampler
 from .augment import new_data_aug_generator
 
 from . import models_hier
-from . import models_v2
 
 from . import utils
 
@@ -159,9 +158,8 @@ def get_args_parser():
     # Dataset parameters
     parser.add_argument('--data-path', default='/datasets01/imagenet_full_size/061417/', type=str,
                         help='dataset path')
-    parser.add_argument('--data-set', default='BIRD-HIER', choices=['AIR-HIER', 'BIRD-HIER', 'INAT18-HIER', 'INAT21-MINI-HIER', 
-                                                                    'BREEDS-HIER', 'USGS', 'USGS-SUPERPIXEL'],
-                        type=str, help='Image Net dataset path')
+    parser.add_argument('--data-set', default='USGS', choices=['USGS'],
+                        type=str, help='Dataset name')
     parser.add_argument('--breeds_sort', default='entity13', type=str, choices=['entity13', 'living17', 'nonliving26', 'entity30'])
     parser.add_argument('--path-yn', action='store_true')
     parser.add_argument('--inat-category', default='name',

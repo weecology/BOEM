@@ -2,13 +2,20 @@
 """Find images with highest loss and upload to Label Studio for review."""
 
 import os
+import sys
 import pandas as pd
 import numpy as np
 import torch
+from pathlib import Path
 from deepforest import main
 from omegaconf import DictConfig, OmegaConf
 import yaml
 from torchvision.ops import box_iou
+
+# Add project root so we can import src and resolve boem_conf
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import Label Studio utilities
 from src import label_studio as ls_mod
@@ -323,8 +330,8 @@ def upload_to_label_studio(image_paths, image_dir, csv_dir, project_name, cfg, f
         print("No new images to upload (all have been processed)")
         return
     # Load server config
-    server_cfg_path = os.path.join('boem_conf', 'server', 'serenity.yaml')
-    if os.path.exists(server_cfg_path):
+    server_cfg_path = PROJECT_ROOT / 'boem_conf' / 'server' / 'serenity.yaml'
+    if server_cfg_path.exists():
         with open(server_cfg_path) as f:
             server_cfg = yaml.safe_load(f)
     else:
@@ -419,9 +426,9 @@ def run():
             ls_config = yaml.safe_load(f)['label_studio']
     else:
         # Use default config from boem_conf
-        ls_config_path = 'boem_conf/annotation/label_studio.yaml'
-        if os.path.exists(ls_config_path):
-            with open(ls_config_path) as f:
+        ls_config_path = PROJECT_ROOT / 'boem_conf' / 'annotation' / 'label_studio.yaml'
+        if ls_config_path.exists():
+            with open(ls_config_path, encoding="utf-8") as f:
                 ls_config = yaml.safe_load(f)['label_studio']
         else:
             # Hardcoded defaults

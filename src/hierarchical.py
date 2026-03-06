@@ -1,94 +1,67 @@
 import os
-from typing import Optional, Tuple, List, Dict, Callable
+from typing import Optional, Tuple, List, Dict
 
 import torch
 import pandas as pd
 import numpy as np
 from PIL import Image
-import cv2
 
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models import create_model
 
+
 def _infer_head_sizes_from_checkpoint(ckpt: Dict[str, torch.Tensor]) -> Tuple[int, Optional[int], Optional[int]]:
     species = None
+    genus = None
     family = None
-    manufacturer = None
 
-    # Common head names used in hierarchical models
     if "head.weight" in ckpt:
         species = ckpt["head.weight"].shape[0]
-    # Try other possible keys
     for key in ckpt.keys():
-        if key.endswith("family_head.weight") and family is None:
+        if key.endswith("family_head.weight") and genus is None:
+            genus = ckpt[key].shape[0]
+        if key.endswith("manufacturer_head.weight"):
             family = ckpt[key].shape[0]
-        if key.endswith("manu_head.weight") or key.endswith("mf_head.weight"):
-            manufacturer = ckpt[key].shape[0]
 
     if species is None:
-        # Fall back: find the largest classifier-like matrix
         classifier_like = [v.shape[0] for k, v in ckpt.items() if k.endswith(".weight") and v.ndim == 2]
         species = max(classifier_like) if classifier_like else 1000
 
-    return species, family, manufacturer
+    return species, genus, family
 
 
 def _default_transform(image_size: int = 224):
-    """Standard ImageNet normalization transform with resize."""
     return transforms.Compose([
         transforms.Resize((image_size, image_size)),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
     ])
-
-
-def _transform_without_resize(image_size: int = 224):
-    """Transform with resize and normalization (resize needed for model input size).
-    
-    Note: Despite the name, we do resize here because the model requires fixed-size inputs.
-    The name reflects that we're not doing additional augmentation resizing.
-    """
-    return transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD)
-    ])
-
-
-def _collate_with_superpixels(batch):
-    """Collate function that batches (image, superpixel) tuples."""
-    images = []
-    superpixels = []
-    for item in batch:
-        if isinstance(item, (list, tuple)) and len(item) >= 2:
-            images.append(item[0])
-            superpixels.append(item[1])
-        else:
-            images.append(item[0])
-            superpixels.append(item[1])
-    
-    # Stack images
-    images = torch.stack(images)
-    
-    # Stack superpixels (they should already be tensors)
-    superpixels = torch.stack(superpixels)
-    
-    return images, superpixels
 
 
 class HCastWrapper:
-    """Minimal wrapper to run H-CAST species head for crop classification.
+    """Wrapper to run hierarchical DeiT ViT for crop classification.
 
-    Exposes a similar surface to DeepForest's CropModel for inference-only use.
+    Model outputs: (species_logits, genus_logits, family_logits) for 3-level hierarchy.
+    The head names in the model are: head (species), family_head (genus), manufacturer_head (family) --
+    inherited from the HCAST Aircraft naming convention.
     """
 
-    def __init__(self, model: torch.nn.Module, device: torch.device, label_dict: Dict[str, int], image_size: int = 224, species_to_genus: Optional[Dict[int, str]] = None, species_df: Optional[pd.DataFrame] = None, genus_label_dict: Optional[Dict[int, str]] = None, family_label_dict: Optional[Dict[int, str]] = None):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        device: torch.device,
+        label_dict: Dict[str, int],
+        image_size: int = 224,
+        species_to_genus: Optional[Dict[int, str]] = None,
+        species_df: Optional[pd.DataFrame] = None,
+        genus_label_dict: Optional[Dict[int, str]] = None,
+        family_label_dict: Optional[Dict[int, str]] = None,
+    ):
         self.model = model.eval().to(device)
         self.device = device
-        self.label_dict = label_dict  # maps label string -> index
-        # Separate mappings for species, genus, and family (they have overlapping 0-based indices)
+        self.label_dict = label_dict
         self.species_numeric_to_label = {v: k for k, v in label_dict.items() if k.startswith("species_")}
         self.genus_numeric_to_label = genus_label_dict or {v: k for k, v in label_dict.items() if k.startswith("genus_")}
         self.family_numeric_to_label = family_label_dict or {v: k for k, v in label_dict.items() if k.startswith("family_")}
@@ -96,45 +69,23 @@ class HCastWrapper:
         self._transform = _default_transform(image_size)
         self.species_to_genus = species_to_genus or {}
         self.species_df = species_df
-        
-        # Check if this is a CAST model (requires superpixel labels)
-        # CAST models have 'pool' layers in their state dict
-        self.is_cast_model = any('pool' in key for key in model.state_dict().keys())
 
     def get_transform(self, augment: bool = False):
         return self._transform
 
     @torch.no_grad()
-    def predict_logits(self, batch: torch.Tensor, superpixel_labels: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, ...]:
+    def predict_logits(self, batch: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """Predict logits for a batch of images.
-        
-        Args:
-            batch: Image tensor of shape (batch_size, 3, H, W)
-            superpixel_labels: Superpixel label tensor of shape (batch_size, H, W).
-                             Required for CAST models.
-        
+
         Returns:
-            Tuple of logits: (species_logits, family_logits, ...) for hierarchical models,
-            or just species_logits for non-hierarchical models
+            Tuple of (species_logits, genus_logits, family_logits) for 3-level,
+            or (species_logits, genus_logits) for 2-level.
         """
         batch = batch.to(self.device)
-        
-        if self.is_cast_model:
-            if superpixel_labels is None:
-                raise ValueError("CAST models require superpixel_labels as input")
-            superpixel_labels = superpixel_labels.to(self.device)
-            outputs = self.model(batch, superpixel_labels)
-        else:
-            # Standard DeiT models only need images
-            outputs = self.model(batch)
-            
+        outputs = self.model(batch)
         if isinstance(outputs, (list, tuple)):
-            # For 3-class hierarchical models: (species, genus, family)
-            # Note: model code labels them as (head, family_head, manufacturer_head)
-            # but they actually represent (species, genus, family)
             return tuple(outputs)
-        else:
-            return (outputs,)
+        return (outputs,)
 
 
 def load_hcast_model(
@@ -144,21 +95,16 @@ def load_hcast_model(
 ) -> HCastWrapper:
     """Load hierarchical DeiT ViT model from checkpoint and return a wrapper ready for inference.
 
-    Only DeiT hierarchical checkpoints (e.g. deit_small_patch16_224 from main_hier.py) are
-    supported. CAST checkpoints (DGL/graph pooling) are not supported.
-
     Args:
         checkpoint_path: Path to the checkpoint file
         label_csv: Path to CSV with columns: species, genus, family (optional "index" = species class index).
         device: Device to load model on. If None, uses 'cuda' if available.
     """
-
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
-    # Extract model state dict
     if "model" in checkpoint:
         model_state_dict = checkpoint["model"]
     elif "state_dict" in checkpoint:
@@ -166,24 +112,9 @@ def load_hcast_model(
     else:
         model_state_dict = checkpoint
 
-    # Only DeiT hierarchical (ViT) checkpoints are supported; CAST (DGL) checkpoints are not.
-    is_cast = any("pool" in k for k in model_state_dict.keys())
-    if is_cast:
-        raise ValueError(
-            "This checkpoint is a CAST model (uses graph pooling/DGL). "
-            "Only DeiT hierarchical ViT checkpoints are supported. "
-            "Use a checkpoint trained with main_hier.py (e.g. deit_small_patch16_224)."
-        )
+    from src.hcast.deit import models_hier  # noqa: F401
+
     args = checkpoint.get("args")
-    if args is not None and getattr(args, "model", "").startswith("cast_"):
-        raise ValueError(
-            f"Checkpoint requests CAST model {args.model}. "
-            "Only DeiT hierarchical ViT models are supported (e.g. deit_small_patch16_224)."
-        )
-
-    # Register and use DeiT hierarchical models only (no DGL)
-    from src.hcast.deit import models_hier
-
     if args is not None:
         model = create_model(
             args.model,
@@ -198,11 +129,10 @@ def load_hcast_model(
         img_size = getattr(args, "input_size", 224)
         nb_classes = args.nb_classes
     else:
-        species_classes, family_classes, manu_classes = _infer_head_sizes_from_checkpoint(model_state_dict)
-        nb_classes = [c for c in [species_classes, family_classes, manu_classes] if c is not None]
-        model_name = "deit_small_patch16_224"
+        species_classes, genus_classes, family_classes = _infer_head_sizes_from_checkpoint(model_state_dict)
+        nb_classes = [c for c in [species_classes, genus_classes, family_classes] if c is not None]
         model = create_model(
-            model_name,
+            "deit_small_patch16_224",
             pretrained=False,
             num_classes=nb_classes[0],
             img_size=224,
@@ -210,9 +140,7 @@ def load_hcast_model(
         )
         img_size = 224
 
-    # Load the state dict with strict=False for robustness
     missing_keys, unexpected_keys = model.load_state_dict(model_state_dict, strict=False)
-    
     if missing_keys:
         print(f"Warning: Missing keys when loading checkpoint: {len(missing_keys)} keys")
     if unexpected_keys:
@@ -259,104 +187,31 @@ def load_hcast_model(
             if idx not in family_label_dict:
                 family_label_dict[idx] = f"family_{idx}"
 
-    return HCastWrapper(model=model, device=device, label_dict=label_dict, image_size=img_size, species_to_genus=species_to_genus, species_df=species_df, genus_label_dict=genus_label_dict, family_label_dict=family_label_dict)
+    return HCastWrapper(
+        model=model, device=device, label_dict=label_dict, image_size=img_size,
+        species_to_genus=species_to_genus, species_df=species_df,
+        genus_label_dict=genus_label_dict, family_label_dict=family_label_dict,
+    )
 
-class USGSDataset(Dataset):
-    def __init__(self, 
-                 predictions: pd.DataFrame,
-                 image_dir: str,
-                 transform=None,
-                 mean: Tuple[float, float, float] = IMAGENET_DEFAULT_MEAN,
-                 std: Tuple[float, float, float] = IMAGENET_DEFAULT_STD,
-                 n_segments: int = 256,
-                 compactness: float = 10.0,
-                 blur_ops: Optional[Callable] = None,
-                 scale_factor: float = 1.0):
-        """Dataset for inference that crops images from bounding boxes in predictions DataFrame.
-        
-        Args:
-            predictions: DataFrame with columns: image_path, xmin, ymin, xmax, ymax
-            image_dir: Root directory where images are located
-            transform: Optional transform to apply (should not resize for superpixel generation)
-            mean: Mean for normalization
-            std: Std for normalization
-            n_segments: Number of superpixels to generate
-            compactness: Superpixel compactness parameter
-            blur_ops: Optional blur operation
-            scale_factor: Scale factor for superpixel generation
-        """
-        self.mean = mean
-        self.std = std
-        self.n_segments = n_segments
-        self.compactness = compactness
-        self.blur_ops = blur_ops
-        self.scale_factor = scale_factor
-        self.transform = transform
+
+class InferenceCropDataset(Dataset):
+    """Dataset for inference that crops images from bounding boxes in a predictions DataFrame."""
+
+    def __init__(self, predictions: pd.DataFrame, image_dir: str, transform=None):
+        self.transform = transform or _default_transform()
         self.image_dir = image_dir
-        
-        # Store predictions DataFrame
         self.predictions = predictions.reset_index(drop=True)
 
     def __len__(self):
         return len(self.predictions)
 
     def __getitem__(self, index):
-        """Get a cropped image and its superpixel labels for inference.
-        
-        Returns:
-            Tuple of (image_tensor, superpixel_labels)
-        """
         row = self.predictions.iloc[index]
-        image_path = row['image_path']
-        xmin = int(row['xmin'])
-        ymin = int(row['ymin'])
-        xmax = int(row['xmax'])
-        ymax = int(row['ymax'])
-        
-        # Build full path to image
-        full_path = os.path.join(self.image_dir, image_path)
-        
-        # Load and crop image
+        full_path = os.path.join(self.image_dir, row['image_path'])
         with open(full_path, 'rb') as f:
             image = Image.open(f).convert('RGB')
-        
-        # Crop based on bounding box
-        crop = image.crop((xmin, ymin, xmax, ymax))
-        
-        # Apply transform if provided (should not resize)
-        if self.transform is not None:
-            sample = self.transform(crop)
-        else:
-            # Default: just convert to tensor and normalize
-            sample = transforms.ToTensor()(crop)
-            normalize = transforms.Normalize(self.mean, self.std)
-            sample = normalize(sample)
-
-        # Generate superpixels
-        if self.blur_ops is not None:
-            samp = self.blur_ops(sample)
-        else:
-            samp = sample
-        
-        # Convert tensor back to numpy for superpixel generation
-        samp = (samp.data.numpy().transpose(1, 2, 0) * np.array(self.std) + np.array(self.mean))
-        samp = (samp * 255).astype(np.uint8)
-        samp = cv2.cvtColor(samp, cv2.COLOR_RGB2LAB)
-        
-        # Generate superpixels
-        seeds = cv2.ximgproc.createSuperpixelSEEDS(
-            samp.shape[1], samp.shape[0], 3, 
-            num_superpixels=self.n_segments, 
-            num_levels=1, 
-            prior=2,
-            histogram_bins=5, 
-            double_step=False
-        )
-        seeds.iterate(samp, num_iterations=15)
-        segments = seeds.getLabels()
-        segments = torch.LongTensor(segments)
-
-        return sample, segments
+        crop = image.crop((int(row['xmin']), int(row['ymin']), int(row['xmax']), int(row['ymax'])))
+        return self.transform(crop)
 
 
 @torch.no_grad()
@@ -369,24 +224,15 @@ def classify_dataframe(
 ):
     """Add crop-level hierarchical classification to predictions DataFrame.
 
-    Adds columns: hcast_species, hcast_genus, hcast_family, hcast_species_score, hcast_family_score.
+    Adds columns: hcast_species, hcast_genus, hcast_family, hcast_species_score,
+    hcast_genus_score, hcast_family_score.
     """
     if predictions is None or len(predictions) == 0:
         return predictions
 
-    # Create transform with resize to model's expected input size
-    transform = _transform_without_resize(image_size=model.image_size)
-
-    # Use USGSDataset to create a DataLoader
-    ds = USGSDataset(predictions, image_dir, transform=transform)
-
-    dl = DataLoader(
-        ds, 
-        batch_size=batch_size, 
-        num_workers=num_workers, 
-        pin_memory=True,
-        collate_fn=_collate_with_superpixels
-    )
+    transform = _default_transform(image_size=model.image_size)
+    ds = InferenceCropDataset(predictions, image_dir, transform=transform)
+    dl = DataLoader(ds, batch_size=batch_size, num_workers=num_workers, pin_memory=True)
 
     all_species_idx: List[int] = []
     all_species_prob: List[float] = []
@@ -395,18 +241,15 @@ def classify_dataframe(
     all_family_idx: List[int] = []
     all_family_prob: List[float] = []
 
-    for batch_images, batch_superpixels in dl:
-        logits_tuple = model.predict_logits(batch_images, batch_superpixels)
-        
-        # Extract species predictions (first output)
+    for batch_images in dl:
+        logits_tuple = model.predict_logits(batch_images)
+
         species_logits = logits_tuple[0]
         species_probs = torch.softmax(species_logits, dim=1)
         species_conf, species_idx = torch.max(species_probs, dim=1)
         all_species_idx.extend(species_idx.cpu().tolist())
         all_species_prob.extend(species_conf.cpu().tolist())
-        
-        # Extract genus predictions if available (second output)
-        # Note: model calls this "family_head" but it's actually genus
+
         if len(logits_tuple) > 1:
             genus_logits = logits_tuple[1]
             genus_probs = torch.softmax(genus_logits, dim=1)
@@ -416,9 +259,7 @@ def classify_dataframe(
         else:
             all_genus_idx.extend([None] * len(species_idx))
             all_genus_prob.extend([None] * len(species_idx))
-        
-        # Extract family predictions if available (third output)
-        # Note: model calls this "manufacturer_head" but it's actually family
+
         if len(logits_tuple) > 2:
             family_logits = logits_tuple[2]
             family_probs = torch.softmax(family_logits, dim=1)
@@ -429,49 +270,23 @@ def classify_dataframe(
             all_family_idx.extend([None] * len(species_idx))
             all_family_prob.extend([None] * len(species_idx))
 
-    # Map species indices to labels
-    species_labels = []
-    for idx in all_species_idx:
-        label_key = model.species_numeric_to_label.get(idx, f"species_{idx}")
-        # Extract species name from label_key (format: "species_<name>")
-        if label_key.startswith("species_"):
-            species_name = label_key.replace("species_", "")
-            species_labels.append(species_name)
-        else:
-            species_labels.append(label_key)
-    
-    # Map genus indices to labels (from model's second output - "family_head" is actually genus)
-    genus_labels = []
-    for idx in all_genus_idx:
-        if idx is None:
-            genus_labels.append(None)
-        else:
-            label_key = model.genus_numeric_to_label.get(idx, f"genus_{idx}")
-            # Extract genus name from label_key (format: "genus_<name>")
-            if label_key.startswith("genus_"):
-                genus_name = label_key.replace("genus_", "")
-                genus_labels.append(genus_name)
+    def _map_labels(indices, numeric_to_label, prefix):
+        labels = []
+        for idx in indices:
+            if idx is None:
+                labels.append(None)
+                continue
+            label_key = numeric_to_label.get(idx, f"{prefix}_{idx}")
+            if label_key.startswith(f"{prefix}_"):
+                labels.append(label_key[len(prefix) + 1:])
             else:
-                genus_labels.append(label_key)
-    
-    # Map family indices to labels (from model's third output - "manufacturer_head" is actually family)
-    family_labels = []
-    for idx in all_family_idx:
-        if idx is None:
-            family_labels.append(None)
-        else:
-            label_key = model.family_numeric_to_label.get(idx, f"family_{idx}")
-            # Extract family name from label_key (format: "family_<name>")
-            if label_key.startswith("family_"):
-                family_name = label_key.replace("family_", "")
-                family_labels.append(family_name)
-            else:
-                family_labels.append(label_key)
+                labels.append(label_key)
+        return labels
 
     predictions = predictions.copy(deep=True)
-    predictions["hcast_species"] = species_labels
-    predictions["hcast_genus"] = genus_labels
-    predictions["hcast_family"] = family_labels
+    predictions["hcast_species"] = _map_labels(all_species_idx, model.species_numeric_to_label, "species")
+    predictions["hcast_genus"] = _map_labels(all_genus_idx, model.genus_numeric_to_label, "genus")
+    predictions["hcast_family"] = _map_labels(all_family_idx, model.family_numeric_to_label, "family")
     predictions["hcast_species_score"] = all_species_prob
     predictions["hcast_genus_score"] = all_genus_prob
     predictions["hcast_family_score"] = all_family_prob
@@ -479,9 +294,7 @@ def classify_dataframe(
 
 
 def infer_head_sizes_from_checkpoint(checkpoint_path: str) -> List[int]:
-    """Return list of output sizes for each head found in checkpoint state_dict.
-    Looks for weight tensors named like '*head*weight' (robust heuristic).
-    """
+    """Return list of output sizes for each head found in checkpoint state_dict."""
     ckpt = torch.load(checkpoint_path, map_location="cpu")
     state = ckpt.get("state_dict", ckpt)
     sizes = []
@@ -493,16 +306,8 @@ def infer_head_sizes_from_checkpoint(checkpoint_path: str) -> List[int]:
             if out_features not in seen:
                 sizes.append(out_features)
                 seen.add(out_features)
-    # fallback: if nothing found, try final classifier or heads list
     if not sizes:
         for k, v in state.items():
             if v.ndim == 2 and ("classifier" in k or "fc" in k or "head" in k):
                 sizes.append(v.shape[0])
     return sizes
-
-
-
-
-
-
-

@@ -13,7 +13,16 @@ buffer-specific subdirs so runs do not overwrite (e.g. .../checkpoints/buffer_0/
   uv run python scripts/USGS_classification.py classification_model.expand=30  # default
   uv run python scripts/USGS_classification.py classification_model.expand=200 # large context
 """
+import os
 import re
+import sys
+from pathlib import Path
+
+# Add project root so we can import src
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import numpy as np
 import pandas as pd
 import glob
@@ -22,7 +31,6 @@ from pytorch_lightning.loggers import CometLogger
 from src.classification import preprocess_and_train
 import hydra
 from omegaconf import DictConfig
-import os
 from deepforest.model import CropModel
 
 # Crop image_path is like C1_L6_F560_T20241219_173703_737_23.png -> parent stem is C1_L6_F560_T20241219_173703_737
@@ -128,7 +136,16 @@ def train_test_split_by_image(
     return train_df, test_df, report
 
 
-@hydra.main(config_path="boem_conf", config_name="boem_config")
+def normalize_label(l):
+    if pd.isna(l):
+        return l
+    s = str(l).strip()
+    s = s.replace("/", " ")
+    s = " ".join(s.split()[:2])
+    return s
+
+
+@hydra.main(config_path=str(PROJECT_ROOT / "boem_conf"), config_name="boem_config")
 def main(cfg: DictConfig):
     # Override the classification_model config with USGS.yaml
     cfg = hydra.compose(config_name="boem_config", overrides=["classification_model=USGS"])
@@ -144,14 +161,6 @@ def main(cfg: DictConfig):
     # Only keep two word labels
     crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ", na=False)]
     crop_annotations = crop_annotations[~crop_annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]
-    
-    def normalize_label(l):
-        if pd.isna(l):
-            return l
-        s = str(l).strip()
-        s = s.replace("/", " ")
-        s = " ".join(s.split()[:2])   # keep first two tokens if that is your convention
-        return s
     
     crop_annotations["label"] = crop_annotations["label"].apply(normalize_label)
 
@@ -228,6 +237,12 @@ def main(cfg: DictConfig):
 
     checkpoint_dir = os.path.join(cfg.classification_model.checkpoint_dir, buffer_suffix)
     os.makedirs(checkpoint_dir, exist_ok=True)
+    # Save train/val split for direct comparability with hierarchical model
+    split_dir = os.path.join(checkpoint_dir, comet_id)
+    os.makedirs(split_dir, exist_ok=True)
+    train_df.to_csv(os.path.join(split_dir, "usgs_train_split.csv"), index=False)
+    validation_df.to_csv(os.path.join(split_dir, "usgs_val_split.csv"), index=False)
+    print(f"[split] saved train/val CSVs to {split_dir} for hierarchical comparability")
 
     trained_model = preprocess_and_train(
         train_df=train_df,

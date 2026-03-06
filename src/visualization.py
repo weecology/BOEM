@@ -224,6 +224,7 @@ def convert_codec(input_path: str, output_path: str) -> None:
         'ffmpeg',
         '-i', input_path,
         '-vcodec', 'libx264',
+        '-movflags', '+faststart',
         output_path
     ]
     

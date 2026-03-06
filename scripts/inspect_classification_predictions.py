@@ -9,7 +9,15 @@ and compares predictions from:
 """
 
 import os
+import sys
 import tempfile
+from pathlib import Path
+
+# Add project root so we can import src and resolve boem_conf
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import hydra
 from omegaconf import DictConfig
 import pandas as pd
@@ -30,7 +38,7 @@ os.environ["TENSORBOARD_LOGDIR"] = tempfile.gettempdir()
 os.environ["COMET_DISABLE_AUTO_LOGGING"] = "1"
 
 
-@hydra.main(config_path="boem_conf", config_name="boem_config", version_base=None)
+@hydra.main(config_path=str(PROJECT_ROOT / "boem_conf"), config_name="boem_config", version_base=None)
 def main(cfg: DictConfig):
     """Main function to inspect classification predictions."""
     

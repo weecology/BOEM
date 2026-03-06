@@ -110,6 +110,7 @@ while IFS= read -r -d '' folder; do
 #SBATCH --partition=hpg-b200
 #SBATCH --gpus=1
 
+module load ffmpeg
 uv run python main.py image_dir=\$IMAGE_DIR check_annotations=True active_learning.pool_limit=100000 debug=False
 EOF
   sleep "$SLEEP_SEC"

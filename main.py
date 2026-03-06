@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(ENV_PATH)
 
-@hydra.main(config_path="boem_conf", config_name="boem_config")
+PROJECT_ROOT = Path(__file__).resolve().parent
+@hydra.main(config_path=str(PROJECT_ROOT / "boem_conf"), config_name="boem_config")
 def main(cfg: DictConfig):
     """Main entry point for the application"""
     api_key = get_api_key()

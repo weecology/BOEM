@@ -18,8 +18,9 @@ import re
 import sys
 from pathlib import Path
 
-# Add project root so we can import src
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Add project root so we can import src (parent of scripts/ = repo root).
+# Submit script must cd to repo root so resolve() is correct when run via sbatch.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -30,11 +31,16 @@ import comet_ml
 from pytorch_lightning.loggers import CometLogger
 from src.classification import preprocess_and_train
 import hydra
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 from deepforest.model import CropModel
 
 # Crop image_path is like C1_L6_F560_T20241219_173703_737_23.png -> parent stem is C1_L6_F560_T20241219_173703_737
 _CROP_SUFFIX_RE = re.compile(r"^(.+)_\d+\.(png|PNG|jpg|JPG|jpeg|JPEG)$")
+
+# Detection-task combined splits: exclude so we only load per-image CSVs (avoids duplicate rows and Object vs species label conflicts).
+UBFAI_CROPS_EXCLUDE_CSV = frozenset({"train.csv", "test.csv", "zero_shot.csv"})
+UBFAI_CROPS_EXCLUDE_PREFIX = "train_max_empty_"  # e.g. train_max_empty_0_10.csv
 
 
 def _crop_path_to_parent_stem(crop_path: str) -> str | None:
@@ -147,14 +153,50 @@ def normalize_label(l):
 
 @hydra.main(config_path=str(PROJECT_ROOT / "boem_conf"), config_name="boem_config")
 def main(cfg: DictConfig):
-    # Override the classification_model config with USGS.yaml
-    cfg = hydra.compose(config_name="boem_config", overrides=["classification_model=USGS"])
-        
-    # From the detection script
-    crop_annotations = glob.glob("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops/*.csv")
-    crop_annotations = [pd.read_csv(x) for x in crop_annotations]
+    # Override the classification_model config with USGS.yaml, and forward CLI overrides (e.g. classification_model.expand=200)
+    overrides = ["classification_model=USGS"] + list(HydraConfig.get().overrides.task)
+    cfg = hydra.compose(config_name="boem_config", overrides=overrides)
+
+    # From the detection script: use only per-image CSVs (exclude train/test/zero_shot) to avoid
+    # duplicates and Object vs species label conflicts (prepare_USGS sets label=Object in combined splits).
+    ubfai_crops_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+    all_csvs = glob.glob(os.path.join(ubfai_crops_dir, "*.csv"))
+    per_image_csvs = [
+        x for x in all_csvs
+        if os.path.basename(x) not in UBFAI_CROPS_EXCLUDE_CSV
+        and not os.path.basename(x).startswith(UBFAI_CROPS_EXCLUDE_PREFIX)
+    ]
+    n_excluded = len(all_csvs) - len(per_image_csvs)
+    if n_excluded:
+        print(f"[annotation pool] Loading {len(per_image_csvs)} per-image CSVs (excluded {n_excluded} combined splits: train/test/zero_shot, train_max_empty_*)")
+    if not per_image_csvs:
+        raise ValueError(
+            f"No per-image CSVs found in {ubfai_crops_dir}. "
+            "Excluded combined splits: train.csv, test.csv, zero_shot.csv, train_max_empty_*.csv"
+        )
+    crop_annotations = [pd.read_csv(x) for x in per_image_csvs]
     crop_annotations = pd.concat(crop_annotations)
-    
+
+    # Drop exact duplicate annotation rows (same image, box, label)
+    dup_subset = ["image_path", "xmin", "ymin", "xmax", "ymax", "label"]
+    if all(col in crop_annotations.columns for col in dup_subset):
+        dup_mask = crop_annotations.duplicated(subset=dup_subset, keep="first")
+        n_dup = int(dup_mask.sum())
+        if n_dup:
+            print(f"[dedup] Dropping {n_dup} exact duplicate rows (image_path+xmin+ymin+xmax+ymax+label)")
+            crop_annotations = crop_annotations.loc[~dup_mask]
+
+        # Report boxes that have conflicting labels so they can be inspected
+        box_cols = ["image_path", "xmin", "ymin", "xmax", "ymax"]
+        label_counts = (
+            crop_annotations.groupby(box_cols)["label"].nunique()
+            if all(col in crop_annotations.columns for col in box_cols)
+            else None
+        )
+        if label_counts is not None:
+            n_conflict = int((label_counts > 1).sum())
+            print(f"[dedup] Boxes with conflicting labels (same image+box, multiple labels): {n_conflict}")
+
     # Keep labels with more than 25 images
     crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 25)
 
@@ -282,13 +324,6 @@ def main(cfg: DictConfig):
             max_categories=len(trained_model.label_dict.keys()),
             labels=list(trained_model.label_dict.keys()),
         )
-
-    # Reload the model from checkpoint and validate
-    trained_model = CropModel.load_from_checkpoint(os.path.join(checkpoint_dir, f"{comet_id}.ckpt"))
-    trained_model.create_trainer()
-    validation_results = trained_model.trainer.validate(trained_model)
-    print(validation_results)
-
 
 if __name__ == "__main__":
     main()

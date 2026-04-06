@@ -2,7 +2,9 @@
 """
 Generate a low-resolution flythrough video of a BOEM imagery flight.
 
-Uses cached predictions from flight_dir/.prediction_cache/pool_predictions.csv.
+Uses either:
+  - predictions=DataFrame when called from the pipeline (final_predictions), or
+  - flight_dir/.prediction_cache/pool_predictions.csv when run standalone.
 Long stretches without detections (>1 min of video time) are cut and replaced
 by a brief black card stating how many frames were skipped, followed by a
 10-second runway leading into the next detection.
@@ -216,6 +218,7 @@ def generate_flythrough(
     pause_seconds=2.0, zoom_seconds=4.0,
     skip_card_seconds=5.0, min_score=0.92,
     max_gap_seconds=30.0,
+    predictions=None,
 ):
     flight_dir = Path(flight_dir).resolve()
     if not flight_dir.is_dir():
@@ -229,16 +232,25 @@ def generate_flythrough(
         info = _parse_filename(p.name)
         parsed.append((p, info[0], info[1]) if info else (p, "__unknown__", 0))
 
-    pred_path = flight_dir / ".prediction_cache" / "pool_predictions.csv"
-    if not pred_path.is_file():
-        raise FileNotFoundError(f"No cached predictions at {pred_path}")
-    pred_df = pd.read_csv(pred_path)
-    pred_df["_bn"] = pred_df["image_path"].astype(str).apply(os.path.basename)
+    if predictions is not None:
+        pred_df = predictions.copy()
+        pred_df["_bn"] = pred_df["image_path"].astype(str).apply(os.path.basename)
+        print(f"Using {len(pred_df)} predictions from pipeline (final_predictions).")
+    else:
+        pred_path = flight_dir / ".prediction_cache" / "pool_predictions.csv"
+        if not pred_path.is_file():
+            raise FileNotFoundError(f"No cached predictions at {pred_path}")
+        pred_df = pd.read_csv(pred_path)
+        pred_df["_bn"] = pred_df["image_path"].astype(str).apply(os.path.basename)
+
     above = pred_df[pred_df["score"].astype(float) >= min_score]
     total_boxes = len(above)
     det_bns = set(above["_bn"])
     n_images_with_det = len(det_bns)
-    print(f"Cache: {total_boxes} detection boxes in {n_images_with_det} unique images (across all cameras).")
+    if predictions is not None:
+        print(f"Pipeline: {total_boxes} boxes in {n_images_with_det} unique images (across all cameras).")
+    else:
+        print(f"Cache: {total_boxes} detection boxes in {n_images_with_det} unique images (across all cameras).")
 
     if camera == "auto":
         # Pick the camera that has the most *images* (frames) with at least one detection.

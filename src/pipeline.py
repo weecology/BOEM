@@ -1,11 +1,13 @@
 import comet_ml
 import os
+import shutil
 from omegaconf import DictConfig
 
 from src.active_learning import generate_pool_predictions, select_images, human_review
 from deepforest.model import CropModel
 from src import sagemaker_gt
-from src.annotators import get_annotator, SageMakerAnnotator
+from src.annotators import get_annotator, LabelStudioAnnotator, SageMakerAnnotator
+from src import label_studio as ls_mod
 from src import detection
 from src import classification
 from src import hierarchical
@@ -134,6 +136,120 @@ class Pipeline:
             self.existing_images = list(set(self.existing_images + usgs_train_paths + usgs_test_paths))
 
         return True
+
+    def upload_full_flight(self, project_name=None):
+        """Upload all flight detections to a dedicated Label Studio project.
+
+        Combines existing annotations (train/eval/review) with model predictions
+        for unannotated images. All images that have detections or annotations are
+        uploaded. Intended for creating a clean annotated flight video.
+
+        Args:
+            project_name: Label Studio project name override.
+                Defaults to "BOEM - Full Flight - {flight_name}".
+        """
+        if not isinstance(self.annotator, LabelStudioAnnotator):
+            raise ValueError("upload_full_flight requires a LabelStudioAnnotator")
+
+        self.check_annotations()
+
+        flight_name = os.path.basename(self.config.image_dir)
+        if project_name is None:
+            project_name = f"BOEM - Full Flight - {flight_name}"
+
+        # Load models (inference only, no training)
+        detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
+        classification_model = CropModel.load_from_checkpoint(
+            self.config.classification_model.checkpoint
+        )
+        classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
+
+        hcast_checkpoint = getattr(self.config.hierarchical, "checkpoint", None)
+        hcast_label_csv = getattr(self.config.hierarchical, "label_csv", None)
+        hcast_model = None
+        if hcast_checkpoint:
+            if not hcast_label_csv:
+                raise ValueError("hierarchical.label_csv is required when hierarchical.checkpoint is set")
+            hcast_model = hierarchical.load_hcast_model(
+                checkpoint_path=hcast_checkpoint,
+                label_csv=hcast_label_csv,
+            )
+        hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
+        hcast_workers = getattr(self.config.hierarchical, "workers", 4)
+
+        # Run predictions on images not yet annotated
+        unannotated = [img for img in self.all_images if img not in self.existing_images]
+        pool_predictions = None
+        if unannotated:
+            print(f"Running predictions on {len(unannotated)} unannotated images")
+            pool_predictions = generate_pool_predictions(
+                pool=unannotated,
+                pool_limit=None,
+                patch_size=self.config.active_learning.patch_size,
+                patch_overlap=self.config.active_learning.patch_overlap,
+                min_score=self.config.predict.min_score,
+                model=detection_model,
+                batch_size=self.config.predict.batch_size,
+                crop_model=classification_model,
+                hcast_model=hcast_model,
+                image_dir=self.config.image_dir,
+                hcast_batch_size=hcast_batch_size,
+                hcast_workers=hcast_workers,
+            )
+
+        # Build per-image preannotation dict, starting with human annotations
+        preannotations = {}
+        images_with_content = set()
+
+        for ann_df in [self.existing_training, self.existing_validation, self.existing_reviewed]:
+            if ann_df is None or ann_df.empty:
+                continue
+            ann = ann_df.copy()
+            ann.rename(columns={"label": "cropmodel_label"}, inplace=True)
+            ann["label"] = "Object"
+            ann["score"] = 2.0
+            ann["cropmodel_score"] = 2.0
+            if "comet_id" not in ann.columns:
+                ann["comet_id"] = "human_annotation"
+            for img_path, group in ann.groupby("image_path"):
+                basename = os.path.basename(img_path)
+                if basename in preannotations:
+                    preannotations[basename] = pd.concat(
+                        [preannotations[basename], group], ignore_index=True
+                    )
+                else:
+                    preannotations[basename] = group
+                images_with_content.add(os.path.join(self.config.image_dir, basename))
+
+        # Fill in model predictions for unannotated images (never overwrite human labels)
+        if pool_predictions is not None and not pool_predictions.empty:
+            pool_predictions["comet_id"] = self._comet_experiment_id()
+            for img_path, group in pool_predictions.groupby("image_path"):
+                basename = os.path.basename(img_path)
+                if basename not in preannotations:
+                    preannotations[basename] = group
+                images_with_content.add(os.path.join(self.config.image_dir, basename))
+
+        images_to_upload = sorted(images_with_content)
+        print(
+            f"Uploading {len(images_to_upload)} images to Label Studio project '{project_name}' "
+            f"({len(preannotations)} with pre-annotations)"
+        )
+
+        ls_cfg = self.config.annotation.label_studio
+        ls_mod.upload_to_label_studio(
+            images=images_to_upload,
+            sftp_client=self.annotator.sftp_client,
+            url=ls_cfg.url,
+            project_name=project_name,
+            images_to_annotate_dir=self.config.image_dir,
+            folder_name=ls_cfg.folder_name,
+            preannotations=preannotations,
+        )
+
+        self.comet_logger.experiment.log_parameter("full_flight_project", project_name)
+        self.comet_logger.experiment.log_parameter("full_flight_n_images", len(images_to_upload))
+        print(f"Full flight upload complete: {len(images_to_upload)} images uploaded.")
 
     def run(self):
         # Check for new annotations if the check_annotations flag is set
@@ -519,21 +635,24 @@ class Pipeline:
                     video_path = mod.generate_flythrough(
                         flight_dir=self.config.image_dir,
                         output_dir=output_dir,
+                        predictions=final_predictions,
                     )
                     if video_path and os.path.isfile(video_path):
-                        # Re-encode to H.264 for Streamlit/browser playback (script writes mp4v)
+                        # Re-encode to H.264 for Streamlit/browser playback (script writes mp4v).
+                        # Requires ffmpeg (e.g. module load ffmpeg); raises if not H.264.
                         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
                             tmp_path = f.name
                         try:
                             convert_codec(video_path, tmp_path)
-                            os.replace(tmp_path, video_path)
-                        except Exception as e:
+                            # Use shutil.move so cross-device (e.g. /scratch -> /blue) works
+                            shutil.move(tmp_path, video_path)
+                        except Exception:
                             if os.path.isfile(tmp_path):
                                 try:
                                     os.remove(tmp_path)
                                 except OSError:
                                     pass
-                            print(f"Flythrough H.264 conversion failed (logging original): {e}")
+                            raise
                         self.comet_logger.experiment.log_asset(
                             file_data=video_path,
                             file_name=os.path.basename(video_path),

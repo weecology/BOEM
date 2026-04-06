@@ -85,6 +85,7 @@ def get_nb_classes(taxonomy_path: str | Path) -> list[int]:
 def load_taxonomy_restricted_to_species(
     taxonomy_path: str | Path,
     species_names: set[str] | list[str],
+    include_ancestor_labels: bool = False,
 ) -> tuple[list[int], dict[str, tuple[int, int, int]]]:
     """Build nb_classes and name_to_ids only for species that appear in the given set.
 
@@ -93,9 +94,15 @@ def load_taxonomy_restricted_to_species(
     (e.g. "Actitis macularius"). Only species in both the data and the taxonomy
     are included; their families and genera define the hierarchy sizes.
 
+    If include_ancestor_labels is True, name_to_ids is also populated for Family
+    and Genus scientificNames (e.g. "Delphinidae", "Tursiops"). Each ancestor
+    maps to a representative (fid, gid, sid) from the first species in that
+    family/genus in the restricted set (for use as training targets when the
+    annotation is labeled only at family or genus level).
+
     Returns:
         nb_classes: [n_species, n_genera, n_families] for the restricted set.
-        name_to_ids: dict from species name to (family_id, genus_id, species_id).
+        name_to_ids: dict from species (and optionally ancestor) name to (family_id, genus_id, species_id).
     """
     triples, _ = load_taxonomy(taxonomy_path)
     want = set(species_names)
@@ -115,5 +122,11 @@ def load_taxonomy_restricted_to_species(
         sid = species_to_id[species]
         name_to_ids[species] = (fid, gid, sid)
         name_to_ids[f"{genus} {species}"] = (fid, gid, sid)
+        if include_ancestor_labels:
+            # Map ancestor names to this (fid, gid, sid); first occurrence wins.
+            if family not in name_to_ids:
+                name_to_ids[family] = (fid, gid, sid)
+            if genus not in name_to_ids:
+                name_to_ids[genus] = (fid, gid, sid)
     nb_classes = [len(species_list), len(genera), len(families)]
     return nb_classes, name_to_ids

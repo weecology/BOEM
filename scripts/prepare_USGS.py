@@ -58,6 +58,8 @@ UBFAI_BASE = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data"
 UBFAI_IMAGES = os.path.join(UBFAI_BASE, "images_parent")
 UBFAI_CROPS = os.path.join(UBFAI_BASE, "crops")
 CUMULATIVE_CSV = os.path.join(UBFAI_BASE, "20260112_annotation_cumulative.csv")
+AWS_ANNOTATIONS_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Data Collection/annotation_aws"
+AWS_IMAGERY_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Data Collection/imagery"
 PATCH_SIZE = 1000
 PATCH_OVERLAP = 0
 
@@ -142,6 +144,47 @@ def _normalize_annotation_columns(ann: pd.DataFrame) -> pd.DataFrame:
         lambda p: os.path.basename(p)
     )
     return ann
+
+
+def _load_aws_annotations() -> pd.DataFrame:
+    """Load all annotation manifests from the AWS annotation directory.
+
+    Returns a combined DataFrame with the same schema as the cumulative CSV
+    (bname_parent, label, left, top, width, height, ...).  Only rows whose
+    bname_parent has a matching .JPG in AWS_IMAGERY_DIR are kept.
+    """
+    csv_files = glob.glob(os.path.join(AWS_ANNOTATIONS_DIR, "*.csv"))
+    if not csv_files:
+        print("No AWS annotation manifests found; skipping.")
+        return pd.DataFrame()
+    parts = []
+    for f in csv_files:
+        parts.append(pd.read_csv(f, low_memory=False))
+    aws = pd.concat(parts, ignore_index=True)
+
+    # Keep only rows that have a matching image on disk
+    imagery_stems = {
+        os.path.splitext(fn)[0] for fn in os.listdir(AWS_IMAGERY_DIR)
+    }
+    aws = aws[aws["bname_parent"].isin(imagery_stems)]
+    print(
+        f"AWS annotations: {len(aws)} rows, "
+        f"{aws['bname_parent'].nunique()} unique images with imagery on disk."
+    )
+    return aws
+
+
+def _symlink_aws_images(bname_parents: set[str]):
+    """Symlink images from AWS_IMAGERY_DIR into UBFAI_IMAGES for new bname_parents."""
+    os.makedirs(UBFAI_IMAGES, exist_ok=True)
+    n_new = 0
+    for bname in bname_parents:
+        src = os.path.join(AWS_IMAGERY_DIR, f"{bname}.JPG")
+        dst = os.path.join(UBFAI_IMAGES, f"{bname}.JPG")
+        if not os.path.exists(dst) and os.path.exists(src):
+            os.symlink(src, dst)
+            n_new += 1
+    print(f"Symlinked {n_new} new images into {UBFAI_IMAGES}")
 
 
 def _regenerate_ubfai_crops(df: pd.DataFrame):
@@ -301,7 +344,20 @@ def process_preworkflow_annotations(
     Returns:
         (train, test) DataFrames of crop annotations.
     """
-    df = pd.read_csv(CUMULATIVE_CSV)
+    df = pd.read_csv(CUMULATIVE_CSV, low_memory=False)
+
+    # Merge in AWS annotations that are not already covered by the cumulative CSV
+    aws = _load_aws_annotations()
+    if not aws.empty:
+        existing_bnames = set(df["bname_parent"].unique())
+        aws_new = aws[~aws["bname_parent"].isin(existing_bnames)]
+        print(
+            f"AWS source adds {aws_new['bname_parent'].nunique()} new images "
+            f"({len(aws_new)} rows) not in cumulative CSV."
+        )
+        _symlink_aws_images(set(aws_new["bname_parent"].unique()))
+        df = pd.concat([df, aws_new], ignore_index=True)
+
     print(df.label.value_counts())
 
     df["image_path"] = df["bname_parent"] + ".JPG"
@@ -489,6 +545,23 @@ def create_train_test_split(
 
     combined_train = pd.concat([train, train_flight])
     combined_test = pd.concat([test, test_flight])
+
+    # Drop exact duplicate annotation rows (same image, box, label) to avoid
+    # double-counting the same crop when merging pre-workflow and workflow data.
+    dup_subset = ["image_path", "xmin", "ymin", "xmax", "ymax", "label"]
+    for name, df in (("train", combined_train), ("test", combined_test)):
+        if all(col in df.columns for col in dup_subset):
+            dup_mask = df.duplicated(subset=dup_subset, keep="first")
+            n_dup = int(dup_mask.sum())
+            if n_dup:
+                print(
+                    f"[prepare_USGS:{name}] dropping {n_dup} exact duplicate rows "
+                    "(image_path+xmin+ymin+xmax+ymax+label)"
+                )
+                if name == "train":
+                    combined_train = combined_train.loc[~dup_mask]
+                else:
+                    combined_test = combined_test.loc[~dup_mask]
 
     # Mark empty images (zeroed coords); keep them in test and zero-shot
     combined_train["empty_image"] = (

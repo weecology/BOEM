@@ -1,4 +1,5 @@
 #!/bin/bash
+ulimit -c 0
 #SBATCH --job-name=BOEM   # Job name
 #SBATCH --mail-type=END               # Mail events
 #SBATCH --mail-user=benweinstein2010@gmail.com  # Where to send mail

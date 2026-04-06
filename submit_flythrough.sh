@@ -3,8 +3,8 @@
 # Submit a single flight flythrough video job (no GPU).
 #
 # Usage:
-#   sbatch submit_flythrough.sh /blue/ewhite/b.weinstein/BOEM/imagery/JPG_20241219_120500
-#   sbatch submit_flythrough.sh  (uses default flight below)
+#   sbatch submit_flythrough.sh /blue/ewhite/b.weinstein/BOEM/imagery/JPG_20241219_120500 [CAMERA]
+#   sbatch submit_flythrough.sh  (uses default flight below, auto camera)
 #
 # Output video: /blue/ewhite/b.weinstein/BOEM/flight_videos/<flight_name>_flythrough.mp4 (H.264 for Streamlit)
 #
@@ -21,12 +21,15 @@
 #SBATCH --error=/home/b.weinstein/logs/flythrough_%j.err
 #SBATCH --ntasks-per-node=1
 
+ulimit -c 0
+
 FLIGHT_DIR="${1:-/blue/ewhite/b.weinstein/BOEM/imagery/JPG_20260201_093500}"
+CAMERA="${2:-auto}"
 
 cd /blue/ewhite/b.weinstein/src/BOEM || exit 1
 module load ffmpeg
 
-uv run python scripts/flight_flythrough_video.py "$FLIGHT_DIR"
+uv run python scripts/flight_flythrough_video.py "$FLIGHT_DIR" --camera "$CAMERA"
 
 # Re-encode to H.264 for Streamlit/browser playback (script writes mp4v by default)
 OUT_DIR="/blue/ewhite/b.weinstein/BOEM/flight_videos"

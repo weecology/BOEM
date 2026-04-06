@@ -1,3 +1,4 @@
+import json
 import paramiko
 import os
 import datetime
@@ -7,6 +8,31 @@ import glob
 import shutil
 from PIL import Image
 from deepforest.utilities import read_file
+
+
+def get_taxonomy_leaf_paths(taxonomy_path):
+    """Load transformed_taxonomy.json and return a dict mapping leaf alias -> full path (list of aliases from root to leaf).
+
+    Label Studio Taxonomy with apiUrl expects the prediction value to be the full path so the dropdown shows the correct selection.
+    """
+    with open(taxonomy_path, encoding="utf-8") as f:
+        data = json.load(f)
+    result = {}
+
+    def visit(node, path_so_far):
+        alias = node.get("alias") or node.get("value")
+        if not alias:
+            return
+        path = path_so_far + [alias]
+        if node.get("isLeaf", not node.get("children")) or not node.get("children"):
+            result[alias] = path
+        for c in node.get("children", []):
+            visit(c, path)
+
+    for item in data.get("items", []):
+        visit(item, [])
+
+    return result
 
 def upload_to_label_studio(images, sftp_client, url, project_name, images_to_annotate_dir, folder_name, preannotations):
     """
@@ -63,17 +89,22 @@ def check_for_new_annotations(url, project_name, csv_dir, image_dir):
     return label_studio_annotations
  
 
-def label_studio_bbox_format(local_image_dir, preannotations):
-    """Create a JSON string for a single image the Label Studio API.
+def label_studio_bbox_format(local_image_dir, preannotations, taxonomy_path=None):
+    """Create prediction payload for a single image for the Label Studio API.
+
+    When taxonomy_path is set, taxonomy values use the full path from root to leaf (from
+    transformed_taxonomy.json) so the Taxonomy dropdown shows the species label, not "Object".
     """
     predictions = []
-    original_width = Image.open(os.path.join(local_image_dir,os.path.basename(preannotations.image_path.unique()[0]))).size[0]
-    original_height = Image.open(os.path.join(local_image_dir,os.path.basename(preannotations.image_path.unique()[0]))).size[1]
+    original_width = Image.open(os.path.join(local_image_dir, os.path.basename(preannotations.image_path.unique()[0]))).size[0]
+    original_height = Image.open(os.path.join(local_image_dir, os.path.basename(preannotations.image_path.unique()[0]))).size[1]
+
+    taxonomy_paths = get_taxonomy_leaf_paths(taxonomy_path) if taxonomy_path and os.path.exists(taxonomy_path) else None
 
     for index, row in preannotations.iterrows():
         region_id = "region" + str(index)
         box_result = {
-            "value":{
+            "value": {
                 "x": row['xmin']/original_width*100,
                 "y": row['ymin']/original_height*100,
                 "width": (row['xmax'] - row['xmin'])/original_width*100,
@@ -81,7 +112,8 @@ def label_studio_bbox_format(local_image_dir, preannotations):
                 "rotation": 0,
                 "rectanglelabels": [row["label"]]
             },
-            'id': region_id,
+            "id": region_id,
+            "source": "$image",
             "model_version": row["comet_id"],
             "score": row["score"],
             "to_name": "image",
@@ -92,20 +124,26 @@ def label_studio_bbox_format(local_image_dir, preannotations):
         }
         predictions.append(box_result)
 
+        # Taxonomy value must be full path from root to leaf so the dropdown shows the species, not "Object"
+        species = row.get("cropmodel_label", row.get("label", "Object"))
+        if taxonomy_paths and species in taxonomy_paths:
+            path_list = taxonomy_paths[species]
+        else:
+            path_list = [species]
         class_results = {
-            "value":{
-                "taxonomy": [[row["cropmodel_label"]]]
+            "value": {
+                "taxonomy": [path_list]
             },
-            'id': region_id,
+            "id": region_id,
+            "source": "$image",
             "to_name": "image",
             "type": "taxonomy",
             "from_name": "taxonomy",
             "original_width": original_width,
             "original_height": original_height
-        }            
+        }
         predictions.append(class_results)
-    
-    # As a dict
+
     return {"result": predictions}
 
 

@@ -227,7 +227,7 @@ def generate_interactive_map(gdf, captures, output_path):
         for _, row in sp_data.iterrows():
             det_score = float(row.get("score", 0))
             cls_score = float(row.get("cropmodel_score", 0))
-            radius = 4 + 6 * det_score
+            radius = 2 + 3 * det_score
             opacity = max(0.4, min(1.0, cls_score))
             img_name = os.path.basename(str(row.get("image_path", "")))
 
@@ -476,17 +476,17 @@ def _render_pdf_page1(pdf, gdf, species_list, colors, summary_map_path,
         sp_data = gdf[gdf["cropmodel_label"] == sp]
         ax_map.scatter(
             sp_data.geometry.x, sp_data.geometry.y,
-            c=colors[sp], label=sp, s=15, alpha=0.7, edgecolors="none", zorder=2,
+            c=colors[sp], label=sp, s=6, alpha=0.7, edgecolors="none", zorder=2,
         )
     if other_species:
         other_gdf = gdf[gdf["cropmodel_label"].isin(other_species)]
         ax_map.scatter(
             other_gdf.geometry.x, other_gdf.geometry.y,
-            c=other_color, label="Other", s=15, alpha=0.7, edgecolors="none", zorder=2,
+            c=other_color, label="Other", s=6, alpha=0.7, edgecolors="none", zorder=2,
         )
     ax_map.set_xlabel("Longitude")
     ax_map.set_ylabel("Latitude")
-    ax_map.legend(loc="upper left", fontsize=6, framealpha=0.8, ncol=2)
+    ax_map.legend(loc="upper left", fontsize=4, framealpha=0.8, ncol=2)
 
     caption = (
         f"Figure 1. Transect overview of detections by species. "

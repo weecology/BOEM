@@ -212,25 +212,60 @@ def generate_video(image_dir, report_dir, model, classification_model, patch_ove
     
     return output_path
 
+class NotH264Error(Exception):
+    """Raised when a video is not H.264, which is required for Streamlit playback."""
+
+
+def get_video_codec(path: str) -> str:
+    """
+    Return the video codec name for the first video stream using ffprobe.
+    Raises if ffprobe fails or no video stream is found.
+    """
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffprobe failed for {path}: {result.stderr or result.stdout}"
+        )
+    codec = (result.stdout or "").strip().lower()
+    if not codec:
+        raise RuntimeError(f"ffprobe returned no codec for {path}")
+    return codec
+
+
+def verify_h264(path: str) -> None:
+    """
+    Verify that the video at path is H.264 (required for Streamlit). Raise if not.
+    """
+    codec = get_video_codec(path)
+    if codec != "h264":
+        raise NotH264Error(
+            f"Video at {path} has codec {codec!r}; H.264 is required for Streamlit playback. "
+            "Ensure ffmpeg is available (e.g. module load ffmpeg) and re-encode with convert_codec."
+        )
+
+
 def convert_codec(input_path: str, output_path: str) -> None:
     """
-    Convert video codec using ffmpeg to a format that Streamlit can play.
-    
-    Args:
-        input_path: Path to the input video file
-        output_path: Path to the output video file
+    Convert video to H.264 using ffmpeg for Streamlit playback. Raises on failure.
+    Verifies the output is H.264; if verification fails, raises NotH264Error.
     """
     command = [
-        'ffmpeg',
-        '-i', input_path,
-        '-vcodec', 'libx264',
-        '-movflags', '+faststart',
-        output_path
+        "ffmpeg",
+        "-i", input_path,
+        "-vcodec", "libx264",
+        "-movflags", "+faststart",
+        "-y",
+        output_path,
     ]
-    
-    try:
-        subprocess.run(command, check=True)
-    except:
-        print("Error converting video codec. Make sure ffmpeg is installed and in your PATH.")
+    subprocess.run(command, check=True, capture_output=True)
+    verify_h264(output_path)
 
 

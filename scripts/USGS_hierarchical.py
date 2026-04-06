@@ -5,19 +5,26 @@ balance, split by parent image) but trains the DeiT hierarchical transformer
 from src.hcast (family/genus/species heads) instead of CropModel. Labels are
 mapped via taxonomy.json to family, genus, and species IDs.
 
-For direct comparability with CropModel (same train and test data), run
-USGS_classification first; it writes usgs_train_split.csv and usgs_val_split.csv
-under checkpoint_dir/buffer_<N>/<comet_id>/. Then run this script with:
+For direct comparability with CropModel (same test/val data), run USGS_classification
+first; it writes usgs_train_split.csv and usgs_val_split.csv under
+checkpoint_dir/buffer_<N>/<comet_id>/. Then run this script with:
 
   uv run python scripts/USGS_hierarchical.py \\
-    --train-split-csv /path/to/checkpoints/buffer_30/<comet_id>/usgs_train_split.csv \\
-    --val-split-csv /path/to/checkpoints/buffer_30/<comet_id>/usgs_val_split.csv \\
+    --train-split-csv /path/to/.../usgs_train_split.csv \\
+    --val-split-csv /path/to/.../usgs_val_split.csv \\
     --image-dir /path/to/crops \\
     --taxonomy taxonomy.json \\
     --output-dir output/hier
 
+Val (test) set is always taken from the CropModel val CSV unchanged. Train set is
+the CropModel train CSV; if --annotations-dir is also provided, train is extended
+with any annotation rows whose label is a higher taxon (family or genus) above
+those species in the taxonomy (e.g. labels like Delphinidae when Tursiops truncatus
+is in the species set). No extra row may come from a parent image that is in the
+val set (no train/val leak).
+
 Other options: --train-crop-dir/--val-crop-dir (crop dirs) or
---annotations-dir + --image-dir (recompute split from annotations).
+--annotations-dir + --image-dir (recompute split from annotations, no CropModel CSVs).
 """
 
 from __future__ import annotations
@@ -45,6 +52,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.USGS_classification import (
+    _crop_path_to_parent_stem,
     gentle_class_balance,
     normalize_label,
     train_test_split_by_image,
@@ -233,19 +241,70 @@ def evaluate(data_loader, model, device):
     }
 
 
+def _load_annotation_pool_preprocessed(annotations_dir: str) -> pd.DataFrame:
+    """Load and preprocess annotation CSVs to match USGS_classification (before balance/split)."""
+    crop_annotations = glob.glob(os.path.join(annotations_dir, "*.csv"))
+    df = pd.concat([pd.read_csv(x) for x in crop_annotations])
+    df = df.groupby("label").filter(lambda x: len(x) > 25)
+    df = df[df["label"].str.contains(" ", na=False)]
+    df = df[~df["label"].isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
+    df["label"] = df["label"].apply(normalize_label)
+    df["label"] = df["label"].apply(lambda x: " ".join(str(x).split()[:2]))
+    df = df[df["label"].apply(lambda x: len(str(x).split()) == 2)]
+    df = df[(df["xmin"] != 0) & (df["ymin"] != 0) & (df["xmax"] != 0) & (df["ymax"] != 0)]
+    df = df[(df["xmin"] >= 0) & (df["ymin"] >= 0) & (df["xmax"] >= 0) & (df["ymax"] >= 0)]
+    return df
+
+
+def _build_hierarchical_train_with_ancestors(
+    args,
+    crop_model_train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    name_to_ids: dict[str, tuple[int, int, int]],
+) -> pd.DataFrame:
+    """Extend CropModel train with annotation rows whose label is a higher taxon (family/genus)."""
+    pool = _load_annotation_pool_preprocessed(args.annotations_dir)
+    pool = pool[pool["label"].isin(name_to_ids)].copy()
+    pool["parent_image"] = pool["image_path"].map(_crop_path_to_parent_stem)
+    val_parents = set(val_df["image_path"].map(_crop_path_to_parent_stem))
+    extra = pool[~pool["parent_image"].isin(val_parents)].drop(columns=["parent_image"])
+    train_df = pd.concat([crop_model_train_df, extra], ignore_index=True)
+    train_df = train_df.drop_duplicates(
+        subset=["image_path", "xmin", "ymin", "xmax", "ymax"], keep="first"
+    )
+    n_extra = len(train_df) - len(crop_model_train_df)
+    if n_extra > 0:
+        print(f"[hierarchical train] added {n_extra} rows with higher-taxon labels (family/genus)")
+    return train_df
+
+
 def _build_datasets(args, nb_classes, name_to_ids):
     """Build train/val datasets from the parsed arguments."""
     if args.train_crop_dir:
         csv_or_dirs = (args.train_crop_dir, args.val_crop_dir)
         kw = {}
     elif args.train_split_csv and args.val_split_csv:
-        train_df = pd.read_csv(args.train_split_csv)
         val_df = pd.read_csv(args.val_split_csv)
-        train_df = train_df[train_df["label"].isin(name_to_ids)]
         val_df = val_df[val_df["label"].isin(name_to_ids)]
-        if train_df.empty or val_df.empty:
-            raise ValueError("No rows left after filtering split to taxonomy species")
-        print(f"Using CropModel split: train {len(train_df)}, val {len(val_df)}")
+        if val_df.empty:
+            raise ValueError("No rows left in val after filtering to taxonomy labels")
+        crop_model_train_df = pd.read_csv(args.train_split_csv)
+        crop_model_train_df = crop_model_train_df[
+            crop_model_train_df["label"].isin(name_to_ids)
+        ]
+        if crop_model_train_df.empty:
+            raise ValueError("No rows left in train after filtering to taxonomy labels")
+        if args.annotations_dir:
+            train_df = _build_hierarchical_train_with_ancestors(
+                args, crop_model_train_df, val_df, name_to_ids
+            )
+            print(
+                f"Using CropModel val (unchanged), train extended with higher-taxon labels: "
+                f"train {len(train_df)}, val {len(val_df)}"
+            )
+        else:
+            train_df = crop_model_train_df
+            print(f"Using CropModel split: train {len(train_df)}, val {len(val_df)}")
         csv_or_dirs = (train_df, val_df)
         kw = {"image_dir": args.image_dir, "expand_pixels": args.expand_pixels}
     else:
@@ -333,7 +392,14 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     unique_labels = _discover_labels(args)
-    nb_classes, name_to_ids = load_taxonomy_restricted_to_species(args.taxonomy, unique_labels)
+    use_ancestor_labels = bool(
+        getattr(args, "annotations_dir", None)
+        and args.train_split_csv
+        and args.val_split_csv
+    )
+    nb_classes, name_to_ids = load_taxonomy_restricted_to_species(
+        args.taxonomy, unique_labels, include_ancestor_labels=use_ancestor_labels
+    )
     if not name_to_ids:
         print("No labels found in taxonomy; check taxonomy.json and data")
         return 1

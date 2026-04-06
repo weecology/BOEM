@@ -13,39 +13,30 @@
 #SBATCH --partition=hpg-b200
 #SBATCH --gpus=1
 
+ulimit -c 0
+
 # Same data source as USGS_classification. For direct comparability (same test set
-# as CropModel), run USGS_classification first and set SPLIT_DIR to that run's
-# split dir (checkpoint_dir/buffer_30/<comet_id>). Otherwise we recompute split
-# from annotations.
+# as CropModel), FIRST run USGS_classification.py and set SPLIT_DIR to that run's
+# split dir (checkpoint_dir/buffer_30/<comet_id>) containing usgs_train_split.csv
+# and usgs_val_split.csv.
 ANNOTATIONS_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
 IMAGE_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
 CHECKPOINT_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints"
 OUTPUT_DIR="${BOEM_OUTPUT_DIR:-output/usgs_hier}"
 TAXONOMY="taxonomy.json"
-# Optional: set to e.g. "$CHECKPOINT_DIR/buffer_30/<comet_id>" to use CropModel's split
-SPLIT_DIR="${BOEM_HIER_SPLIT_DIR:-}"
+# Required: set to e.g. "$CHECKPOINT_DIR/buffer_30/<comet_id>" from USGS_classification run
+SPLIT_DIR="${BOEM_HIER_SPLIT_DIR}"
 
 cd /blue/ewhite/b.weinstein/src/BOEM
-if [[ -n "$SPLIT_DIR" && -f "$SPLIT_DIR/usgs_train_split.csv" && -f "$SPLIT_DIR/usgs_val_split.csv" ]]; then
-  echo "Using CropModel split from $SPLIT_DIR (same test data)"
-  uv run python scripts/USGS_hierarchical.py \
-    --train-split-csv "$SPLIT_DIR/usgs_train_split.csv" \
-    --val-split-csv "$SPLIT_DIR/usgs_val_split.csv" \
-    --image-dir "$IMAGE_DIR" \
-    --taxonomy "$TAXONOMY" \
-    --output-dir "$OUTPUT_DIR" \
-    --batch-size 32 \
-    --epochs 100 \
-    --expand-pixels 30 \
-    --num-workers 4
-else
-  uv run python scripts/USGS_hierarchical.py \
-    --annotations-dir "$ANNOTATIONS_DIR" \
-    --image-dir "$IMAGE_DIR" \
-    --taxonomy "$TAXONOMY" \
-    --output-dir "$OUTPUT_DIR" \
-    --batch-size 32 \
-    --epochs 100 \
-    --expand-pixels 30 \
-    --num-workers 4
-fi
+echo "Using CropModel split from $SPLIT_DIR (same test data) and extending train with higher-taxon labels"
+uv run python scripts/USGS_hierarchical.py \
+  --train-split-csv "$SPLIT_DIR/usgs_train_split.csv" \
+  --val-split-csv "$SPLIT_DIR/usgs_val_split.csv" \
+  --annotations-dir "$ANNOTATIONS_DIR" \
+  --image-dir "$IMAGE_DIR" \
+  --taxonomy "$TAXONOMY" \
+  --output-dir "$OUTPUT_DIR" \
+  --batch-size 32 \
+  --epochs 100 \
+  --expand-pixels 30 \
+  --num-workers 4

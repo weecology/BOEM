@@ -149,6 +149,66 @@ def generate_observations_table(gdf, output_path):
     return output_path
 
 
+def generate_observations_table_with_empty_frames(gdf, captures, output_path):
+    """Write observations plus one blank row per capture frame without detections."""
+    lat = gdf.geometry.y
+    lon = gdf.geometry.x
+    image_name = gdf["image_path"].apply(lambda p: os.path.basename(str(p)))
+
+    table = pd.DataFrame({
+        "det_score": gdf["score"].values,
+        "cls_score": gdf["cropmodel_score"].values,
+        "predicted_label": gdf["cropmodel_label"].values,
+        "lat": lat.values,
+        "lon": lon.values,
+        "image_name": image_name.values,
+    })
+
+    if "hcast_species" in gdf.columns:
+        table["hcast_species"] = gdf["hcast_species"].values
+    if "hcast_genus" in gdf.columns:
+        table["hcast_genus"] = gdf["hcast_genus"].values
+    if "hcast_family" in gdf.columns:
+        table["hcast_family"] = gdf["hcast_family"].values
+
+    image_name_map = {
+        os.path.splitext(name)[0]: name
+        for name in table["image_name"].dropna().astype(str).unique()
+    }
+    detected_basenames = set(image_name_map.keys())
+
+    if {"Basename", "Lat", "Lon"}.issubset(captures.columns):
+        frame_rows = captures[["Basename", "Lat", "Lon"]].drop_duplicates(
+            subset=["Basename"]
+        )
+        empty_frame_rows = frame_rows[
+            ~frame_rows["Basename"].astype(str).isin(detected_basenames)
+        ]
+
+        if not empty_frame_rows.empty:
+            empty_rows = pd.DataFrame({
+                "det_score": np.nan,
+                "cls_score": np.nan,
+                "predicted_label": np.nan,
+                "lat": empty_frame_rows["Lat"].values,
+                "lon": empty_frame_rows["Lon"].values,
+                "image_name": empty_frame_rows["Basename"].astype(str).apply(
+                    lambda basename: image_name_map.get(basename, basename)
+                ).values,
+            })
+
+            for col in table.columns:
+                if col not in empty_rows.columns:
+                    empty_rows[col] = np.nan
+
+            empty_rows = empty_rows[table.columns]
+            table = pd.concat([table, empty_rows], ignore_index=True)
+
+    table.to_csv(output_path, index=False)
+    print("Observations+empty-frames table written to " + output_path)
+    return output_path
+
+
 def generate_shapefile(gdf, output_path):
     """Save GeoDataFrame as ESRI Shapefile with short column names."""
     rename_map = {
@@ -624,6 +684,11 @@ def generate_report(predictions, config, comet_logger, image_dir):
     gdf = gpd.GeoDataFrame(georeffed, geometry=geometry, crs="EPSG:4326")
 
     generate_observations_table(gdf, os.path.join(report_dir, "observations_table.csv"))
+    generate_observations_table_with_empty_frames(
+        gdf,
+        captures,
+        os.path.join(report_dir, "observations_table_with_empty_frames.csv"),
+    )
     generate_shapefile(gdf, os.path.join(report_dir, "predictions.shp"))
 
     generate_interactive_map(

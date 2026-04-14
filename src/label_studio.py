@@ -50,7 +50,19 @@ def upload_to_label_studio(images, sftp_client, url, project_name, images_to_ann
     Returns:
         None
     """
-    label_studio_project = connect_to_label_studio(url=url, project_name=project_name)
+    default_label_config = (
+        '<View>\n'
+        '  <Image name="image" value="$image"/>\n'
+        '  <RectangleLabels name="label" toName="image">\n'
+        '    <Label value="Object" background="#D4380D"/>\n'
+        '    <Label value="FalsePositive" background="#FFA39E"/>\n'
+        '  </RectangleLabels>\n'
+        '  <Text name="text" value="Select Taxonomy for Classification"/>\n'
+        '  <Taxonomy name="taxonomy" perRegion="true" minWidth="600px" toName="image" '
+        'apiUrl="https://raw.githubusercontent.com/weecology/BOEM/refs/heads/main/transformed_taxonomy.json" />\n'
+        '</View>'
+    )
+    label_studio_project = connect_to_label_studio(url=url, project_name=project_name, label_config=default_label_config)
     upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
     import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
 

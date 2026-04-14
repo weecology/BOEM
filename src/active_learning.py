@@ -80,6 +80,7 @@ def generate_pool_predictions(
     image_dir=None,
     hcast_batch_size=None,
     hcast_workers=None,
+    workers=0,
 ):
     """
     Generate predictions for the flight pool.
@@ -97,11 +98,12 @@ def generate_pool_predictions(
         image_dir (str, optional): Root directory where images are located. Required if hcast_model is provided.
         hcast_batch_size (int, optional): Batch size for H-CAST classification.
         hcast_workers (int, optional): Number of workers for H-CAST DataLoader.
+        workers (int, optional): Number of DataLoader workers for detection. Defaults to 0.
 
     Returns:
         pd.DataFrame: A DataFrame of predictions (with hcast columns if hcast_model provided).
     """
-    if len(pool) > pool_limit:
+    if pool_limit is not None and len(pool) > pool_limit:
         pool = random.sample(pool, pool_limit)
     print(f"Predicting on {len(pool)} images (pool_limit={pool_limit})")
 
@@ -112,6 +114,7 @@ def generate_pool_predictions(
         patch_overlap=patch_overlap,
         batch_size=batch_size,
         crop_model=crop_model,
+        workers=workers,
     )
 
     if preannotations is None:

@@ -20,6 +20,9 @@ from omegaconf import OmegaConf
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 IMAGERY_BASE = "/blue/ewhite/b.weinstein/BOEM/imagery"
 
+import sys
+sys.path.insert(0, str(PROJECT_ROOT))
+
 load_dotenv(PROJECT_ROOT / ".env")
 
 

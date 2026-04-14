@@ -31,6 +31,7 @@ predict:
   patch_overlap: 0
   min_score: 0.85
   batch_size: 8
+  workers: 5
   # For web viz, expand pixels on all sides
   buffer: 60
 
@@ -46,7 +47,7 @@ propagate:
 
 detection_model:
   force_train: False
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/a6f9a548a0d64264828cfcc9be5c9de5.pl
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/a1c5649615f94b33a4e0dc2a721009fc.pl
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0

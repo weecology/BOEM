@@ -179,23 +179,32 @@ class Pipeline:
 
         # Run predictions on images not yet annotated
         unannotated = [img for img in self.all_images if img not in self.existing_images]
+        full_flight_cache = os.path.join(self.config.image_dir, ".full_flight_predictions.csv")
         pool_predictions = None
         if unannotated:
-            print(f"Running predictions on {len(unannotated)} unannotated images")
-            pool_predictions = generate_pool_predictions(
-                pool=unannotated,
-                pool_limit=None,
-                patch_size=self.config.active_learning.patch_size,
-                patch_overlap=self.config.active_learning.patch_overlap,
-                min_score=self.config.predict.min_score,
-                model=detection_model,
-                batch_size=self.config.predict.batch_size,
-                crop_model=classification_model,
-                hcast_model=hcast_model,
-                image_dir=self.config.image_dir,
-                hcast_batch_size=hcast_batch_size,
-                hcast_workers=hcast_workers,
-            )
+            if os.path.isfile(full_flight_cache):
+                print(f"Loading cached full-flight predictions from {full_flight_cache}")
+                pool_predictions = pd.read_csv(full_flight_cache)
+            else:
+                print(f"Running predictions on {len(unannotated)} unannotated images")
+                pool_predictions = generate_pool_predictions(
+                    pool=unannotated,
+                    pool_limit=None,
+                    patch_size=self.config.active_learning.patch_size,
+                    patch_overlap=self.config.active_learning.patch_overlap,
+                    min_score=self.config.predict.min_score,
+                    model=detection_model,
+                    batch_size=self.config.predict.batch_size,
+                    crop_model=classification_model,
+                    hcast_model=hcast_model,
+                    image_dir=self.config.image_dir,
+                    hcast_batch_size=hcast_batch_size,
+                    hcast_workers=hcast_workers,
+                    workers=self.config.predict.workers,
+                )
+                if pool_predictions is not None and not pool_predictions.empty:
+                    pool_predictions.to_csv(full_flight_cache, index=False)
+                    print(f"Cached full-flight predictions to {full_flight_cache}")
 
         # Build per-image preannotation dict, starting with human annotations
         preannotations = {}
@@ -414,6 +423,7 @@ class Pipeline:
             image_dir=self.config.image_dir,
             hcast_batch_size=hcast_batch_size,
             hcast_workers=hcast_workers,
+            workers=self.config.predict.workers,
         )
 
         if flightline_predictions is None:

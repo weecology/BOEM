@@ -61,3 +61,9 @@ torchvision = [
   { index = "pytorch-cu128" },
 ]
 deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "main" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "slow: model training or full checkpoint load; run with pytest -m slow",
+]

@@ -46,9 +46,10 @@ BOEM/
 │   ├── test_data_ingestion.py
 │   ├── test_data_processing.py
 │   ├── test_detection.py
-│   ├── test_pipeline.py
+│   ├── test_hierarchical.py
 │   ├── test_pipeline_evaluation.py
 │   ├── test_propagate.py
+│   ├── test_sagemaker.py
 │   └── test_visualization.py
 │
 ├── main.py                            # Entry point (Hydra)

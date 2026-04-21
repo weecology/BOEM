@@ -8,32 +8,33 @@ from src.data_processing import density_cropping, adjust_coordinates, merge_crop
 @pytest.fixture
 def sample_predictions():
     """Create sample predictions with dense areas."""
+    rng = np.random.default_rng(42)
     # Create two dense clusters and some noise
     cluster1 = pd.DataFrame({
-        'xmin': np.random.uniform(100, 200, 5),
-        'ymin': np.random.uniform(100, 200, 5),
-        'xmax': np.random.uniform(200, 300, 5),
-        'ymax': np.random.uniform(200, 300, 5),
+        'xmin': rng.uniform(100, 200, 5),
+        'ymin': rng.uniform(100, 200, 5),
+        'xmax': rng.uniform(200, 300, 5),
+        'ymax': rng.uniform(200, 300, 5),
         'label': ['Bird'] * 5,
-        'score': np.random.uniform(0.8, 0.9, 5)
+        'score': rng.uniform(0.8, 0.9, 5)
     })
     
     cluster2 = pd.DataFrame({
-        'xmin': np.random.uniform(500, 600, 5),
-        'ymin': np.random.uniform(500, 600, 5),
-        'xmax': np.random.uniform(600, 700, 5),
-        'ymax': np.random.uniform(600, 700, 5),
+        'xmin': rng.uniform(500, 600, 5),
+        'ymin': rng.uniform(500, 600, 5),
+        'xmax': rng.uniform(600, 700, 5),
+        'ymax': rng.uniform(600, 700, 5),
         'label': ['Bird'] * 5,
-        'score': np.random.uniform(0.8, 0.9, 5)
+        'score': rng.uniform(0.8, 0.9, 5)
     })
     
     noise = pd.DataFrame({
-        'xmin': np.random.uniform(0, 1000, 3),
-        'ymin': np.random.uniform(0, 1000, 3),
-        'xmax': np.random.uniform(0, 1000, 3),
-        'ymax': np.random.uniform(0, 1000, 3),
+        'xmin': rng.uniform(0, 1000, 3),
+        'ymin': rng.uniform(0, 1000, 3),
+        'xmax': rng.uniform(0, 1000, 3),
+        'ymax': rng.uniform(0, 1000, 3),
         'label': ['Bird'] * 3,
-        'score': np.random.uniform(0.8, 0.9, 3)
+        'score': rng.uniform(0.8, 0.9, 3)
     })
     
     return pd.concat([cluster1, cluster2, noise], ignore_index=True)

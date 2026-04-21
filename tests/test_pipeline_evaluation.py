@@ -1,7 +1,17 @@
-from src.pipeline_evaluation import PipelineEvaluation
-from deepforest.utilities import read_file
-import pytest
 import pandas as pd
+import pytest
+import torch
+from deepforest.utilities import read_file
+
+from src.pipeline_evaluation import PipelineEvaluation
+
+
+def _scalar(x):
+    if x is None:
+        return None
+    if isinstance(x, torch.Tensor):
+        return float(x.detach().cpu().item())
+    return float(x)
 
 @pytest.fixture
 def sample_predictions(tmp_path):
@@ -42,7 +52,7 @@ def classification_label_dict():
     return {"genus species1": 0, "genus species2": 1}
 
 def test_check_success(sample_predictions, sample_annotations, classification_label_dict):
-    """Test check success with sample data and perfect performance."""
+    """Recall is below detection_true_positive_threshold, so check_success is False."""
     pipeline_evaluation = PipelineEvaluation(
         predictions=sample_predictions,
         annotations=sample_annotations,
@@ -64,17 +74,12 @@ def test_evaluate(sample_predictions, sample_annotations, classification_label_d
     )
     results = pipeline_evaluation.evaluate()
 
-    # Two of three ground-truth are matched
-    assert results["detection"]["recall"] == 2/3
-    
-    # All predictions match
-    assert results["detection"]["precision"] == 1
+    assert results["detection"]["recall"] == pytest.approx(2 / 3)
+    assert results["detection"]["precision"] == pytest.approx(1.0)
 
-    # None of matched classifications are correct for confident predictions
-    assert results["classification"]["confident"]["micro_accuracy"] == 0.0
-    assert results["classification"]["confident"]["avg_false_classification_score"] == 0.9
-    
-    # The matched classifications is correct for uncertain predictions
-    assert results["classification"]["uncertain"]["micro_accuracy"] == 1.0
-    assert results["classification"]["uncertain"]["avg_true_classification_score"] == 0.8
-    
+    conf = results["classification"]["confident"]
+    unc = results["classification"]["uncertain"]
+    assert _scalar(conf["micro_accuracy"]) == pytest.approx(0.0)
+    assert _scalar(conf["avg_false_classification_score"]) == pytest.approx(0.9)
+    assert _scalar(unc["micro_accuracy"]) == pytest.approx(1.0)
+    assert _scalar(unc["avg_true_classification_score"]) == pytest.approx(0.8)

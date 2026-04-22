@@ -50,7 +50,7 @@ def detection_model(comet_logger):
                         "image_path": [os.path.basename(raster_path)] * num_predictions,
                     }
                 )
-                frames.append(read_file(df))
+                frames.append(read_file(df, root_dir=os.path.dirname(raster_path)))
             if len(frames) == 0:
                 return None
             return pd.concat(frames, ignore_index=True)

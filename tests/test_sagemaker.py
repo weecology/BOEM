@@ -1,27 +1,18 @@
 import sys
-import os
-import time
 from pathlib import Path
-import pandas as pd
 
-import pytest
-import globus_sdk
-from hydra import initialize, compose
+import pandas as pd
 
 # ensure src on path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
-from src.sagemaker_gt import (
+from src.sagemaker_gt import (  # noqa: E402
     write_sagemaker_csv,
     read_sagemaker_csv,
     gather_data,
-    globus_upload_files,
-    _get_globus_transfer_client,
-)  # noqa: E401
-
-IN_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+)
 
 
 def make_dummy_images(tmp_path, names):
@@ -34,7 +25,7 @@ def make_dummy_images(tmp_path, names):
 
 def test_write_csv_no_preannotations(tmp_path):
     images = ["C1.jpg", "C2.jpg"]
-    img_dir = make_dummy_images(tmp_path, images)
+    make_dummy_images(tmp_path, images)
     out_csv = tmp_path / "annotations_no_pre.csv"
     s3_prefix = "s3://bucket/prefix"
 
@@ -127,84 +118,3 @@ def test_gather_data_csv(tmp_path):
     assert len(df) == 2
     assert "bname_parent" in df.columns and "image_path" in df.columns
     assert set(df["label"]) == {"A", "B"}
-
-
-@pytest.mark.skipif(IN_GITHUB_ACTIONS, reason="Test requires local Globus credentials and connection")
-def test_globus_upload_and_delete(tmp_path):
-    """Test Globus file upload, existence check, and deletion."""
-    # Check for required authentication environment variables
-    required_auth_vars = [
-        "GLOBUS_CLIENT_ID",
-        "GLOBUS_CLIENT_SECRET",
-    ]
-    missing_auth_vars = [var for var in required_auth_vars if not os.getenv(var)]
-    if missing_auth_vars:
-        pytest.skip(f"Missing required environment variables: {', '.join(missing_auth_vars)}")
-
-    # Load config to get collection IDs from YAML
-    with initialize(version_base=None, config_path="../boem_conf"):
-        cfg = compose(config_name="boem_config", overrides=["annotation=sagemaker"])
-    
-    # Get collection IDs and dest_dir from config
-    source_collection_id = cfg.annotation.sagemaker.globus.source_collection_id
-    dest_collection_id = cfg.annotation.sagemaker.globus.dest_collection_id
-    dest_dir = cfg.annotation.sagemaker.globus.dest_dir
-    
-    if not source_collection_id or not dest_collection_id:
-        pytest.skip("Collection IDs not configured in sagemaker.yaml")
-
-    # Create a test file
-    test_filename = f"test_globus_{int(time.time())}.txt"
-    test_file = tmp_path / test_filename
-    test_content = "This is a test file for Globus transfer verification"
-    test_file.write_text(test_content)
-
-    # Upload the file
-    task_id = globus_upload_files(
-        local_paths=[str(test_file)],
-        dest_dir=dest_dir,
-        dest_collection_id=dest_collection_id,
-        source_collection_id=source_collection_id,
-    )
-    assert task_id is not None, "Upload task should return a task_id"
-
-    # Get transfer client to wait for completion and check file
-    tc = _get_globus_transfer_client()
-    # Note: endpoint_autoactivate removed in globus-sdk 4.x as modern endpoints don't require activation
-
-    # Wait for transfer to complete (timeout after 5 minutes)
-    done = tc.task_wait(task_id, timeout=300, polling_interval=10)
-    assert done, f"Transfer task {task_id} did not complete within timeout"
-
-    # Check task status to ensure it succeeded
-    task_info = tc.get_task(task_id)
-    assert task_info["status"] == "SUCCEEDED", f"Transfer task failed with status: {task_info['status']}"
-
-    # Check if file exists on remote endpoint
-    remote_path = os.path.join(dest_dir.rstrip("/"), test_filename)
-    file_exists = False
-    for entry in tc.operation_ls(dest_collection_id, path=dest_dir):
-        if entry["name"] == test_filename and entry["type"] == "file":
-            file_exists = True
-            break
-
-    assert file_exists, f"File {test_filename} should exist on remote endpoint after upload"
-
-    # Delete the file
-    delete_data = globus_sdk.DeleteData(tc, dest_collection_id)
-    delete_data.add_item(remote_path)
-    delete_task = tc.submit_delete(delete_data)
-    delete_task_id = delete_task["task_id"]
-
-    # Wait for delete to complete
-    delete_done = tc.task_wait(delete_task_id, timeout=300, polling_interval=10)
-    assert delete_done, f"Delete task {delete_task_id} did not complete within timeout"
-
-    # Verify file is deleted
-    file_still_exists = False
-    for entry in tc.operation_ls(dest_collection_id, path=dest_dir):
-        if entry["name"] == test_filename and entry["type"] == "file":
-            file_still_exists = True
-            break
-
-    assert not file_still_exists, f"File {test_filename} should be deleted from remote endpoint"

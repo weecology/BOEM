@@ -436,7 +436,7 @@ requires-dist = [
     { name = "contextily" },
     { name = "dask" },
     { name = "dask-jobqueue" },
-    { name = "deepforest", git = "https://github.com/weecology/DeepForest.git?branch=main" },
+    { name = "deepforest" },
     { name = "dotenv" },
     { name = "folium" },
     { name = "geopandas" },
@@ -1175,7 +1175,7 @@ wheels = [
 [[package]]
 name = "deepforest"
 version = "2.1.0"
-source = { git = "https://github.com/weecology/DeepForest.git?branch=main#136ed330a4fb5ad7f067a55a5c2dd05103c7b300" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "aiolimiter" },
@@ -1212,6 +1212,10 @@ dependencies = [
     { name = "tqdm" },
     { name = "transformers" },
     { name = "xmltodict" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/81/1e/3057d557a92ec20b9e1d2f86f21753614c78cb048b708ee1581b077b2e44/deepforest-2.1.0.tar.gz", hash = "sha256:fa224f3ae3c099876296f3b821de759a3be780162a19d49b42b313e0fc328d45", size = 20636788, upload-time = "2026-02-26T12:30:59.963Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/a8/67e66685c81ec070372db546f933312c6d7401f845e200e5d900107ff51e/deepforest-2.1.0-py3-none-any.whl", hash = "sha256:8c2798d8e9be7f0004b194fe207b76c1d9fff6e711b3db67b9508dcd5d00ae54", size = 20639595, upload-time = "2026-02-26T12:30:57.147Z" },
 ]
 
 [[package]]

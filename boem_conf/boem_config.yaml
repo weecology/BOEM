@@ -71,20 +71,21 @@ pipeline_evaluation:
   classification_threshold: 0.5
 
 active_learning:
-  strategy: target-labels
-  n_images: 20
+  strategy: taxonomy
+  n_images: 100
   patch_size: 1000
   patch_overlap: 0
   min_classification_score: 0.3
-  min_detection_score: 0.8
+  min_detection_score: 0.8  
   model_checkpoint:
   target_labels:
     - "Tursiops truncatus"
 
   # Taxonomy strategy: set strategy: taxonomy and taxonomy_aliases to select images by higher taxon
   # (uses transformed_taxonomy.json to expand e.g. Aves -> all bird species, Cepphus -> guillemots).
-  taxonomy_path: null  # optional; defaults to project root transformed_taxonomy.json
-  taxonomy_aliases: []  # e.g. [Aves, Mammalia, Cepphus] for Birds, Mammals, or Guillemots
+  taxonomy_path: /blue/ewhite/b.weinstein/src/BOEM/transformed_taxonomy.json
+  taxonomy_aliases:
+    - 'Mysticeti'  # e.g. [Aves, Mammalia, Cepphus] for Birds, Mammals, or Guillemots
 
   # Rarest strategy parameters:
   drop_n_most_common: 5  # Number of most common classes to drop

@@ -60,7 +60,6 @@ torch = [
 torchvision = [
   { index = "pytorch-cu128", marker = "sys_platform != 'darwin'" },
 ]
-deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "main" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -124,16 +124,19 @@ class Pipeline:
             if self.existing_reviewed is not None:
                 print(f"Reviewed annotations shape: {self.existing_reviewed.shape}")
 
-        self.existing_images = list(set(
+        # deepforest.read_file keeps image_path as basenames (root_dir stored as metadata).
+        # Normalize everything to basenames so pool/flightline comparisons work consistently.
+        all_paths = (
             (self.existing_training.image_path.tolist() if self.existing_training is not None else []) +
             (self.existing_validation.image_path.tolist() if self.existing_validation is not None else []) +
             (self.existing_reviewed.image_path.tolist() if self.existing_reviewed is not None else [])
-        ))
+        )
+        self.existing_images = list(set(os.path.basename(p) for p in all_paths))
         # Include USGS/UBFAI annotations from crops/train.csv and test.csv so we don't re-review
         usgs_train_paths, usgs_test_paths = load_usgs_annotated_image_paths(self.config.image_dir)
         if usgs_train_paths or usgs_test_paths:
             print(f"Found {len(usgs_train_paths)} USGS/UBFAI train paths and {len(usgs_test_paths)} USGS/UBFAI test paths")
-            self.existing_images = list(set(self.existing_images + usgs_train_paths + usgs_test_paths))
+            self.existing_images = list(set(self.existing_images + [os.path.basename(p) for p in usgs_train_paths + usgs_test_paths]))
 
         return True
 
@@ -177,8 +180,8 @@ class Pipeline:
         hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
         hcast_workers = getattr(self.config.hierarchical, "workers", 4)
 
-        # Run predictions on images not yet annotated
-        unannotated = [img for img in self.all_images if img not in self.existing_images]
+        # Run predictions on images not yet annotated (existing_images uses basenames)
+        unannotated = [img for img in self.all_images if os.path.basename(img) not in self.existing_images]
         full_flight_cache = os.path.join(self.config.image_dir, ".full_flight_predictions.csv")
         pool_predictions = None
         if unannotated:
@@ -214,6 +217,10 @@ class Pipeline:
             if ann_df is None or ann_df.empty:
                 continue
             ann = ann_df.copy()
+            if "label" in ann.columns:
+                ann = ann[ann["label"] != "FalsePositive"]
+            if ann.empty:
+                continue
             ann.rename(columns={"label": "cropmodel_label"}, inplace=True)
             ann["label"] = "Object"
             ann["score"] = 2.0
@@ -342,8 +349,8 @@ class Pipeline:
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
 
-        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG")) 
-        pool = [image for image in pool if image not in self.existing_images]
+        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG"))
+        pool = [image for image in pool if os.path.basename(image) not in self.existing_images]
         pool_limit = getattr(self.config.active_learning, "pool_limit", None)
         print(f"Pool: {len(pool)} images (after excluding existing), pool_limit={pool_limit}")
 

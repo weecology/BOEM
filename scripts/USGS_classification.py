@@ -96,9 +96,12 @@ def train_test_split_by_image(
     random_state=42,
 ):
     """
-    Split by parent image so no crop from the same image appears in both train and test.
-    Adds a temporary column 'parent_image' (derived from image_path crop filename).
-    Drops classes that have no test images or insufficient test/train after the split.
+    Split per class by parent image so no crop for the same label appears in both splits.
+
+    For each class independently, shuffles that class's parent images and assigns
+    enough to the test set to reach both the test_size fraction and min_test_images
+    crops. This guarantees minority classes get adequate test representation rather
+    than being starved by a global parent-image split across the full dataset.
 
     Returns:
         (train_df, test_df, report) where report has keys: n_parents, n_train_parents,
@@ -108,33 +111,52 @@ def train_test_split_by_image(
         raise ValueError("df must have 'image_path' column")
     df = df.copy()
     df["parent_image"] = df["image_path"].map(_crop_path_to_parent_stem)
-    unique_parents = df["parent_image"].unique()
-    n_parents = len(unique_parents)
+    n_parents = df["parent_image"].nunique()
 
     rng = np.random.default_rng(random_state)
-    n_test_parents = max(1, int(n_parents * test_size))
-    test_parents = set(rng.choice(unique_parents, size=n_test_parents, replace=False))
-    train_parents = set(unique_parents) - test_parents
-
-    train_df = df[df["parent_image"].isin(train_parents)].drop(columns=["parent_image"])
-    test_df = df[df["parent_image"].isin(test_parents)].drop(columns=["parent_image"])
-
+    train_parts = []
+    test_parts = []
     kept_classes = []
     dropped_classes = []
-    for label in df["label"].unique():
-        train_count = (train_df["label"] == label).sum()
-        test_count = (test_df["label"] == label).sum()
-        if test_count >= min_test_images and train_count >= 1:
+
+    for label in sorted(df["label"].unique()):
+        class_df = df[df["label"] == label]
+        class_parents = np.array(sorted(class_df["parent_image"].unique()))
+        shuffled = rng.permutation(class_parents)
+
+        # Accumulate test parents until we meet both the fraction target and
+        # the min_test_images crop threshold (whichever takes longer).
+        n_target = max(1, int(len(class_parents) * test_size))
+        test_p, test_crop_count = [], 0
+        for p in shuffled:
+            if test_crop_count >= min_test_images and len(test_p) >= n_target:
+                break
+            test_p.append(p)
+            test_crop_count += int((class_df["parent_image"] == p).sum())
+
+        test_p = set(test_p)
+        train_p = set(class_parents) - test_p
+
+        test_class = class_df[class_df["parent_image"].isin(test_p)]
+        train_class = class_df[class_df["parent_image"].isin(train_p)]
+
+        if max_test_images and len(test_class) > max_test_images:
+            test_class = test_class.sample(n=max_test_images, random_state=int(rng.integers(0, 2**31)))
+
+        if len(test_class) >= min_test_images and len(train_class) >= 1:
             kept_classes.append(label)
+            train_parts.append(train_class)
+            test_parts.append(test_class)
         else:
             dropped_classes.append(label)
-    train_df = train_df[train_df["label"].isin(kept_classes)]
-    test_df = test_df[test_df["label"].isin(kept_classes)]
+
+    train_df = (pd.concat(train_parts, ignore_index=True) if train_parts else df.iloc[:0]).drop(columns=["parent_image"])
+    test_df = (pd.concat(test_parts, ignore_index=True) if test_parts else df.iloc[:0]).drop(columns=["parent_image"])
 
     report = {
         "n_parents": n_parents,
-        "n_train_parents": len(train_parents),
-        "n_test_parents": len(test_parents),
+        "n_train_parents": train_df["image_path"].apply(_crop_path_to_parent_stem).nunique() if not train_df.empty else 0,
+        "n_test_parents": test_df["image_path"].apply(_crop_path_to_parent_stem).nunique() if not test_df.empty else 0,
         "dropped_classes": dropped_classes,
         "n_dropped_classes": len(dropped_classes),
         "n_classes_kept": len(kept_classes),

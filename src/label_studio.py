@@ -415,8 +415,9 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
             upload_dict = {"data": data_dict}
         tasks.append(upload_dict)
     
-    if len(tasks) > 0:
-        label_studio_project.import_tasks(tasks)
+    chunk_size = 100
+    for i in range(0, len(tasks), chunk_size):
+        label_studio_project.import_tasks(tasks[i:i + chunk_size])
 
 def download_completed_tasks(label_studio_project, csv_dir):
     labeled_tasks = label_studio_project.get_labeled_tasks()

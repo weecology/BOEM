@@ -109,6 +109,18 @@ def parse_args():
         help="Do not overwrite UBFAI crop CSVs from detection/crops when dest exists. "
         "Default is to update (overwrite) so labels stay current.",
     )
+    parser.add_argument(
+        "--write-detection-refresh-manifest",
+        type=str,
+        default=None,
+        help="Write CSV manifest of stale/missing detection crop work and exit.",
+    )
+    parser.add_argument(
+        "--process-detection-refresh-manifest",
+        type=str,
+        default=None,
+        help="Process only rows in a detection refresh manifest CSV and exit.",
+    )
     return parser.parse_args()
 
 
@@ -254,60 +266,28 @@ def generate_detection_crops():
     )
 
     for flight_name in flights:
-        root_dir = os.path.join(IMAGERY_BASE, flight_name)
-        save_dir = os.path.join(DETECTION_CROPS_BASE, flight_name)
-        if not os.path.isdir(root_dir):
-            print(f"  Skip {flight_name}: imagery dir not found {root_dir}")
+        flight_data = _build_flight_detection_annotations(flight_name)
+        if flight_data is None:
             continue
-
-        csvs = []
-        for sub in ("train", "validation", "review"):
-            csvs.extend(
-                glob.glob(os.path.join(ANNOTATIONS_BASE, sub, flight_name, "*.csv"))
-            )
-        if not csvs:
-            print(f"  Skip {flight_name}: no annotation CSVs")
-            continue
-
-        # Build combined and record each row's source CSV mtime
-        parts = []
-        for f in csvs:
-            df = pd.read_csv(f)
-            df["_source_mtime"] = os.path.getmtime(f)
-            parts.append(df)
-        combined = pd.concat(parts, ignore_index=True).drop_duplicates()
-        combined = _normalize_annotation_columns(combined)
-
-        # Keep only annotations whose images actually exist on disk
-        combined["_path"] = combined["image_path"].apply(
-            lambda p: os.path.join(root_dir, p)
-        )
-        combined = combined[combined["_path"].apply(os.path.exists)].drop(
-            columns=["_path"]
-        )
-        if combined.empty:
-            print(f"  Skip {flight_name}: no annotations with existing images")
-            continue
-
-        # Per image: max mtime of any annotation CSV that contains it
-        image_ann_mtime = combined.groupby("image_path")["_source_mtime"].max()
-        combined = combined.drop(columns=["_source_mtime"])
+        root_dir, save_dir, combined, image_ann_mtime = flight_data
 
         # Only refresh images whose annotation is newer than existing crop CSV (or missing)
-        os.makedirs(save_dir, exist_ok=True)
-        images_to_refresh = []
-        for image_path in combined["image_path"].unique():
-            image_stem = os.path.splitext(os.path.basename(image_path))[0]
-            crop_csv = os.path.join(save_dir, f"{image_stem}.csv")
-            ann_mtime = image_ann_mtime.loc[image_path]
-            if not os.path.exists(crop_csv) or os.path.getmtime(crop_csv) < ann_mtime:
-                images_to_refresh.append(image_path)
-                if os.path.exists(crop_csv):
-                    os.remove(crop_csv)
+        refresh_df = _build_refresh_rows_for_flight(
+            flight_name=flight_name,
+            root_dir=root_dir,
+            save_dir=save_dir,
+            combined=combined,
+            image_ann_mtime=image_ann_mtime,
+        )
+        images_to_refresh = refresh_df["image_path"].tolist()
 
         if not images_to_refresh:
             print(f"  {flight_name}: no images need refresh (all crop CSVs up to date)")
             continue
+
+        for crop_csv in refresh_df["crop_csv"]:
+            if os.path.exists(crop_csv):
+                os.remove(crop_csv)
 
         combined_refresh = combined[combined["image_path"].isin(images_to_refresh)]
         data_processing.preprocess_images(
@@ -324,6 +304,165 @@ def generate_detection_crops():
         )
 
     print("Detection crop generation done.")
+
+
+def _build_flight_detection_annotations(
+    flight_name: str,
+) -> tuple[str, str, pd.DataFrame, pd.Series] | None:
+    root_dir = os.path.join(IMAGERY_BASE, flight_name)
+    save_dir = os.path.join(DETECTION_CROPS_BASE, flight_name)
+    if not os.path.isdir(root_dir):
+        print(f"  Skip {flight_name}: imagery dir not found {root_dir}")
+        return None
+
+    csvs = []
+    for sub in ("train", "validation", "review"):
+        csvs.extend(glob.glob(os.path.join(ANNOTATIONS_BASE, sub, flight_name, "*.csv")))
+    if not csvs:
+        print(f"  Skip {flight_name}: no annotation CSVs")
+        return None
+
+    parts = []
+    for f in csvs:
+        df = pd.read_csv(f)
+        df["_source_mtime"] = os.path.getmtime(f)
+        parts.append(df)
+    combined = pd.concat(parts, ignore_index=True).drop_duplicates()
+    combined = _normalize_annotation_columns(combined)
+    combined["_path"] = combined["image_path"].apply(lambda p: os.path.join(root_dir, p))
+    combined = combined[combined["_path"].apply(os.path.exists)].drop(columns=["_path"])
+    if combined.empty:
+        print(f"  Skip {flight_name}: no annotations with existing images")
+        return None
+
+    image_ann_mtime = combined.groupby("image_path")["_source_mtime"].max()
+    combined = combined.drop(columns=["_source_mtime"])
+    return root_dir, save_dir, combined, image_ann_mtime
+
+
+def _build_refresh_rows_for_flight(
+    flight_name: str,
+    root_dir: str,
+    save_dir: str,
+    combined: pd.DataFrame,
+    image_ann_mtime: pd.Series,
+) -> pd.DataFrame:
+    rows = []
+    for image_path in combined["image_path"].unique():
+        image_stem = os.path.splitext(os.path.basename(image_path))[0]
+        crop_csv = os.path.join(save_dir, f"{image_stem}.csv")
+        ann_mtime = float(image_ann_mtime.loc[image_path])
+        needs_refresh = (not os.path.exists(crop_csv)) or (
+            os.path.getmtime(crop_csv) < ann_mtime
+        )
+        if needs_refresh:
+            rows.append(
+                {
+                    "flight_name": flight_name,
+                    "root_dir": root_dir,
+                    "save_dir": save_dir,
+                    "image_path": image_path,
+                    "crop_csv": crop_csv,
+                    "ann_mtime": ann_mtime,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def write_detection_refresh_manifest(manifest_path: str):
+    rows = []
+    flight_dirs = set()
+    for sub in ("train", "validation", "review"):
+        parent = os.path.join(ANNOTATIONS_BASE, sub)
+        if os.path.isdir(parent):
+            for name in os.listdir(parent):
+                if os.path.isdir(os.path.join(parent, name)):
+                    flight_dirs.add(name)
+
+    for flight_name in sorted(flight_dirs):
+        flight_data = _build_flight_detection_annotations(flight_name)
+        if flight_data is None:
+            continue
+        root_dir, save_dir, combined, image_ann_mtime = flight_data
+        refresh_df = _build_refresh_rows_for_flight(
+            flight_name=flight_name,
+            root_dir=root_dir,
+            save_dir=save_dir,
+            combined=combined,
+            image_ann_mtime=image_ann_mtime,
+        )
+        if not refresh_df.empty:
+            rows.append(refresh_df)
+
+    if rows:
+        manifest = pd.concat(rows, ignore_index=True)
+    else:
+        manifest = pd.DataFrame(
+            columns=[
+                "flight_name",
+                "root_dir",
+                "save_dir",
+                "image_path",
+                "crop_csv",
+                "ann_mtime",
+            ]
+        )
+    manifest.to_csv(manifest_path, index=False)
+    print(f"Wrote refresh manifest with {len(manifest)} rows to {manifest_path}")
+
+
+def process_detection_refresh_manifest(manifest_path: str):
+    from src import data_processing
+
+    manifest = pd.read_csv(manifest_path)
+    if manifest.empty:
+        print(f"Manifest {manifest_path} is empty; nothing to process.")
+        return
+
+    total_runtime_skips = 0
+    total_refreshed = 0
+
+    for flight_name in sorted(manifest["flight_name"].unique()):
+        flight_manifest = manifest[manifest["flight_name"] == flight_name]
+        flight_data = _build_flight_detection_annotations(flight_name)
+        if flight_data is None:
+            continue
+        root_dir, save_dir, combined, image_ann_mtime = flight_data
+        available_images = set(combined["image_path"].unique())
+        requested_images = set(flight_manifest["image_path"].astype(str))
+        refresh_now = []
+        for image_path in requested_images:
+            if image_path not in available_images:
+                continue
+            image_stem = os.path.splitext(os.path.basename(image_path))[0]
+            crop_csv = os.path.join(save_dir, f"{image_stem}.csv")
+            ann_mtime = float(image_ann_mtime.loc[image_path])
+            if os.path.exists(crop_csv) and os.path.getmtime(crop_csv) >= ann_mtime:
+                total_runtime_skips += 1
+                continue
+            if os.path.exists(crop_csv):
+                os.remove(crop_csv)
+            refresh_now.append(image_path)
+
+        if not refresh_now:
+            continue
+
+        combined_refresh = combined[combined["image_path"].isin(refresh_now)]
+        data_processing.preprocess_images(
+            combined_refresh,
+            root_dir=root_dir,
+            save_dir=save_dir,
+            patch_size=PATCH_SIZE,
+            patch_overlap=PATCH_OVERLAP,
+            allow_empty=True,
+        )
+        total_refreshed += len(refresh_now)
+        print(f"  {flight_name}: refreshed {len(refresh_now)} images from manifest shard")
+
+    print(
+        f"Manifest processing complete: refreshed={total_refreshed}, "
+        f"runtime_skipped_up_to_date={total_runtime_skips}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +786,14 @@ def create_train_test_split(
 def main():
     args = parse_args()
     set_seed(args.seed)
+
+    if args.write_detection_refresh_manifest:
+        write_detection_refresh_manifest(args.write_detection_refresh_manifest)
+        return
+
+    if args.process_detection_refresh_manifest:
+        process_detection_refresh_manifest(args.process_detection_refresh_manifest)
+        return
 
     # Generate detection crops from annotations (default: on; only refreshes when newer)
     if not args.no_generate_detection_crops:

@@ -96,9 +96,15 @@ def train_test_split_by_image(
     random_state=42,
 ):
     """
-    Split by parent image so no crop from the same image appears in both train and test.
-    Adds a temporary column 'parent_image' (derived from image_path crop filename).
-    Drops classes that have no test images or insufficient test/train after the split.
+    Split per class by parent image so no crop for the same label appears in both splits.
+
+    For each class independently, shuffles that class's parent images and assigns
+    enough to test to satisfy both the test_size fraction and the min_test_images
+    crop count (whichever requires more parents). This guarantees minority classes
+    get adequate test representation regardless of their share of the full dataset.
+
+    A parent image may be in test for one class and train for another — that is
+    fine because each crop has exactly one label (classification task, not detection).
 
     Returns:
         (train_df, test_df, report) where report has keys: n_parents, n_train_parents,
@@ -108,33 +114,57 @@ def train_test_split_by_image(
         raise ValueError("df must have 'image_path' column")
     df = df.copy()
     df["parent_image"] = df["image_path"].map(_crop_path_to_parent_stem)
-    unique_parents = df["parent_image"].unique()
-    n_parents = len(unique_parents)
+    n_parents = df["parent_image"].nunique()
 
     rng = np.random.default_rng(random_state)
-    n_test_parents = max(1, int(n_parents * test_size))
-    test_parents = set(rng.choice(unique_parents, size=n_test_parents, replace=False))
-    train_parents = set(unique_parents) - test_parents
+    train_parts: list[pd.DataFrame] = []
+    test_parts: list[pd.DataFrame] = []
+    kept_classes: list[str] = []
+    dropped_classes: list[str] = []
 
-    train_df = df[df["parent_image"].isin(train_parents)].drop(columns=["parent_image"])
-    test_df = df[df["parent_image"].isin(test_parents)].drop(columns=["parent_image"])
+    for label in sorted(df["label"].unique()):
+        class_df = df[df["label"] == label]
+        class_parents = np.array(sorted(class_df["parent_image"].unique()))
+        shuffled = rng.permutation(class_parents)
 
-    kept_classes = []
-    dropped_classes = []
-    for label in df["label"].unique():
-        train_count = (train_df["label"] == label).sum()
-        test_count = (test_df["label"] == label).sum()
-        if test_count >= min_test_images and train_count >= 1:
+        # Accumulate test parents until we meet both the fraction target and
+        # the min_test_images crop threshold (whichever requires more parents).
+        n_target = max(1, int(len(class_parents) * test_size))
+        test_p: list[str] = []
+        test_crop_count = 0
+        for p in shuffled:
+            if test_crop_count >= min_test_images and len(test_p) >= n_target:
+                break
+            test_p.append(p)
+            test_crop_count += int((class_df["parent_image"] == p).sum())
+
+        test_p_set = set(test_p)
+        train_p_set = set(class_parents) - test_p_set
+
+        test_class = class_df[class_df["parent_image"].isin(test_p_set)]
+        train_class = class_df[class_df["parent_image"].isin(train_p_set)]
+
+        if max_test_images and len(test_class) > max_test_images:
+            test_class = test_class.sample(n=max_test_images, random_state=int(rng.integers(0, 2**31)))
+
+        if len(test_class) >= min_test_images and len(train_class) >= 1:
             kept_classes.append(label)
+            train_parts.append(train_class)
+            test_parts.append(test_class)
         else:
             dropped_classes.append(label)
-    train_df = train_df[train_df["label"].isin(kept_classes)]
-    test_df = test_df[test_df["label"].isin(kept_classes)]
+            print(
+                f"  [split] drop '{label}': {len(test_class)} test crops "
+                f"(need {min_test_images}), {len(train_class)} train crops"
+            )
+
+    train_df = (pd.concat(train_parts, ignore_index=True) if train_parts else df.iloc[:0]).drop(columns=["parent_image"])
+    test_df = (pd.concat(test_parts, ignore_index=True) if test_parts else df.iloc[:0]).drop(columns=["parent_image"])
 
     report = {
         "n_parents": n_parents,
-        "n_train_parents": len(train_parents),
-        "n_test_parents": len(test_parents),
+        "n_train_parents": train_df["image_path"].map(_crop_path_to_parent_stem).nunique() if not train_df.empty else 0,
+        "n_test_parents": test_df["image_path"].map(_crop_path_to_parent_stem).nunique() if not test_df.empty else 0,
         "dropped_classes": dropped_classes,
         "n_dropped_classes": len(dropped_classes),
         "n_classes_kept": len(kept_classes),
@@ -216,15 +246,12 @@ def main(cfg: DictConfig):
     # Remove any negative values
     crop_annotations = crop_annotations[(crop_annotations['xmin'] >= 0) & (crop_annotations['ymin'] >= 0) & (crop_annotations['xmax'] >= 0) & (crop_annotations['ymax'] >= 0)]
 
-    # Gentle class balance: cap each class at 3x median size to reduce majority-class dominance (e.g. larus argentinus)
-    n_before = len(crop_annotations)
-    crop_annotations = gentle_class_balance(crop_annotations, factor=3.0, random_state=42)
-    n_after = len(crop_annotations)
-    if n_before > n_after:
-        print(f"[class balance] downsampled training pool {n_before} -> {n_after} (cap = 3x median per class)")
-
+    # Split per class by parent image before balancing so rare classes are not harmed.
+    # Each class independently gets >= min_test_images crops in test; everything else
+    # goes to train. Classes that cannot meet the threshold are dropped.
     if "image_path" not in crop_annotations.columns:
         raise ValueError("Crop annotations must have 'image_path' column for split-by-image")
+    print(f"[split] pool: {len(crop_annotations)} crops, {crop_annotations['label'].nunique()} classes")
     train_df, validation_df, split_report = train_test_split_by_image(
         crop_annotations, test_size=0.1, min_test_images=5, max_test_images=100, random_state=42
     )
@@ -236,8 +263,14 @@ def main(cfg: DictConfig):
         f"[split by parent image] kept {split_report['n_classes_kept']} classes, "
         f"dropped {split_report['n_dropped_classes']} classes (insufficient train/test after image split)"
     )
-    if split_report["dropped_classes"]:
-        print("  Dropped classes:", split_report["dropped_classes"])
+
+    # Gentle class balance: applied to train only after the split so test reflects the
+    # natural distribution and rare classes are not starved of their test images.
+    n_before = len(train_df)
+    train_df = gentle_class_balance(train_df, factor=3.0, random_state=42)
+    n_after = len(train_df)
+    if n_before > n_after:
+        print(f"[class balance] train downsampled {n_before} -> {n_after} (cap = 3x median per class)")
 
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
     comet_logger.experiment.log_parameter("class_balance_applied", True)

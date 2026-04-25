@@ -4,7 +4,6 @@
 
 #SBATCH --job-name=prep_ann
 #SBATCH --account=ewhite
-#SBATCH --partition=hpg-b200
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32

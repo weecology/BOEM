@@ -18,6 +18,12 @@ parser.add_argument(
     default=None,
     help="Cap proportion of empty images in train (e.g. 0.3 = max 30%%). Subsamples empty images and saves train_max_empty_<frac>.csv.",
 )
+parser.add_argument(
+    "--max-test-empty-fraction",
+    type=float,
+    default=None,
+    help="Cap proportion of empty images in the validation/test set (e.g. 0.25 = max 25%%).",
+)
 args = parser.parse_args()
 
 # Use parsed arguments
@@ -53,6 +59,29 @@ if args.max_empty_fraction is not None:
     train.to_csv(train_csv_path, index=False)
     print(f"Limited empty images to {args.max_empty_fraction:.0%}; saved {len(train)} rows to {train_csv_path}")
 
+# Optional: limit proportion of empty images in validation/test set
+test_csv_path = os.path.join(savedir, "test.csv")
+if args.max_test_empty_fraction is not None:
+    if "empty_image" not in test.columns:
+        test["empty_image"] = (
+            (test["xmin"] == 0)
+            & (test["xmax"] == 0)
+            & (test["ymin"] == 0)
+            & (test["ymax"] == 0)
+        )
+    per_image_empty_test = test.groupby("image_path")["empty_image"].all()
+    empty_test_images = set(per_image_empty_test[per_image_empty_test].index)
+    with_object_test_images = set(per_image_empty_test[~per_image_empty_test].index)
+    n_with_test = len(with_object_test_images)
+    max_empty_test = int(n_with_test * args.max_test_empty_fraction / (1 - args.max_test_empty_fraction)) if args.max_test_empty_fraction < 1.0 else len(empty_test_images)
+    keep_empty_test = set(pd.Series(list(empty_test_images)).sample(n=min(max_empty_test, len(empty_test_images)), random_state=42).values)
+    keep_test_images = with_object_test_images | keep_empty_test
+    test = test[test["image_path"].isin(keep_test_images)].copy()
+    frac_str_test = f"{args.max_test_empty_fraction:.2f}".replace(".", "_")
+    test_csv_path = os.path.join(savedir, f"test_max_empty_{frac_str_test}.csv")
+    test.to_csv(test_csv_path, index=False)
+    print(f"Limited test empty images to {args.max_test_empty_fraction:.0%}; saved {len(test)} rows to {test_csv_path}")
+
 # Print the number of empty images in train and test sets
 if "empty_image" not in train.columns:
     train["empty_image"] = (
@@ -80,10 +109,10 @@ m.numeric_to_label_dict = {0:"Object"}
 m.config["train"]["csv_file"] = train_csv_path
 m.config["train"]["root_dir"] = root_dir
 m.config["train"]["fast_dev_run"] = False
-m.config["validation"]["csv_file"] = os.path.join(savedir,"test.csv")
+m.config["validation"]["csv_file"] = test_csv_path
 m.config["validation"]["root_dir"] = root_dir
 m.config["batch_size"] = batch_size
-m.config["train"]["epochs"] = 12
+m.config["train"]["epochs"] = 30
 m.config["workers"] = workers
 m.config["validation"]["val_accuracy_interval"] = 1
 m.config["train"]["scheduler"]["params"]["eps"]  = 0
@@ -105,6 +134,8 @@ devices = torch.cuda.device_count()
 comet_logger.experiment.log_parameter("devices", devices)
 if args.max_empty_fraction is not None:
     comet_logger.experiment.log_parameter("max_empty_fraction", args.max_empty_fraction)
+if args.max_test_empty_fraction is not None:
+    comet_logger.experiment.log_parameter("max_test_empty_fraction", args.max_test_empty_fraction)
 comet_logger.experiment.log_parameter("workers", m.config["workers"])
 comet_logger.experiment.log_parameter("batch_size", m.config["batch_size"])
 

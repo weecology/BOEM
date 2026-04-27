@@ -496,6 +496,7 @@ def collect_workflow_annotations(update_labels: bool = True) -> pd.DataFrame:
     png_pool = glob.glob(
         os.path.join(DETECTION_CROPS_BASE, "**", "*.png"), recursive=True
     )
+    png_lookup = {os.path.basename(x): x for x in png_pool}
 
     for csv_file in glob.glob(
         os.path.join(DETECTION_CROPS_BASE, "**", "*.csv"), recursive=True
@@ -527,10 +528,12 @@ def collect_workflow_annotations(update_labels: bool = True) -> pd.DataFrame:
             annotations.to_csv(dest_csv, index=False)
             # Copy associated crop images that aren't already present
             for src in annotations["image_path"].unique():
-                src_path = [
-                    x for x in png_pool if os.path.basename(x) == os.path.basename(src)
-                ][0]
-                dst = os.path.join(UBFAI_CROPS, os.path.basename(src))
+                src_basename = os.path.basename(src)
+                src_path = png_lookup.get(src_basename)
+                if src_path is None:
+                    print(f"Warning: {src_basename} not found in png_pool, skipping copy")
+                    continue
+                dst = os.path.join(UBFAI_CROPS, src_basename)
                 if not os.path.exists(dst):
                     shutil.copy2(src_path, dst)
 

@@ -16,9 +16,9 @@
 ulimit -c 0
 
 
-uv run python scripts/prepare_USGS.py
+uv run python -u scripts/prepare_USGS.py
 
 export NCCL_IB_DISABLE=1
 export NCCL_NVLS_ENABLE=0
 export NCCL_DEBUG=INFO
-uv run python /blue/ewhite/b.weinstein/src/BOEM/scripts/USGS_classification.py
+uv run python -u /blue/ewhite/b.weinstein/src/BOEM/scripts/USGS_classification.py

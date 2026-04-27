@@ -20,5 +20,5 @@ export NCCL_NVLS_ENABLE=0
 export NCCL_DEBUG=INFO
 
 #uv run python scripts/prepare_USGS.py
-srun uv run python scripts/USGS_backbone.py --batch_size 12 --workers 4 --max-empty-fraction 0.5
+srun uv run python scripts/USGS_backbone.py --batch_size 12 --workers 4 --max-empty-fraction 0.1 --max-test-empty-fraction 0.25
 

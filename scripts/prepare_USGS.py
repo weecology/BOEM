@@ -44,6 +44,7 @@ import argparse
 import glob
 import os
 import random
+import re
 import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -127,6 +128,12 @@ def parse_args():
         help="Number of flights to hold out for zero-shot evaluation (default: 2).",
     )
     parser.add_argument(
+        "--zero-shot-flights",
+        type=str,
+        default=None,
+        help="Comma-separated flight names to use as zero-shot holdout (overrides random selection).",
+    )
+    parser.add_argument(
         "--max-test-images",
         type=int,
         default=None,
@@ -135,8 +142,8 @@ def parse_args():
     parser.add_argument(
         "--max-zeroshot-images",
         type=int,
-        default=100,
-        help="Max unique images in zero_shot.csv (default: 100).",
+        default=None,
+        help="Max empty images in zero_shot.csv (default: no limit). All object images are always kept.",
     )
     parser.add_argument(
         "--no-update-labels",
@@ -467,12 +474,23 @@ def process_preworkflow_annotations(
     crop_annotations = pd.concat([true_positives, falsepositives])
     crop_annotations["label"] = "Object"
 
-    # 95/5 train/test split by image
-    images = crop_annotations.image_path.unique()
-    random.shuffle(images)
-    split_idx = int(len(images) * 0.95)
-    train = crop_annotations[crop_annotations["image_path"].isin(images[:split_idx])]
-    test = crop_annotations[crop_annotations["image_path"].isin(images[split_idx:])]
+    # 95/5 train/test split by parent scene (group all crops of the same scene together
+    # so no parent image straddles the split boundary).
+    _CROP_STEM_RE = re.compile(r"^(.+)_\d+\.[^.]+$")
+
+    def _crop_to_parent(path):
+        m = _CROP_STEM_RE.match(os.path.basename(str(path)))
+        return m.group(1) if m else os.path.splitext(os.path.basename(str(path)))[0]
+
+    crop_annotations = crop_annotations.copy()
+    crop_annotations["_parent"] = crop_annotations["image_path"].apply(_crop_to_parent)
+    parent_scenes = list(crop_annotations["_parent"].unique())
+    random.shuffle(parent_scenes)
+    split_idx = int(len(parent_scenes) * 0.95)
+    train_parents = set(parent_scenes[:split_idx])
+    test_parents = set(parent_scenes[split_idx:])
+    train = crop_annotations[crop_annotations["_parent"].isin(train_parents)].drop(columns=["_parent"])
+    test = crop_annotations[crop_annotations["_parent"].isin(test_parents)].drop(columns=["_parent"])
 
     return train, test
 
@@ -552,8 +570,9 @@ def create_train_test_split(
     test: pd.DataFrame,
     flight_annotations: pd.DataFrame,
     n_zeroshot_flights: int = 2,
+    zero_shot_flights: list[str] | None = None,
     max_test_images: int = 100,
-    max_zeroshot_images: int = 100,
+    max_zeroshot_images: int | None = None,
 ):
     """Combine pre-workflow and workflow annotations into final train/test splits.
 
@@ -580,8 +599,14 @@ def create_train_test_split(
     flight_val = read_file(flight_val, root_dir=UBFAI_CROPS)
 
     unique_flights = sorted(flight_annotations.loc[flight_annotations["xmin"] != 0,"flight"].unique())
-    n_holdout = min(n_zeroshot_flights, len(unique_flights))
-    zero_shot_flights = set(random.sample(unique_flights, n_holdout))
+    if zero_shot_flights is not None:
+        missing = [f for f in zero_shot_flights if f not in unique_flights]
+        if missing:
+            raise ValueError(f"Specified zero-shot flights not found in data: {missing}")
+        zero_shot_flights = set(zero_shot_flights)
+    else:
+        n_holdout = min(n_zeroshot_flights, len(unique_flights))
+        zero_shot_flights = set(random.sample(unique_flights, n_holdout))
     print(f"Zero-shot held-out flights: {zero_shot_flights}")
 
     # Map workflow crop annotations to train/test by matching parent image names
@@ -680,9 +705,18 @@ def create_train_test_split(
             and PIL.Image.open(os.path.join(UBFAI_CROPS, x)).size[0] == 2000
         ]
         combined_zeroshot = combined_zeroshot[~combined_zeroshot.image_path.isin(oversized_zs)]
-        zs_images = combined_zeroshot.image_path.unique().tolist()
-        keep_zs = set(random.sample(zs_images, min(max_zeroshot_images, len(zs_images))))
+        # Always keep all images that contain at least one object; only subsample empty images
+        per_image_empty_zs = combined_zeroshot.groupby("image_path")["empty_image"].all()
+        object_zs_images = set(per_image_empty_zs[~per_image_empty_zs].index)
+        empty_zs_images = list(per_image_empty_zs[per_image_empty_zs].index)
+        if max_zeroshot_images is None:
+            keep_empty_zs = set(empty_zs_images)
+        else:
+            n_keep_empty = max(0, max_zeroshot_images - len(object_zs_images))
+            keep_empty_zs = set(random.sample(empty_zs_images, min(n_keep_empty, len(empty_zs_images))))
+        keep_zs = object_zs_images | keep_empty_zs
         combined_zeroshot = combined_zeroshot[combined_zeroshot.image_path.isin(keep_zs)]
+        print(f"Zero-shot: {len(object_zs_images)} object images + {len(keep_empty_zs)} empty images = {len(keep_zs)} total")
         if "geometry" in combined_zeroshot.columns:
             combined_zeroshot.drop(columns="geometry", inplace=True)
         combined_zeroshot = read_file(combined_zeroshot, root_dir=UBFAI_CROPS)
@@ -725,11 +759,17 @@ def main():
     )
 
     # Stage 3: combine everything and produce final train/test splits
+    explicit_zs_flights = (
+        [f.strip() for f in args.zero_shot_flights.split(",")]
+        if args.zero_shot_flights
+        else None
+    )
     create_train_test_split(
         train,
         test,
         flight_annotations,
         n_zeroshot_flights=args.n_zeroshot_flights,
+        zero_shot_flights=explicit_zs_flights,
         max_test_images=args.max_test_images,
         max_zeroshot_images=args.max_zeroshot_images,
     )

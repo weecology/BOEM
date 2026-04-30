@@ -13,4 +13,5 @@
 #SBATCH --error=/home/b.weinstein/logs/prep_ann_%j.err
 
 cd "${SLURM_SUBMIT_DIR}"
-uv run python scripts/prepare_USGS.py
+uv run python scripts/prepare_USGS.py \
+    --zero-shot-flights JPG_20260202_141900,JPG_20260201_134000

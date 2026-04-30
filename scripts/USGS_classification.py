@@ -267,14 +267,14 @@ def main(cfg: DictConfig):
     # Gentle class balance: applied to train only after the split so test reflects the
     # natural distribution and rare classes are not starved of their test images.
     n_before = len(train_df)
-    train_df = gentle_class_balance(train_df, factor=3.0, random_state=42)
+    train_df = gentle_class_balance(train_df, factor=4.0, random_state=42)
     n_after = len(train_df)
     if n_before > n_after:
-        print(f"[class balance] train downsampled {n_before} -> {n_after} (cap = 3x median per class)")
+        print(f"[class balance] train downsampled {n_before} -> {n_after} (cap = 4x median per class)")
 
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
     comet_logger.experiment.log_parameter("class_balance_applied", True)
-    comet_logger.experiment.log_parameter("class_balance_cap_factor", 3.0)
+    comet_logger.experiment.log_parameter("class_balance_cap_factor", 4.0)
     comet_logger.experiment.log_parameter("train_pool_size_after_balance", n_after)
     comet_logger.experiment.log_parameter("split_by_parent_image", True)
     comet_logger.experiment.log_parameter("split_n_classes_dropped", split_report["n_dropped_classes"])
@@ -319,6 +319,9 @@ def main(cfg: DictConfig):
     validation_df.to_csv(os.path.join(split_dir, "usgs_val_split.csv"), index=False)
     print(f"[split] saved train/val CSVs to {split_dir} for hierarchical comparability")
 
+    balance_classes = bool(cfg.classification_model.get("balance_classes", False))
+    comet_logger.experiment.log_parameter("balance_classes", balance_classes)
+
     trained_model = preprocess_and_train(
         train_df=train_df,
         validation_df=validation_df,
@@ -334,6 +337,7 @@ def main(cfg: DictConfig):
         lr=cfg.classification_model.lr,
         batch_size=cfg.classification_model.batch_size,
         workers=cfg.classification_model.workers,
+        balance_classes=balance_classes,
     )
     
 

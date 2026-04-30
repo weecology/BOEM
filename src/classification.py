@@ -127,6 +127,7 @@ def preprocess_and_train(
     max_epochs=10,
     workers=0,
     comet_logger=None,
+    balance_classes=False,
     **kwargs,
 ):
     """Preprocess data and train a crop model.
@@ -145,6 +146,7 @@ def preprocess_and_train(
         num_classes = len(pd.concat([train_df, validation_df]).label.unique())
         loaded_model = CropModel()
 
+    loaded_model.config["cropmodel"]["balance_classes"] = balance_classes
     loaded_model.create_trainer()
 
     # Preprocess train and validation data

@@ -24,10 +24,24 @@ IMAGE_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
 CHECKPOINT_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints"
 OUTPUT_DIR="${BOEM_OUTPUT_DIR:-output/usgs_hier}"
 TAXONOMY="taxonomy.json"
-# Required: set to e.g. "$CHECKPOINT_DIR/buffer_30/<comet_id>" from USGS_classification run
-SPLIT_DIR="${BOEM_HIER_SPLIT_DIR}"
+EXPAND_PIXELS="${BOEM_EXPAND_PIXELS:-30}"
 
 cd /blue/ewhite/b.weinstein/src/BOEM
+
+# Auto-discover the most recent split from USGS_classification for the matching buffer size.
+# Override by setting BOEM_HIER_SPLIT_DIR explicitly.
+if [ -n "${BOEM_HIER_SPLIT_DIR}" ]; then
+    SPLIT_DIR="${BOEM_HIER_SPLIT_DIR}"
+else
+    SPLIT_DIR=$(find "${CHECKPOINT_DIR}/buffer_${EXPAND_PIXELS}" -name "usgs_train_split.csv" -printf "%T@ %h\n" 2>/dev/null | sort -n | tail -1 | awk '{print $2}')
+fi
+
+if [ -z "${SPLIT_DIR}" ] || [ ! -f "${SPLIT_DIR}/usgs_train_split.csv" ]; then
+    echo "ERROR: No usgs_train_split.csv found under ${CHECKPOINT_DIR}/buffer_${EXPAND_PIXELS}."
+    echo "Run USGS_classification.py first, or set BOEM_HIER_SPLIT_DIR to the split directory."
+    exit 1
+fi
+
 echo "Using CropModel split from $SPLIT_DIR (same test data) and extending train with higher-taxon labels"
 uv run python scripts/USGS_hierarchical.py \
   --train-split-csv "$SPLIT_DIR/usgs_train_split.csv" \
@@ -38,5 +52,5 @@ uv run python scripts/USGS_hierarchical.py \
   --output-dir "$OUTPUT_DIR" \
   --batch-size 32 \
   --epochs 100 \
-  --expand-pixels 30 \
+  --expand-pixels "${EXPAND_PIXELS}" \
   --num-workers 4

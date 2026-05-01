@@ -91,6 +91,12 @@ active_learning:
   drop_n_most_common: 5  # Number of most common classes to drop
   rarest_confidence_selection: highest  # "highest" or "lowest" - select highest or lowest confidence samples from rarest classes
 
+  # Crop + H-CAST ensemble (requires hierarchical.checkpoint for match_or_genus_consistent and model-disagreement):
+  # ensemble_target_mode: crop_only  # crop_only | match_or_genus_consistent — for target-labels / taxonomy
+  # strategy: model-disagreement  # prioritize images where cropmodel_label != hcast_species
+  # disagreement_require_genus_mismatch: false  # if true, exclude congeneric species disagreements
+  # disagreement_target_labels: []  # optional list — keep disagreements where crop OR H-CAST species is in this set
+
   # Optional parameters:
   evaluation:
   dask_client:

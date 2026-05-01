@@ -7,8 +7,10 @@ import pytest
 from deepforest.utilities import read_file
 
 from src.active_learning import (
+    format_ensemble_suggestion_line,
     generate_pool_predictions,
     get_leaf_labels_for_taxonomy_aliases,
+    row_crop_hcast_disagrees,
     select_images,
 )
 
@@ -77,9 +79,9 @@ def test_select_train_images(detection_model):
         patch_size=450,
         model=detection_model,
         patch_overlap=0,
-        min_score=0.5,
+        min_score=0,
     )
-    chosen_images, _ = select_images(
+    chosen_images, _, _stats = select_images(
         preannotations=train_image_pool,
         strategy="random",
         n=1,
@@ -108,7 +110,6 @@ def test_select_images_taxonomy_strategy():
     path = repo_root / "transformed_taxonomy.json"
     if not path.exists():
         pytest.skip("transformed_taxonomy.json not found")
-    # Preannotations with one image that has a bird species label
     preannotations = pd.DataFrame(
         {
             "image_path": ["img1.jpg", "img1.jpg", "img2.jpg"],
@@ -116,7 +117,7 @@ def test_select_images_taxonomy_strategy():
             "score": [0.9, 0.8, 0.7],
         }
     )
-    chosen_images, _chosen_pre = select_images(
+    chosen_images, _chosen_pre, stats = select_images(
         preannotations=preannotations,
         strategy="taxonomy",
         n=5,
@@ -125,8 +126,8 @@ def test_select_images_taxonomy_strategy():
     )
     assert len(chosen_images) >= 1
     assert "img1.jpg" in chosen_images
-    # Only Cepphus grylle is under Cepphus; img2 has Object so should not be selected
     assert "img2.jpg" not in chosen_images
+    assert stats.get("al_target_crop_hits_rows") == 1
 
 
 def test_select_images_target_labels_validates_against_crop_model():
@@ -140,8 +141,7 @@ def test_select_images_target_labels_validates_against_crop_model():
     )
     valid = {"Cepphus grylle", "Actitis macularius"}
 
-    # All valid: succeeds
-    chosen_images, _ = select_images(
+    chosen_images, _, _ = select_images(
         preannotations=preannotations,
         strategy="target-labels",
         n=5,
@@ -150,12 +150,103 @@ def test_select_images_target_labels_validates_against_crop_model():
     )
     assert "img1.jpg" in chosen_images
 
-    # Typo / unknown label: raises
     with pytest.raises(ValueError, match="not in crop model label dict"):
         select_images(
             preannotations=preannotations,
             strategy="target-labels",
             n=5,
-            target_labels=["Cepphus grille"],  # typo: grille vs grylle
+            target_labels=["Cepphus grille"],
             valid_labels=valid,
         )
+
+
+def test_match_or_genus_consistent_requires_hcast():
+    preannotations = pd.DataFrame(
+        {
+            "image_path": ["a.jpg"],
+            "cropmodel_label": ["Foo bar"],
+            "score": [0.9],
+        }
+    )
+    with pytest.raises(ValueError, match="match_or_genus_consistent"):
+        select_images(
+            preannotations=preannotations,
+            strategy="target-labels",
+            n=5,
+            target_labels=["Foo bar"],
+            ensemble_target_mode="match_or_genus_consistent",
+            species_to_genus={"Foo bar": "Foo"},
+        )
+
+
+def test_match_or_genus_consistent_filters_rows():
+    sg = {"AAA bbb": "AAA", "CCC ddd": "CCC"}
+    preannotations = pd.DataFrame(
+        {
+            "image_path": ["x.jpg", "y.jpg", "z.jpg"],
+            "cropmodel_label": ["AAA bbb", "AAA bbb", "CCC ddd"],
+            "score": [0.9, 0.9, 0.9],
+            "hcast_species": ["AAA bbb", "XXX yyy", "CCC ddd"],
+            "hcast_genus": ["AAA", "XXX", "CCC"],
+        }
+    )
+    chosen, _, stats = select_images(
+        preannotations=preannotations,
+        strategy="target-labels",
+        n=5,
+        target_labels=["AAA bbb", "CCC ddd"],
+        ensemble_target_mode="match_or_genus_consistent",
+        species_to_genus=sg,
+    )
+    assert "x.jpg" in chosen
+    assert "z.jpg" in chosen
+    assert "y.jpg" not in chosen
+    assert stats["al_target_crop_hits_rows"] == 3
+    assert stats["al_target_after_ensemble_rows"] == 2
+
+
+def test_model_disagreement_strategy_ranking():
+    sg = {}
+    preannotations = pd.DataFrame(
+        {
+            "image_path": ["a.jpg", "a.jpg", "b.jpg", "b.jpg", "b.jpg"],
+            "cropmodel_label": ["Sp one", "Sp one", "Sp two", "Sp two", "Sp two"],
+            "score": [0.9, 0.9, 0.85, 0.85, 0.85],
+            "cropmodel_score": [0.9, 0.95, 0.8, 0.85, 0.9],
+            "hcast_species": ["Sp other", "Sp other", "Sp two", "Sp alt", "Sp alt"],
+            "hcast_genus": ["G", "G", "G2", "G2", "G2"],
+            "hcast_species_score": [0.88, 0.9, 0.85, 0.82, 0.87],
+        }
+    )
+    chosen, _, stats = select_images(
+        preannotations=preannotations,
+        strategy="model-disagreement",
+        n=2,
+        min_score=0.3,
+        species_to_genus=sg,
+    )
+    assert chosen[0] == "a.jpg"
+    assert stats["al_disagreement_boxes_after_filters"] >= 4
+
+
+def test_row_crop_hcast_disagree_strict_excludes_congener():
+    sg = {"Uria aalge": "Uria", "Uria lomvia": "Uria"}
+    row_match = pd.Series(
+        {
+            "cropmodel_label": "Uria aalge",
+            "hcast_species": "Uria lomvia",
+            "hcast_genus": "Uria",
+        }
+    )
+    assert row_crop_hcast_disagrees(row_match, sg, strict_genus_mismatch=False)
+    assert not row_crop_hcast_disagrees(row_match, sg, strict_genus_mismatch=True)
+
+
+def test_format_ensemble_suggestion_line():
+    sg = {"A b": "A"}
+    row_agree = pd.Series({"cropmodel_label": "A b", "hcast_species": "A b", "hcast_genus": "A"})
+    assert "species agreement" in format_ensemble_suggestion_line(row_agree, sg)
+    row_genus = pd.Series({"cropmodel_label": "A b", "hcast_species": "A c", "hcast_genus": "A"})
+    assert "genus A" in format_ensemble_suggestion_line(row_genus, sg)
+    row_amb = pd.Series({"cropmodel_label": "A b", "hcast_species": "X y", "hcast_genus": "X"})
+    assert "ambiguous" in format_ensemble_suggestion_line(row_amb, sg)

@@ -1,23 +1,27 @@
 """Convert COCO detection JSON (bbox xywh) to FathomNet localization CSV.
 
-FathomNet expects columns including: concept, image (public URL), x, y, width, height
+FathomNet expects columns: concept, image (public URL), x, y, width, height
 with origin top-left (+Y down). COCO ``bbox`` uses the same convention.
 
-Use on HiPerGator (or any host) after imagery is reachable at a stable HTTPS URL, for
-example under UF Orange public web space:
+Imagery from the USGS ScienceBase release (DOI: 10.5066/P9CBZQV1) is served
+from UF Orange public web space:
 
-  /orange/ewhite/web/public/...
+  /orange/ewhite/web/public/BOEM/usgs/images/
 
-so each patch URL looks like:
-  https://<your-public-host>/.../0400AGL_P1_20170224_102133_631_136760_56257_0.png
+which maps to:
+  https://data.rc.ufl.edu/pub/ewhite/BOEM/usgs/images/
+
+Annotations are extracted from 03_Annotations.zip into:
+  data/usgs_P9CBZQV1/annotations_extracted/annotations/{train,eval,test}/
 
 See: https://www.fathomnet.org/post/how-to-submit-localized-image-annotations-to-the-fathomnet-database
 
-Example:
+Example (10-image sample from test split):
   uv run python scripts/coco_to_fathomnet_localizations.py \\
-    --coco-json ./data/usgs_P9CBZQV1/annotations_extracted/train/train.json \\
-    --image-base-url https://example.rc.ufl.edu/public/boem/usgs_patches/ \\
-    --output-csv ./fathomnet_localizations.csv
+    --coco-json data/usgs_P9CBZQV1/annotations_extracted/annotations/test/test_gt.json \\
+    --image-base-url https://data.rc.ufl.edu/pub/ewhite/BOEM/usgs/images/ \\
+    --output-csv output/usgs_fathomnet_sample.csv \\
+    --limit 10
 """
 
 from __future__ import annotations
@@ -44,6 +48,12 @@ def main() -> None:
         help="Base URL ending with /; file_name from COCO is appended (urljoin).",
     )
     parser.add_argument("--output-csv", type=Path, required=True)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Keep only the first N unique images (useful for sampling).",
+    )
     args = parser.parse_args()
 
     coco_path: Path = args.coco_json.expanduser().resolve()
@@ -54,14 +64,21 @@ def main() -> None:
 
     data = load_coco(coco_path)
     id_to_name = {int(c["id"]): str(c.get("name", "")) for c in data.get("categories", [])}
-    id_to_image = {int(im["id"]): im for im in data.get("images", [])}
+    all_images = data.get("images", [])
+    if args.limit is not None:
+        kept_ids = {int(im["id"]) for im in all_images[: args.limit]}
+    else:
+        kept_ids = None
+    id_to_image = {int(im["id"]): im for im in all_images}
     rows: list[dict[str, Any]] = []
     for ann in data.get("annotations", []):
+        image_id = int(ann["image_id"])
+        if kept_ids is not None and image_id not in kept_ids:
+            continue
         bbox = ann.get("bbox")
         if not bbox or len(bbox) != 4:
             continue
         x, y, w, h = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
-        image_id = int(ann["image_id"])
         image = id_to_image.get(image_id)
         if image is None:
             continue

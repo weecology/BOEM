@@ -23,7 +23,9 @@ def sample_annotations():
 def sample_model():
     from deepforest.model import CropModel
 
-    return CropModel(num_classes=2)
+    model = CropModel()
+    model.create_model(num_classes=2)
+    return model
 
 
 def test_preprocess_images(sample_model, sample_annotations, tmp_path):

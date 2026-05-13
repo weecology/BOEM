@@ -115,9 +115,13 @@ m.config["batch_size"] = batch_size
 m.config["train"]["epochs"] = 30
 m.config["workers"] = workers
 m.config["validation"]["val_accuracy_interval"] = 1
-m.config["train"]["scheduler"]["params"]["eps"]  = 0
-m.config["train"]["lr"] = 0.001
+m.config["train"]["scheduler"]["type"] = "ReduceLROnPlateau"
+m.config["train"]["scheduler"]["params"]["mode"] = "min"
 m.config["train"]["scheduler"]["params"]["patience"] = 3
+m.config["train"]["scheduler"]["params"]["factor"] = 0.5
+m.config["train"]["scheduler"]["params"]["eps"] = 0
+m.config["validation"]["lr_plateau_target"] = "val_classification"
+m.config["train"]["lr"] = 0.001
 
 comet_logger = CometLogger(project_name="BOEM", workspace="bw4sz")
 comet_logger.experiment.add_tag("detection")

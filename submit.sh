@@ -14,4 +14,4 @@
 #SBATCH --gpus=1
 
 module load ffmpeg
-uv run python main.py image_dir=/blue/ewhite/b.weinstein/BOEM/imagery/JPG_20260202_141900 check_annotations=True active_learning.pool_limit=100000 active_testing.n_images=1 active_learning.n_images=20 debug=False
+uv run python main.py image_dir=/blue/ewhite/b.weinstein/BOEM/BRI/BRI_GOM_23_24_geotiff/2023-08-18 check_annotations=True active_learning.pool_limit=100000 active_testing.n_images=1 active_learning.n_images=20 debug=False

@@ -3,7 +3,12 @@ import os
 import shutil
 from omegaconf import DictConfig
 
-from src.active_learning import generate_pool_predictions, select_images, human_review
+from src.active_learning import (
+    generate_pool_predictions,
+    human_review,
+    load_species_to_genus_from_csv,
+    select_images,
+)
 from deepforest.model import CropModel
 from src import sagemaker_gt
 from src.annotators import get_annotator, LabelStudioAnnotator, SageMakerAnnotator
@@ -408,6 +413,7 @@ class Pipeline:
             )
         hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
         hcast_workers = getattr(self.config.hierarchical, "workers", 4)
+        species_to_genus = load_species_to_genus_from_csv(hcast_label_csv)
 
         # Apply pool_limit: when using cache, still honor config so debug/small runs stay fast
         configured_pool_limit = getattr(self.config.active_learning, "pool_limit", None)
@@ -457,11 +463,6 @@ class Pipeline:
 
 
             label_dict = trained_classification_model.label_dict
-            species_to_genus = {}
-            if hcast_label_csv and os.path.exists(hcast_label_csv):
-                label_df = pd.read_csv(hcast_label_csv).dropna(subset=["species"])
-                if "genus" in label_df.columns:
-                    species_to_genus = dict(zip(label_df["species"], label_df["genus"]))
             pipeline_monitor = PipelineEvaluation(  # species_to_genus added for hierarchical metrics
                 predictions=evaluation_predictions,
                 annotations=evaluation_annotations,
@@ -477,7 +478,7 @@ class Pipeline:
                 return None
 
         test_preannotations = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images)]
-        test_images_to_annotate, preannotations = select_images(
+        test_images_to_annotate, preannotations, _al_stats_test = select_images(
             preannotations=test_preannotations,
             strategy="random",
            n=self.config.active_testing.n_images,
@@ -492,7 +493,10 @@ class Pipeline:
         
         # Default taxonomy path: project root transformed_taxonomy.json (for strategy "taxonomy")
         _default_taxonomy_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "transformed_taxonomy.json")
-        train_images_to_annotate, preannotations = select_images(
+        disagreement_target_labels = getattr(self.config.active_learning, "disagreement_target_labels", None)
+        if disagreement_target_labels is not None and len(disagreement_target_labels) == 0:
+            disagreement_target_labels = None
+        train_images_to_annotate, preannotations, al_stats_train = select_images(
             preannotations=training_preannotations,
             strategy=self.config.active_learning.strategy,
             n=self.config.active_learning.n_images,
@@ -504,7 +508,24 @@ class Pipeline:
             taxonomy_path=getattr(self.config.active_learning, "taxonomy_path", None) or _default_taxonomy_path,
             taxonomy_aliases=getattr(self.config.active_learning, "taxonomy_aliases", None),
             valid_labels=list(trained_classification_model.label_dict.keys()),
+            ensemble_target_mode=getattr(self.config.active_learning, "ensemble_target_mode", "crop_only"),
+            species_to_genus=species_to_genus if species_to_genus else None,
+            disagreement_require_genus_mismatch=getattr(
+                self.config.active_learning, "disagreement_require_genus_mismatch", False
+            ),
+            disagreement_target_labels=disagreement_target_labels,
         )
+        if al_stats_train:
+            numeric_metrics = {
+                k: float(v) if isinstance(v, bool) else v
+                for k, v in al_stats_train.items()
+                if isinstance(v, (int, float))
+            }
+            if numeric_metrics:
+                self.comet_logger.experiment.log_metrics(numeric_metrics)
+            mode = al_stats_train.get("al_ensemble_target_mode")
+            if mode is not None:
+                self.comet_logger.experiment.log_parameter("al_ensemble_target_mode", mode)
         if len(train_images_to_annotate) == 0 and training_preannotations.empty:
             print("Training images to annotate: 0 (all images with detections ≥min_score were assigned to test)")
         
@@ -706,7 +727,12 @@ class Pipeline:
                 group["image_path"] = basename
                 # Use basename as key to match the format expected by SageMaker upload
                 preannotations[basename] = group.drop(columns=["image_path_basename"], errors="ignore")
-            self.annotator.upload(images=image_paths, instance_name=instance, preannotations=preannotations)
+            self.annotator.upload(
+                images=image_paths,
+                instance_name=instance,
+                preannotations=preannotations,
+                species_to_genus=species_to_genus if species_to_genus else None,
+            )
 
         self.comet_logger.experiment.add_tag("complete")
         return None

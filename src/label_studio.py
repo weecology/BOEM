@@ -9,6 +9,8 @@ import shutil
 from PIL import Image
 from deepforest.utilities import read_file
 
+from src.active_learning import format_ensemble_suggestion_line
+
 
 def get_taxonomy_leaf_paths(taxonomy_path):
     """Load transformed_taxonomy.json and return a dict mapping leaf alias -> full path (list of aliases from root to leaf).
@@ -34,7 +36,16 @@ def get_taxonomy_leaf_paths(taxonomy_path):
 
     return result
 
-def upload_to_label_studio(images, sftp_client, url, project_name, images_to_annotate_dir, folder_name, preannotations):
+def upload_to_label_studio(
+    images,
+    sftp_client,
+    url,
+    project_name,
+    images_to_annotate_dir,
+    folder_name,
+    preannotations,
+    species_to_genus=None,
+):
     """
     Upload images to Label Studio and import image tasks.
 
@@ -64,7 +75,13 @@ def upload_to_label_studio(images, sftp_client, url, project_name, images_to_ann
     )
     label_studio_project = connect_to_label_studio(url=url, project_name=project_name, label_config=default_label_config)
     upload_images(sftp_client=sftp_client, images=images, folder_name=folder_name)
-    import_image_tasks(label_studio_project=label_studio_project, image_names=images, local_image_dir=images_to_annotate_dir, predictions=preannotations)
+    import_image_tasks(
+        label_studio_project=label_studio_project,
+        image_names=images,
+        local_image_dir=images_to_annotate_dir,
+        predictions=preannotations,
+        species_to_genus=species_to_genus,
+    )
 
 def check_for_new_annotations(url, project_name, csv_dir, image_dir):
     """
@@ -159,43 +176,14 @@ def label_studio_bbox_format(local_image_dir, preannotations, taxonomy_path=None
     return {"result": predictions}
 
 
-def format_prediction_summary_for_task(prediction_df: pd.DataFrame) -> str:
-    """Format crop model + hierarchical model predictions as read-only text for Label Studio task data.
+def format_prediction_summary_for_task(
+    prediction_df: pd.DataFrame,
+    species_to_genus: dict | None = None,
+) -> str:
+    """Format crop + H-CAST predictions for Label Studio task data (prediction_summary).
 
-    When the prediction DataFrame has hcast_* columns, includes species/genus/family and scores.
-    Display in Label Studio via a Header or Text tag with value=$prediction_summary.
-    """
-    if prediction_df is None or prediction_df.empty:
-        return "No detections for this image."
-    lines = []
-    for i, (_, row) in enumerate(prediction_df.iterrows(), 1):
-        crop_label = row.get("cropmodel_label", row.get("label", "—"))
-        score = row.get("score", row.get("cropmodel_score", ""))
-        if isinstance(score, (int, float)):
-            parts = [f"Crop {i}: {crop_label} (score={score:.2f})"]
-        else:
-            parts = [f"Crop {i}: {crop_label}"]
-        if "hcast_species" in row and pd.notna(row.get("hcast_species")):
-            sp = row["hcast_species"]
-            gn = row.get("hcast_genus")
-            fa = row.get("hcast_family")
-            sp_s = row.get("hcast_species_score")
-            parts.append(f"  H-CAST: species={sp}")
-            if pd.notna(gn):
-                parts.append(f", genus={gn}")
-            if pd.notna(fa):
-                parts.append(f", family={fa}")
-            if sp_s is not None and isinstance(sp_s, (int, float)):
-                parts.append(f" (species_score={sp_s:.2f})")
-        lines.append("".join(parts))
-    return "\n".join(lines) if lines else "No detections for this image."
-
-
-def format_prediction_summary_for_task(prediction_df: pd.DataFrame) -> str:
-    """Format crop model + hierarchical (H-CAST) predictions as read-only text for Label Studio task data.
-
-    Add the result to task data as prediction_summary and display it with
-    <Text value="$prediction_summary" valueType="text"/> or <Header value="$prediction_summary"/> in the label config.
+    When species_to_genus is provided and hcast_* columns exist, appends ensemble suggestion line
+    (species agreement, genus fallback on mismatch, or ambiguous note).
     """
     if prediction_df is None or prediction_df.empty:
         return "No detections for this image."
@@ -220,6 +208,9 @@ def format_prediction_summary_for_task(prediction_df: pd.DataFrame) -> str:
             if sp_s is not None and isinstance(sp_s, (int, float)):
                 parts.append(f" (species_score={sp_s:.2f})")
         lines.append("".join(parts))
+        ens = format_ensemble_suggestion_line(row, species_to_genus)
+        if ens:
+            lines.append(f"  {ens}")
     return "\n".join(lines) if lines else "No detections for this image."
 
 
@@ -379,7 +370,13 @@ def delete_completed_tasks(label_studio_project):
     for task in tasks:
         label_studio_project.delete_task(task["id"])
 
-def import_image_tasks(label_studio_project, image_names, local_image_dir, predictions=None):
+def import_image_tasks(
+    label_studio_project,
+    image_names,
+    local_image_dir,
+    predictions=None,
+    species_to_genus=None,
+):
     """
     Import image tasks into Label Studio project.
 
@@ -403,7 +400,10 @@ def import_image_tasks(label_studio_project, image_names, local_image_dir, predi
         }
         if predictions is not None:
             prediction = predictions.get(basename, pd.DataFrame())
-            data_dict["prediction_summary"] = format_prediction_summary_for_task(prediction)
+            data_dict["prediction_summary"] = format_prediction_summary_for_task(
+                prediction,
+                species_to_genus=species_to_genus,
+            )
             # Skip predictions if there are none
             if prediction.empty:
                 result_dict = []

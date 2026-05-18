@@ -81,6 +81,7 @@ class BaseAnnotator:
         images: List[str],
         instance_name: str,
         preannotations: Optional[Dict[str, pd.DataFrame]] = None,
+        species_to_genus: Optional[Dict[str, str]] = None,
     ) -> None:
         raise NotImplementedError
 
@@ -114,6 +115,7 @@ class LabelStudioAnnotator(BaseAnnotator):
         images: List[str],
         instance_name: str,
         preannotations: Optional[Dict[str, pd.DataFrame]] = None,
+        species_to_genus: Optional[Dict[str, str]] = None,
     ) -> None:
         project_name = self.cfg.annotation.label_studio.instances[instance_name].project_name
         ls_mod.upload_to_label_studio(
@@ -124,6 +126,7 @@ class LabelStudioAnnotator(BaseAnnotator):
             images_to_annotate_dir=self.cfg.image_dir,
             folder_name=self.cfg.annotation.label_studio.folder_name,
             preannotations=preannotations,
+            species_to_genus=species_to_genus,
         )
 
     def check_for_new_annotations(self, instance_name: str, image_dir: str) -> Optional[pd.DataFrame]:
@@ -157,6 +160,7 @@ class SageMakerAnnotator(BaseAnnotator):
         images: List[str],
         instance_name: str,
         preannotations: Optional[Dict[str, pd.DataFrame]] = None,
+        species_to_genus: Optional[Dict[str, str]] = None,
     ) -> None:
         # Build S3 URIs
         s3_prefix = getattr(self.cfg.annotation.sagemaker, "s3_prefix", "").rstrip("/")

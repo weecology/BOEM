@@ -181,7 +181,8 @@ def crop_images(annotations, root_dir, experiment=None, expand=30):
     return crop_image_paths
 
 def select_images_for_video(image_dir, thin_factor):
-    all_images = glob.glob(image_dir + "/*.jpg")
+    exts = ("jpg", "JPG", "jpeg", "JPEG", "tif", "TIF", "tiff", "TIFF")
+    all_images = [p for ext in exts for p in glob.glob(os.path.join(image_dir, f"*.{ext}"))]
     # Thin by factor, select every nth image
     thinned_images = all_images[::thin_factor]
     return thinned_images

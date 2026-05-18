@@ -38,6 +38,17 @@ from deepforest.model import CropModel
 # Crop image_path is like C1_L6_F560_T20241219_173703_737_23.png -> parent stem is C1_L6_F560_T20241219_173703_737
 _CROP_SUFFIX_RE = re.compile(r"^(.+)_\d+\.(png|PNG|jpg|JPG|jpeg|JPEG)$")
 
+# New-format UBFAI image names embed the flight datetime as T{YYYYMMDD}_{HHMMSS}.
+# This maps directly to a captures CSV key (e.g. 20241219_165719_captures.csv).
+# Old-format names (e.g. 668140-0806171338187-CAM3.png) have no parseable datetime.
+_FLIGHT_DATETIME_RE = re.compile(r"T(\d{8}_\d{6})")
+
+
+def _flight_name_from_image_path(image_path: str) -> str | None:
+    """Extract flight datetime key from new-format UBFAI image paths, or None."""
+    m = _FLIGHT_DATETIME_RE.search(os.path.basename(str(image_path)))
+    return m.group(1) if m else None
+
 # Detection-task combined splits: exclude so we only load per-image CSVs (avoids duplicate rows and Object vs species label conflicts).
 UBFAI_CROPS_EXCLUDE_CSV = frozenset({"train.csv", "test.csv", "zero_shot.csv"})
 UBFAI_CROPS_EXCLUDE_PREFIX = "train_max_empty_"  # e.g. train_max_empty_0_10.csv
@@ -322,6 +333,25 @@ def main(cfg: DictConfig):
     balance_classes = bool(cfg.classification_model.get("balance_classes", False))
     comet_logger.experiment.log_parameter("balance_classes", balance_classes)
 
+    use_metadata = bool(cfg.classification_model.get("use_metadata", False))
+    metadata_dir = cfg.classification_model.get("metadata_dir", None) or cfg.report.get("metadata_dir", None)
+    metadata_dim = int(cfg.classification_model.get("metadata_dim", 32))
+    metadata_dropout = float(cfg.classification_model.get("metadata_dropout", 0.5))
+    comet_logger.experiment.log_parameter("use_metadata", use_metadata)
+    if use_metadata:
+        comet_logger.experiment.log_parameter("metadata_dir", metadata_dir)
+        comet_logger.experiment.log_parameter("metadata_dim", metadata_dim)
+        comet_logger.experiment.log_parameter("metadata_dropout", metadata_dropout)
+        # UBFAI crops span many flights in one directory. Extract per-row flight_name
+        # from the T{YYYYMMDD}_{HHMMSS} pattern in new-format image paths so
+        # build_crop_metadata_rows can look up the right captures CSV for each image.
+        # Old-format images (no T-datetime pattern) get None and are skipped silently.
+        for df in (train_df, validation_df):
+            df["flight_name"] = df["image_path"].map(_flight_name_from_image_path)
+        n_with = int(train_df["flight_name"].notna().sum())
+        n_without = int(train_df["flight_name"].isna().sum())
+        print(f"[metadata] flight_name extracted: {n_with} train crops matched, {n_without} unmatched (old-format, will be skipped)")
+
     trained_model = preprocess_and_train(
         train_df=train_df,
         validation_df=validation_df,
@@ -338,6 +368,10 @@ def main(cfg: DictConfig):
         batch_size=cfg.classification_model.batch_size,
         workers=cfg.classification_model.workers,
         balance_classes=balance_classes,
+        use_metadata=use_metadata,
+        metadata_dir=metadata_dir,
+        metadata_dim=metadata_dim,
+        metadata_dropout=metadata_dropout,
     )
     
 

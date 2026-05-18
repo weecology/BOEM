@@ -32,6 +32,31 @@ try:
 except ImportError:  # pragma: no cover - contextily is an optional visual enhancement.
     ctx = None
 
+try:
+    import geopandas as gpd
+except ImportError:
+    gpd = None
+
+# Natural Earth 110m countries — small download, cached after first call.
+_COUNTRIES_URL = "https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip"
+_BOUNDARY_CACHE: "gpd.GeoDataFrame | None" = None
+
+
+def load_land_boundaries() -> "gpd.GeoDataFrame | None":
+    """Return a GeoDataFrame of USA + Canada + Mexico boundaries, or None."""
+    global _BOUNDARY_CACHE
+    if gpd is None:
+        return None
+    if _BOUNDARY_CACHE is not None:
+        return _BOUNDARY_CACHE
+    try:
+        world = gpd.read_file(_COUNTRIES_URL)
+        _BOUNDARY_CACHE = world[world["SOVEREIGNT"].isin(["United States of America", "Canada", "Mexico"])]
+        return _BOUNDARY_CACHE
+    except Exception as exc:
+        print(f"Could not load land boundaries: {exc}")
+        return None
+
 
 SPECIES_ALIASES = {
     "Northern Gannet": "Morus bassanus",
@@ -189,10 +214,17 @@ def plot_species_map(
         vmax=1 if plot_column == "relative_score" else None,
     )
     fig.colorbar(image, ax=ax, label=plot_column.replace("_", " "))
+
+    boundaries = load_land_boundaries()
+    if boundaries is not None:
+        boundaries.boundary.plot(ax=ax, color="black", linewidth=0.8, zorder=3)
+
     ax.set_title(f"{species} metadata prior, {date}")
     ax.set_xlabel("Longitude")
     ax.set_ylabel("Latitude")
     ax.grid(color="white", linewidth=0.3, alpha=0.4)
+    ax.set_xlim(min_lon, max_lon)
+    ax.set_ylim(min_lat, max_lat)
     fig.savefig(output_path, dpi=250, bbox_inches="tight")
     plt.close(fig)
 
@@ -269,6 +301,7 @@ def main() -> None:
     species = resolve_species(args.species)
     grid = make_grid(tuple(args.bounds), args.cell_degrees)
     model = load_metadata_model(args.checkpoint, args.device)
+    load_land_boundaries()  # warm cache once before the plotting loop
 
     all_scores = []
     for date in args.dates:

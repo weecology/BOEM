@@ -23,6 +23,13 @@ import pandas as pd
 import random
 import tempfile
 
+_IMAGE_EXTS = ("jpg", "JPG", "jpeg", "JPEG", "tif", "TIF", "tiff", "TIFF")
+
+
+def _collect_images(image_dir: str) -> list[str]:
+    return [p for ext in _IMAGE_EXTS for p in glob.glob(os.path.join(image_dir, f"*.{ext}"))]
+
+
 class Pipeline:
     """Pipeline for training and evaluating a detection and classification model"""
     def __init__(self, cfg: DictConfig):
@@ -33,7 +40,7 @@ class Pipeline:
         self.annotator = get_annotator(self.config)
 
         # Pool of all images
-        self.all_images = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG"))
+        self.all_images = _collect_images(self.config.image_dir)
 
         self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
         self.comet_logger.experiment.add_tag("pipeline")
@@ -388,7 +395,7 @@ class Pipeline:
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
 
-        pool = glob.glob(os.path.join(self.config.image_dir, "*.jpg")) + glob.glob(os.path.join(self.config.image_dir, "*.JPG"))
+        pool = _collect_images(self.config.image_dir)
         pool = [image for image in pool if os.path.basename(image) not in self.existing_images]
         pool_limit = getattr(self.config.active_learning, "pool_limit", None)
         print(f"Pool: {len(pool)} images (after excluding existing), pool_limit={pool_limit}")

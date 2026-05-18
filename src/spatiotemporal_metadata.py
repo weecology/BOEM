@@ -24,9 +24,16 @@ def _image_stem(image_path: str) -> str:
 
 
 def load_flight_metadata(flight_name: str, metadata_dir: str | Path) -> dict[str, dict]:
-    """Return image-stem keyed metadata dicts for one flight."""
+    """Return image-stem keyed metadata dicts for one flight.
+
+    Returns an empty dict (rather than raising) when no captures CSV exists for
+    the flight — this happens for old-format UBFAI images whose filenames don't
+    encode a parseable flight datetime.
+    """
     metadata_dir = Path(metadata_dir)
     captures_path = metadata_dir / f"{flight_datetime_key(flight_name)}_captures.csv"
+    if not captures_path.exists():
+        return {}
     captures = pd.read_csv(captures_path)
     required = {"Basename", "Lat", "Lon"}
     missing = required - set(captures.columns)

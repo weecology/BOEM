@@ -208,7 +208,12 @@ def preprocess_and_train(
             ignore_index=True,
         ).drop_duplicates(subset=["filename"])
         if metadata_rows.empty:
-            raise ValueError(f"No crop metadata rows were created for flight {flight_name}")
+            print(
+                f"[preprocess_and_train] WARNING: no crop metadata rows found for any image "
+                f"(default flight_name={flight_name!r}). Disabling metadata for this run."
+            )
+            use_metadata = False
+            metadata_csv = None
         metadata_csv = os.path.join(checkpoint_dir, "classification_crop_metadata.csv")
         os.makedirs(checkpoint_dir, exist_ok=True)
         metadata_rows.to_csv(metadata_csv, index=False)

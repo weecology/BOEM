@@ -54,6 +54,7 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
+deepforest = { git = "https://github.com/weecology/DeepForest.git", rev = "b37826f0d35adc535e53344b462d996b042401e4" }
 torch = [
   { index = "pytorch-cu128", marker = "sys_platform != 'darwin'" },
 ]

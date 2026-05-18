@@ -168,6 +168,7 @@ def generate_pool_predictions(
     hcast_batch_size=None,
     hcast_workers=None,
     workers=0,
+    metadata_lookup=None,
 ):
     """
     Generate predictions for the flight pool.
@@ -186,6 +187,7 @@ def generate_pool_predictions(
         hcast_batch_size (int, optional): Batch size for H-CAST classification.
         hcast_workers (int, optional): Number of workers for H-CAST DataLoader.
         workers (int, optional): Number of DataLoader workers for detection. Defaults to 0.
+        metadata_lookup (dict, optional): Per-image metadata for metadata-aware CropModel inference.
 
     Returns:
         pd.DataFrame: A DataFrame of predictions (with hcast columns if hcast_model provided).
@@ -202,6 +204,7 @@ def generate_pool_predictions(
         batch_size=batch_size,
         crop_model=crop_model,
         workers=workers,
+        metadata_lookup=metadata_lookup,
     )
 
     if preannotations is None:

@@ -9,6 +9,8 @@ import torch
 import datetime
 import pandas as pd
 
+from src.spatiotemporal_metadata import build_crop_metadata_rows
+
 def get_latest_checkpoint(checkpoint_dir, num_classes):
     #Get model with latest checkpoint dir, if none exist make a new model
     if os.path.exists(checkpoint_dir):
@@ -128,6 +130,11 @@ def preprocess_and_train(
     workers=0,
     comet_logger=None,
     balance_classes=False,
+    use_metadata=False,
+    metadata_dir=None,
+    flight_name=None,
+    metadata_dim=32,
+    metadata_dropout=0.5,
     **kwargs,
 ):
     """Preprocess data and train a crop model.
@@ -144,9 +151,27 @@ def preprocess_and_train(
         loaded_model = CropModel.load_from_checkpoint(checkpoint_path=checkpoint)
     else:
         num_classes = len(pd.concat([train_df, validation_df]).label.unique())
-        loaded_model = CropModel()
+        if use_metadata:
+            try:
+                loaded_model = CropModel(config_args={
+                    "use_metadata": True,
+                    "metadata_dim": metadata_dim,
+                    "metadata_dropout": metadata_dropout,
+                })
+            except TypeError as exc:
+                raise TypeError(
+                    "classification_model.use_metadata requires DeepForest PR #1334 "
+                    "or a DeepForest release with CropModel(config_args=...)."
+                ) from exc
+        else:
+            loaded_model = CropModel()
 
     loaded_model.config["cropmodel"]["balance_classes"] = balance_classes
+    if use_metadata and not loaded_model.config["cropmodel"].get("use_metadata", False):
+        raise ValueError(
+            "classification_model.use_metadata=True requires training from scratch "
+            "or loading a metadata-enabled CropModel checkpoint."
+        )
     loaded_model.create_trainer()
 
     # Preprocess train and validation data
@@ -166,9 +191,44 @@ def preprocess_and_train(
         expand_pixels=expand_pixels,
     )
 
-    loaded_model.load_from_disk(
-        train_dir=str(train_crop_image_dir), val_dir=str(val_crop_image_dir)
-    )
+    metadata_csv = None
+    if use_metadata:
+        if metadata_dir is None:
+            raise ValueError(
+                "classification_model.use_metadata=True requires report.metadata_dir "
+                "or classification_model.metadata_dir"
+            )
+        if flight_name is None:
+            flight_name = os.path.basename(os.path.normpath(image_dir))
+        metadata_rows = pd.concat(
+            [
+                build_crop_metadata_rows(train_df, metadata_dir, flight_name),
+                build_crop_metadata_rows(validation_df, metadata_dir, flight_name),
+            ],
+            ignore_index=True,
+        ).drop_duplicates(subset=["filename"])
+        if metadata_rows.empty:
+            raise ValueError(f"No crop metadata rows were created for flight {flight_name}")
+        metadata_csv = os.path.join(checkpoint_dir, "classification_crop_metadata.csv")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        metadata_rows.to_csv(metadata_csv, index=False)
+        print(f"[preprocess_and_train] wrote crop metadata sidecar {metadata_csv}")
+
+    load_kwargs = {
+        "train_dir": str(train_crop_image_dir),
+        "val_dir": str(val_crop_image_dir),
+    }
+    if metadata_csv is not None:
+        load_kwargs["metadata_csv"] = metadata_csv
+    try:
+        loaded_model.load_from_disk(**load_kwargs)
+    except TypeError as exc:
+        if metadata_csv is not None:
+            raise TypeError(
+                "classification_model.use_metadata requires DeepForest PR #1334 "
+                "or a DeepForest release with CropModel.load_from_disk(..., metadata_csv=...)."
+            ) from exc
+        raise
 
     # Assert that the label_dict, the train_ds classes and val_ds classes are the same
     assert loaded_model.label_dict == loaded_model.train_ds.class_to_idx

@@ -293,7 +293,16 @@ def get_latest_checkpoint(checkpoint_dir):
 
 
 
-def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_size=6, workers=5):
+def predict(
+    m,
+    image_paths,
+    patch_size,
+    patch_overlap,
+    crop_model=None,
+    batch_size=6,
+    workers=5,
+    metadata_lookup=None,
+):
     """Predict bounding boxes for images
     Args:
         m (main.deepforest): A trained deepforest model.
@@ -301,6 +310,7 @@ def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_si
         crop_model (main.deepforest): A trained deepforest model for classification.
         model_path (str): The path to a model checkpoint.
         batch_size (int): The batch size for prediction.
+        metadata_lookup (dict): Optional basename/stem keyed metadata for CropModel.
     Returns:
         list: A list of image predictions.
     """
@@ -308,13 +318,41 @@ def predict(m, image_paths, patch_size, patch_overlap, crop_model=None, batch_si
     m.config["batch_size"] = batch_size
     m.config["workers"] = workers
 
-    predictions = m.predict_tile(
-        image_paths, 
-        patch_size=patch_size,
-        patch_overlap=patch_overlap,
-        dataloader_strategy="batch",
-        crop_model=crop_model,
-    )
+    if metadata_lookup:
+        predictions = []
+        for image_path in image_paths:
+            basename = os.path.basename(str(image_path))
+            stem = os.path.splitext(basename)[0]
+            metadata = metadata_lookup.get(basename) or metadata_lookup.get(stem)
+            predict_kwargs = {
+                "path": [image_path],
+                "patch_size": patch_size,
+                "patch_overlap": patch_overlap,
+                "dataloader_strategy": "batch",
+                "crop_model": crop_model,
+            }
+            if metadata is not None:
+                predict_kwargs["metadata"] = metadata
+            try:
+                image_predictions = m.predict_tile(**predict_kwargs)
+            except TypeError as exc:
+                if metadata is not None:
+                    raise TypeError(
+                        "metadata_lookup requires DeepForest PR #1334 or a "
+                        "DeepForest release with predict_tile(..., metadata=...)."
+                    ) from exc
+                raise
+            if image_predictions is not None:
+                predictions.append(image_predictions)
+        predictions = pd.concat(predictions, ignore_index=True) if predictions else None
+    else:
+        predictions = m.predict_tile(
+            image_paths,
+            patch_size=patch_size,
+            patch_overlap=patch_overlap,
+            dataloader_strategy="batch",
+            crop_model=crop_model,
+        )
 
     if predictions is None:
         return None

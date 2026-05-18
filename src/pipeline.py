@@ -21,6 +21,7 @@ from src.visualization import crop_images, convert_codec
 from src.report import generate_report, load_geospatial_metadata, georeference_predictions
 from src import bulk_annotations as bulk_mod
 from src.pipeline_evaluation import PipelineEvaluation
+from src.spatiotemporal_metadata import metadata_lookup_for_images
 from pytorch_lightning.loggers import CometLogger
 import glob
 import pandas as pd
@@ -61,6 +62,37 @@ class Pipeline:
         """Return Comet experiment id as string (handles both property and method API)."""
         eid = self.comet_logger.experiment.id
         return eid() if callable(eid) else eid
+
+    def _classification_metadata_dir(self):
+        cls_metadata_dir = getattr(self.config.classification_model, "metadata_dir", None)
+        if cls_metadata_dir:
+            return cls_metadata_dir
+        report_cfg = getattr(self.config, "report", None)
+        return getattr(report_cfg, "metadata_dir", None) if report_cfg else None
+
+    def _use_classification_metadata(self) -> bool:
+        return bool(getattr(self.config.classification_model, "use_metadata", False))
+
+    def _metadata_lookup_for_pool(self, pool):
+        if not self._use_classification_metadata():
+            return None
+        metadata_dir = self._classification_metadata_dir()
+        if not metadata_dir:
+            raise ValueError(
+                "classification_model.use_metadata=True requires report.metadata_dir "
+                "or classification_model.metadata_dir"
+            )
+        lookup = metadata_lookup_for_images(
+            image_paths=pool,
+            metadata_dir=metadata_dir,
+            default_flight_name=os.path.basename(self.config.image_dir),
+        )
+        if pool and not lookup:
+            raise ValueError(
+                "classification_model.use_metadata=True but no image metadata "
+                f"matched flight {os.path.basename(self.config.image_dir)}"
+            )
+        return lookup
 
     def check_new_annotations(self, instance_name):
         return self.annotator.check_for_new_annotations(instance_name, image_dir=self.config.image_dir)
@@ -209,6 +241,7 @@ class Pipeline:
                     hcast_batch_size=hcast_batch_size,
                     hcast_workers=hcast_workers,
                     workers=self.config.predict.workers,
+                    metadata_lookup=self._metadata_lookup_for_pool(unannotated),
                 )
                 if pool_predictions is not None and not pool_predictions.empty:
                     pool_predictions.to_csv(full_flight_cache, index=False)
@@ -348,7 +381,13 @@ class Pipeline:
                     lr=self.config.classification_model.lr,
                     batch_size=self.config.classification_model.batch_size,
                     workers=self.config.classification_model.workers,
-                    comet_logger=self.comet_logger)
+                    comet_logger=self.comet_logger,
+                    balance_classes=getattr(self.config.classification_model, "balance_classes", False),
+                    use_metadata=self._use_classification_metadata(),
+                    metadata_dir=self._classification_metadata_dir(),
+                    flight_name=os.path.basename(self.config.image_dir),
+                    metadata_dim=getattr(self.config.classification_model, "metadata_dim", 32),
+                    metadata_dropout=getattr(self.config.classification_model, "metadata_dropout", 0.5))
             else:
                 trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
         else:
@@ -437,6 +476,7 @@ class Pipeline:
             hcast_batch_size=hcast_batch_size,
             hcast_workers=hcast_workers,
             workers=self.config.predict.workers,
+            metadata_lookup=self._metadata_lookup_for_pool(prediction_pool),
         )
 
         if flightline_predictions is None:

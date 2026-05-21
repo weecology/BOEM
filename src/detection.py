@@ -202,8 +202,11 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
 
     if train_annotations is not None:
         # Remove the empty frames, using hard mining instead
-        
+
         train_annotations = train_annotations[~(train_annotations.label.astype(str)== "0")]
+        train_annotations = data_processing.filter_non_biodiversity(
+            train_annotations, source="detection.preprocess_and_train/train"
+        )
         if train_annotations.empty:
             train_annotations = None
         else:
@@ -213,14 +216,14 @@ def preprocess_and_train(train_annotations, validation_annotations, train_image_
                                     save_dir=crop_image_dir,
                                     patch_size=patch_size,
                                     patch_overlap=patch_overlap)
-            
+
             train_df.loc[train_df.label==0,"label"] = "Object"
             train_df["label"] = "Object"
-            
-            # Assert no FalsePositive label in train
-            assert "FalsePositive" not in train_df.label.unique(), "FalsePositive label found in training data."
 
     if validation_annotations is not None:
+        validation_annotations = data_processing.filter_non_biodiversity(
+            validation_annotations, source="detection.preprocess_and_train/val"
+        )
         validation_annotations.loc[validation_annotations.label==0,"label"] = "Object"
 
         if limit_empty_frac > 0:

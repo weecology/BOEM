@@ -39,6 +39,11 @@ def main():
         default=None,
         help="Override Label Studio project name (default: 'BOEM - Full Flight - {flight_name}')",
     )
+    parser.add_argument(
+        "--skip-annotated",
+        action="store_true",
+        help="Exclude already-annotated images; upload only model predictions on unannotated images.",
+    )
     args = parser.parse_args()
 
     # Accept either a bare flight name or a full path
@@ -71,7 +76,10 @@ def main():
 
     from src.pipeline import Pipeline
     pipeline = Pipeline(cfg=cfg)
-    pipeline.upload_full_flight(project_name=args.project_name)
+    pipeline.upload_full_flight(
+        project_name=args.project_name,
+        skip_annotated=args.skip_annotated,
+    )
 
 
 if __name__ == "__main__":

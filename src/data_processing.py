@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import re
 from logging import warn
 from deepforest import preprocess
 from deepforest.utilities import read_file
@@ -8,6 +9,56 @@ import numpy as np
 from scipy.spatial import ConvexHull
 from sklearn.cluster import DBSCAN
 import cv2
+
+# Non-biodiversity labels that upstream annotators sometimes apply but should
+# never enter the detection model's positive set. Empty markers (label "0" /
+# zero-bbox rows) and the hard-negative path (FalsePositive) are handled
+# separately and intentionally NOT listed here.
+NON_BIODIVERSITY_LABELS = {
+    "Algae",
+    "Artificial",
+    "Boat",
+    "Buoy",
+    "Tree",
+    "Unknown/Other",
+}
+
+_NUMERIC_LABEL_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
+
+
+def is_blacklisted_label(label) -> bool:
+    """True for labels that must not become positive detection targets.
+
+    Covers the explicit non-biodiversity list plus stray numeric labels
+    (e.g. "16", "19") that occasionally appear in annotation CSVs but are
+    neither the "0" empty marker nor a real taxonomy entry.
+    """
+    if label is None or (isinstance(label, float) and pd.isna(label)):
+        return False  # NaN handling lives elsewhere (empty markers)
+    s = str(label).strip()
+    if s in NON_BIODIVERSITY_LABELS:
+        return True
+    if s == "0":
+        return False  # "0" is the empty-marker convention, handled elsewhere
+    return bool(_NUMERIC_LABEL_RE.fullmatch(s))
+
+
+def filter_non_biodiversity(df: pd.DataFrame, source: str = "") -> pd.DataFrame:
+    """Drop rows whose label is in the non-biodiversity blacklist.
+
+    Prints a summary of what was dropped so the filter is auditable in logs.
+    """
+    if df is None or df.empty or "label" not in df.columns:
+        return df
+    mask = df["label"].apply(is_blacklisted_label)
+    if mask.any():
+        dropped = df.loc[mask, "label"].value_counts()
+        tag = f"[{source}] " if source else ""
+        print(
+            f"{tag}filter_non_biodiversity: dropping {int(mask.sum())} rows "
+            f"with non-biodiversity labels: {dropped.to_dict()}"
+        )
+    return df.loc[~mask].copy()
 
 def undersample(train_df: pd.DataFrame, ratio: float) -> pd.DataFrame:
     """

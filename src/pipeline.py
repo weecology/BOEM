@@ -184,7 +184,7 @@ class Pipeline:
 
         return True
 
-    def upload_full_flight(self, project_name=None):
+    def upload_full_flight(self, project_name=None, skip_annotated=False):
         """Upload all flight detections to a dedicated Label Studio project.
 
         Combines existing annotations (train/eval/review) with model predictions
@@ -194,6 +194,9 @@ class Pipeline:
         Args:
             project_name: Label Studio project name override.
                 Defaults to "BOEM - Full Flight - {flight_name}".
+            skip_annotated: If True, exclude already-annotated images from the
+                upload entirely. Only unannotated images with model predictions
+                are uploaded.
         """
         if not isinstance(self.annotator, LabelStudioAnnotator):
             raise ValueError("upload_full_flight requires a LabelStudioAnnotator")
@@ -204,35 +207,39 @@ class Pipeline:
         if project_name is None:
             project_name = f"BOEM - Full Flight - {flight_name}"
 
-        # Load models (inference only, no training)
-        detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
-        classification_model = CropModel.load_from_checkpoint(
-            self.config.classification_model.checkpoint
-        )
-        classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
-
-        hcast_checkpoint = getattr(self.config.hierarchical, "checkpoint", None)
-        hcast_label_csv = getattr(self.config.hierarchical, "label_csv", None)
-        hcast_model = None
-        if hcast_checkpoint:
-            if not hcast_label_csv:
-                raise ValueError("hierarchical.label_csv is required when hierarchical.checkpoint is set")
-            hcast_model = hierarchical.load_hcast_model(
-                checkpoint_path=hcast_checkpoint,
-                label_csv=hcast_label_csv,
-            )
-        hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
-        hcast_workers = getattr(self.config.hierarchical, "workers", 4)
-
         # Run predictions on images not yet annotated (existing_images uses basenames)
         unannotated = [img for img in self.all_images if os.path.basename(img) not in self.existing_images]
         full_flight_cache = os.path.join(self.config.image_dir, ".full_flight_predictions.csv")
+        pool_cache = os.path.join(self.config.image_dir, ".prediction_cache", "pool_predictions.csv")
         pool_predictions = None
         if unannotated:
             if os.path.isfile(full_flight_cache):
                 print(f"Loading cached full-flight predictions from {full_flight_cache}")
                 pool_predictions = pd.read_csv(full_flight_cache)
+            elif os.path.isfile(pool_cache):
+                print(f"Loading cached pool predictions from {pool_cache}")
+                pool_predictions = pd.read_csv(pool_cache)
             else:
+                # No cache — load models and run predictions
+                detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
+                classification_model = CropModel.load_from_checkpoint(
+                    self.config.classification_model.checkpoint
+                )
+                classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
+
+                hcast_checkpoint = getattr(self.config.hierarchical, "checkpoint", None)
+                hcast_label_csv = getattr(self.config.hierarchical, "label_csv", None)
+                hcast_model = None
+                if hcast_checkpoint:
+                    if not hcast_label_csv:
+                        raise ValueError("hierarchical.label_csv is required when hierarchical.checkpoint is set")
+                    hcast_model = hierarchical.load_hcast_model(
+                        checkpoint_path=hcast_checkpoint,
+                        label_csv=hcast_label_csv,
+                    )
+                hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
+                hcast_workers = getattr(self.config.hierarchical, "workers", 4)
+
                 print(f"Running predictions on {len(unannotated)} unannotated images")
                 pool_predictions = generate_pool_predictions(
                     pool=unannotated,
@@ -258,7 +265,12 @@ class Pipeline:
         preannotations = {}
         images_with_content = set()
 
-        for ann_df in [self.existing_training, self.existing_validation, self.existing_reviewed]:
+        ann_sources = (
+            []
+            if skip_annotated
+            else [self.existing_training, self.existing_validation, self.existing_reviewed]
+        )
+        for ann_df in ann_sources:
             if ann_df is None or ann_df.empty:
                 continue
             ann = ann_df.copy()

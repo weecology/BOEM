@@ -65,8 +65,8 @@ slurm_header() {
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=80GB
 #SBATCH --time=${TIME_LIMIT}
-#SBATCH --partition=hpg-b200
-#SBATCH --gpus=1
+#SBATCH --partition=hpg-turin
+#SBATCH --gpus=l4:1
 #SBATCH --output=/home/b.weinstein/logs/BOEM_%j.out
 #SBATCH --error=/home/b.weinstein/logs/BOEM_%j.err
 
@@ -75,7 +75,7 @@ module load ffmpeg
 HEADER
 }
 
-PYTHON_CMD="uv run python main.py check_annotations=True active_learning.pool_limit=100000 debug=False"
+PYTHON_CMD="uv run python main.py check_annotations=True active_learning.pool_limit=100000 predict.batch_size=4 debug=False"
 
 submit_parallel() {
   local folder="$1"

@@ -2,6 +2,7 @@ from deepforest import main
 import pandas as pd
 import os
 from pytorch_lightning.loggers import CometLogger
+from pytorch_lightning.callbacks import EarlyStopping
 import torch
 import argparse
 import tempfile
@@ -12,6 +13,20 @@ from deepforest.utilities import read_file
 parser = argparse.ArgumentParser(description="Train DeepForest model")
 parser.add_argument("--batch_size", type=int, default=12, help="Batch size for training")
 parser.add_argument("--workers", type=int, default=5, help="Number of workers for data loading")
+parser.add_argument("--lr", type=float, default=0.001, help="Initial learning rate")
+parser.add_argument("--epochs", type=int, default=30, help="Max epochs for training")
+parser.add_argument(
+    "--early-stopping-patience",
+    type=int,
+    default=None,
+    help="If set, enable EarlyStopping on val_classification with this patience (epochs).",
+)
+parser.add_argument(
+    "--n-log-images",
+    type=int,
+    default=10,
+    help="Number of validation/zero-shot images to log with predictions.",
+)
 parser.add_argument(
     "--max-empty-fraction",
     type=float,
@@ -112,7 +127,7 @@ m.config["train"]["fast_dev_run"] = False
 m.config["validation"]["csv_file"] = test_csv_path
 m.config["validation"]["root_dir"] = root_dir
 m.config["batch_size"] = batch_size
-m.config["train"]["epochs"] = 30
+m.config["train"]["epochs"] = args.epochs
 m.config["workers"] = workers
 m.config["validation"]["val_accuracy_interval"] = 1
 m.config["train"]["scheduler"]["type"] = "ReduceLROnPlateau"
@@ -121,7 +136,7 @@ m.config["train"]["scheduler"]["params"]["patience"] = 3
 m.config["train"]["scheduler"]["params"]["factor"] = 0.5
 m.config["train"]["scheduler"]["params"]["eps"] = 0
 m.config["validation"]["lr_plateau_target"] = "val_classification"
-m.config["train"]["lr"] = 0.001
+m.config["train"]["lr"] = args.lr
 
 comet_logger = CometLogger(project_name="BOEM", workspace="bw4sz")
 comet_logger.experiment.add_tag("detection")
@@ -142,12 +157,121 @@ if args.max_test_empty_fraction is not None:
     comet_logger.experiment.log_parameter("max_test_empty_fraction", args.max_test_empty_fraction)
 comet_logger.experiment.log_parameter("workers", m.config["workers"])
 comet_logger.experiment.log_parameter("batch_size", m.config["batch_size"])
+comet_logger.experiment.log_parameter("lr", m.config["train"]["lr"])
+comet_logger.experiment.log_parameter("epochs", m.config["train"]["epochs"])
+if args.early_stopping_patience is not None:
+    comet_logger.experiment.log_parameter(
+        "early_stopping_patience", args.early_stopping_patience
+    )
 
 # Log data sizes
 comet_logger.experiment.log_parameter("train_size", train.shape[0])
 comet_logger.experiment.log_parameter("test_size", test.shape[0])
 
-m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices, fast_dev_run=False)
+
+def _log_prediction_images(model, ann_df, image_root, context, n_images, tmpdir):
+    """Run predict_image on n sample non-empty images and log overlays to Comet."""
+    if ann_df is None or ann_df.empty:
+        return
+    if "empty_image" in ann_df.columns:
+        candidates = ann_df[~ann_df["empty_image"]]
+    else:
+        candidates = ann_df
+    if candidates.empty:
+        return
+    image_paths = candidates["image_path"].drop_duplicates()
+    image_paths = image_paths.sample(n=min(n_images, len(image_paths)), random_state=42)
+    for image_path in image_paths:
+        full_path = os.path.join(image_root, image_path)
+        if not os.path.exists(full_path):
+            continue
+        prediction = model.predict_image(path=full_path)
+        if prediction is None or prediction.empty:
+            continue
+        gt = candidates[candidates["image_path"] == image_path]
+        try:
+            visualize.plot_results(
+                prediction,
+                ground_truth=gt if not gt.empty else None,
+                image=full_path,
+                savedir=tmpdir,
+                show=False,
+            )
+        except Exception as e:
+            print(f"Failed to plot {image_path}: {e}")
+            continue
+        basename = os.path.splitext(os.path.basename(image_path))[0]
+        # plot_results saves as <basename>.png by default
+        saved = os.path.join(tmpdir, f"{basename}.png")
+        if not os.path.exists(saved):
+            # fall back to any file containing the stem
+            matches = [
+                f for f in os.listdir(tmpdir)
+                if f.startswith(basename) and f.endswith(".png")
+            ]
+            saved = os.path.join(tmpdir, matches[0]) if matches else None
+        if saved and os.path.exists(saved):
+            comet_logger.experiment.log_image(
+                saved,
+                name=f"{context}_{os.path.basename(image_path)}",
+                metadata={"context": context, "image_path": image_path},
+            )
+
+
+# Pre-training zero-shot evaluation: metrics + sample prediction images on held-out flights
+zeroshot_csv = os.path.join(savedir, "zero_shot.csv")
+zero_shot_df = pd.read_csv(zeroshot_csv, low_memory=False) if os.path.exists(zeroshot_csv) else None
+if zero_shot_df is not None and "empty_image" not in zero_shot_df.columns:
+    zero_shot_df["empty_image"] = (
+        (zero_shot_df["xmin"] == 0)
+        & (zero_shot_df["xmax"] == 0)
+        & (zero_shot_df["ymin"] == 0)
+        & (zero_shot_df["ymax"] == 0)
+    )
+
+with comet_logger.experiment.context_manager("zero_shot_pretraining"):
+    m.config["validation"]["csv_file"] = zeroshot_csv
+    m.config["validation"]["root_dir"] = savedir
+    m.create_trainer(
+        logger=comet_logger, accelerator="gpu", strategy="ddp",
+        num_nodes=1, devices=devices, fast_dev_run=False,
+    )
+    pre_zero_shot_results = m.trainer.validate(m)
+    pre_zero_shot_metrics = pre_zero_shot_results[0] if pre_zero_shot_results else {}
+    print("\nZero-shot evaluation (pre-training):")
+    print(f"  Box Precision: {pre_zero_shot_metrics.get('box_precision', 'N/A')}")
+    print(f"  Box Recall: {pre_zero_shot_metrics.get('box_recall', 'N/A')}")
+    print(f"  Empty Frame Accuracy: {pre_zero_shot_metrics.get('empty_frame_accuracy', 'N/A')}")
+    if zero_shot_df is not None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _log_prediction_images(
+                m, zero_shot_df, savedir,
+                context="zero_shot_pretraining",
+                n_images=args.n_log_images,
+                tmpdir=tmpdir,
+            )
+
+# Restore validation config for training
+m.config["validation"]["csv_file"] = test_csv_path
+m.config["validation"]["root_dir"] = root_dir
+
+# Optional EarlyStopping on val_classification (loss; lower is better)
+callbacks = []
+if args.early_stopping_patience is not None:
+    callbacks.append(
+        EarlyStopping(
+            monitor="val_classification",
+            mode="min",
+            patience=args.early_stopping_patience,
+            verbose=True,
+        )
+    )
+
+m.create_trainer(
+    logger=comet_logger, accelerator="gpu", strategy="ddp",
+    num_nodes=1, devices=devices, fast_dev_run=False,
+    callbacks=callbacks,
+)
 
 # # Create a temporary directory for saving visualizations
 # with tempfile.TemporaryDirectory() as tmpdir:
@@ -184,16 +308,32 @@ m.trainer.fit(m)
 # Save the model
 m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/{}.pl".format(comet_logger.experiment.id))
 
+# Post-training validation prediction images (in-distribution errors)
+with comet_logger.experiment.context_manager("validation_predictions"):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _log_prediction_images(
+            m, test, root_dir,
+            context="validation_post_training",
+            n_images=args.n_log_images,
+            tmpdir=tmpdir,
+        )
+
 # Zero-shot evaluation on held-out flights (generalization to unseen flights)
-zeroshot_csv = os.path.join(savedir, "zero_shot.csv")
 with comet_logger.experiment.context_manager("zero_shot_evaluation"):
     m.config["validation"]["csv_file"] = zeroshot_csv
     m.config["validation"]["root_dir"] = savedir
     m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices, fast_dev_run=False)
     zero_shot_results = m.trainer.validate(m)
     zero_shot_metrics = zero_shot_results[0] if zero_shot_results else {}
-    print("\nZero-shot evaluation results:")
+    print("\nZero-shot evaluation results (post-training):")
     print(f"  Box Precision: {zero_shot_metrics.get('box_precision', 'N/A')}")
     print(f"  Box Recall: {zero_shot_metrics.get('box_recall', 'N/A')}")
     print(f"  Empty Frame Accuracy: {zero_shot_metrics.get('empty_frame_accuracy', 'N/A')}")
-    
+    if zero_shot_df is not None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _log_prediction_images(
+                m, zero_shot_df, savedir,
+                context="zero_shot_post_training",
+                n_images=args.n_log_images,
+                tmpdir=tmpdir,
+            )

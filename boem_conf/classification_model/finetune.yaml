@@ -1,5 +1,5 @@
 force_train: False
-checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/buffer_30/4563f94545cd4a62ad495142a711ce2e.ckpt
+checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/buffer_30/5a5d6698f2e74f1b8c21cdb0e187b080.ckpt
 checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train
@@ -11,7 +11,7 @@ batch_size: 72
 workers: 5
 expand: 30
 balance_classes: false
-use_metadata: false
+use_metadata: true
 metadata_dim: 32
 metadata_dropout: 0.5
 # metadata_dir defaults to report.metadata_dir when use_metadata is true.

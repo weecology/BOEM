@@ -451,27 +451,22 @@ def process_preworkflow_annotations(
     crop_csvs = glob.glob(os.path.join(UBFAI_CROPS, "*.csv"))
     crop_annotations = pd.concat([pd.read_csv(x) for x in crop_csvs])
 
-    # Label normalisation: background classes (Algae/Boat/Buoy) become
-    # empty-image markers (zeroed coords), everything else becomes
-    # "FalsePositive" temporarily for deduplication, then all set to "Object".
-    crop_annotations.loc[
-        crop_annotations["label"].isin(["Algae", "Boat", "Buoy"]),
-        ["xmin", "xmax", "ymin", "ymax", "label"],
-    ] = [0, 0, 0, 0, "Object"]
-    crop_annotations.loc[
-        ~crop_annotations["label"].isin(["Algae", "Boat", "Buoy"]), "label"
-    ] = "FalsePositive"
+    # Drop non-biodiversity labels (Buoy, Algae, Boat, Tree, Artificial,
+    # Unknown/Other, stray numerics). The previous Stage-1 logic tried to
+    # convert these into empty markers but the second .loc ran against the
+    # post-mutated label column, which silently relabeled every row to
+    # "FalsePositive" and left all original bboxes intact, so non-bio rows
+    # were leaking into the positive set with their original coordinates.
+    from src.data_processing import filter_non_biodiversity
+    crop_annotations = filter_non_biodiversity(
+        crop_annotations, source="prepare_USGS/stage1"
+    )
 
-    # Deduplicate false-positive rows and drop any sharing an image with a
-    # true positive (zeroed-coord background marker).
-    falsepositives = crop_annotations[
-        crop_annotations["label"] == "FalsePositive"
-    ].drop_duplicates(subset=["xmin", "xmax", "ymin", "ymax"])
-    true_positives = crop_annotations[crop_annotations["label"] != "FalsePositive"]
-    falsepositives = falsepositives[
-        ~falsepositives["image_path"].isin(true_positives["image_path"])
-    ]
-    crop_annotations = pd.concat([true_positives, falsepositives])
+    # Deduplicate by (image_path, bbox, label) — empty markers (all-zero bbox)
+    # collapse to one row per image; real annotations dedupe identical boxes.
+    dedup_subset = [c for c in ("image_path", "xmin", "ymin", "xmax", "ymax", "label")
+                    if c in crop_annotations.columns]
+    crop_annotations = crop_annotations.drop_duplicates(subset=dedup_subset)
     crop_annotations["label"] = "Object"
 
     # 95/5 train/test split by parent scene (group all crops of the same scene together
@@ -591,6 +586,13 @@ def create_train_test_split(
 
     flight_train = pd.concat([pd.read_csv(x) for x in train_csvs + reviewed_csvs])
     flight_val = pd.concat([pd.read_csv(x) for x in val_csvs])
+
+    # Drop non-biodiversity labels from workflow flight crops before they get
+    # concatenated with the pre-workflow data and uniformly relabeled "Object".
+    from src.data_processing import filter_non_biodiversity
+    flight_annotations = filter_non_biodiversity(
+        flight_annotations, source="prepare_USGS/stage3/flight"
+    )
 
     # Normalise via deepforest read_file
     train = read_file(train.drop(columns="geometry"), root_dir=UBFAI_CROPS)

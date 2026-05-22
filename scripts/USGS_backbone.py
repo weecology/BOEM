@@ -129,7 +129,7 @@ m.config["validation"]["root_dir"] = root_dir
 m.config["batch_size"] = batch_size
 m.config["train"]["epochs"] = args.epochs
 m.config["workers"] = workers
-m.config["validation"]["val_accuracy_interval"] = 1
+m.config["validation"]["val_accuracy_interval"] = 5
 m.config["train"]["scheduler"]["type"] = "ReduceLROnPlateau"
 m.config["train"]["scheduler"]["params"]["mode"] = "min"
 m.config["train"]["scheduler"]["params"]["patience"] = 3
@@ -137,6 +137,20 @@ m.config["train"]["scheduler"]["params"]["factor"] = 0.5
 m.config["train"]["scheduler"]["params"]["eps"] = 0
 m.config["validation"]["lr_plateau_target"] = "val_classification"
 m.config["train"]["lr"] = args.lr
+
+# Augmentations (kornia-based in DeepForest >=2.1). Aligned with the bird detector's
+# augmentation set: RandomResizedCrop for scale variation + flips/rotation, then
+# PadIfNeeded so all samples come out at 1000x1000.
+# Use OmegaConf.merge — direct assignment fails because the structured schema types
+# train.augmentations as list[str], even though the parser accepts list-of-dicts.
+from omegaconf import OmegaConf
+m.config = OmegaConf.merge(m.config, {"train": {"augmentations": [
+    {"RandomResizedCrop": {"size": [800, 800], "scale": [0.3, 1.0], "p": 0.5}},
+    {"Rotate": {"degrees": 15, "p": 0.5}},
+    {"HorizontalFlip": {"p": 0.5}},
+    {"VerticalFlip": {"p": 0.3}},
+    {"PadIfNeeded": {"size": [1000, 1000]}},
+]}})
 
 comet_logger = CometLogger(project_name="BOEM", workspace="bw4sz")
 comet_logger.experiment.add_tag("detection")

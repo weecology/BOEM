@@ -133,12 +133,12 @@ def build_crop_metadata_rows(
     index = build_capture_index(metadata_dir, needed_basenames=set(parents))
 
     rows = []
-    for crop_index, (image_path, parent) in enumerate(zip(image_paths, parents)):
+    for image_path, parent in zip(image_paths, parents):
         metadata = index.get(parent)
         if metadata is None or not metadata["date"]:
             continue
         rows.append({
-            "filename": f"{_image_stem(image_path)}_{crop_index}.png",
+            "filename": os.path.basename(image_path),
             "lat": metadata["lat"],
             "lon": metadata["lon"],
             "date": metadata["date"],

@@ -19,6 +19,7 @@ NON_BIODIVERSITY_LABELS = {
     "Artificial",
     "Boat",
     "Buoy",
+    "FalsePositive",
     "Tree",
     "Unknown/Other",
 }
@@ -59,6 +60,71 @@ def filter_non_biodiversity(df: pd.DataFrame, source: str = "") -> pd.DataFrame:
             f"with non-biodiversity labels: {dropped.to_dict()}"
         )
     return df.loc[~mask].copy()
+
+
+def nuisance_to_hard_negative(df: pd.DataFrame, source: str = "") -> pd.DataFrame:
+    """Convert non-biodiversity rows into hard-negative empty markers.
+
+    Distractor labels (Algae, Boat, Buoy, Tree, Artificial, Unknown/Other,
+    stray numerics) must never be trained as positive "Object" detections,
+    but the images that contain them are valuable hard negatives the model
+    should learn to suppress. This helper zeroes the bbox on those rows
+    (the empty-marker convention is bbox == [0,0,0,0]) so they participate
+    in training as empty patches rather than positive boxes.
+
+    Behavior:
+    - Nuisance rows -> bbox=[0,0,0,0], label="Object" (empty-marker form).
+    - For any image that already has a non-zero-bbox positive annotation,
+      the nuisance-derived empty markers are dropped (the image trains as
+      a positive; we don't also flag it as empty).
+    - Multiple nuisance markers per image are deduped to one row.
+    """
+    if df is None or df.empty or "label" not in df.columns:
+        return df
+
+    mask = df["label"].apply(is_blacklisted_label)
+    if not mask.any():
+        return df.copy()
+
+    nuisance = df.loc[mask].copy()
+    keep = df.loc[~mask].copy()
+
+    nuisance_counts = nuisance["label"].value_counts().to_dict()
+    # Preserve the pre-conversion label for debugging (so a (0,0,0,0,Object)
+    # row remembers it came from FalsePositive vs. Buoy vs. a stray numeric).
+    if "original_label" not in nuisance.columns:
+        nuisance["original_label"] = nuisance["label"].astype(str)
+    nuisance[["xmin", "ymin", "xmax", "ymax"]] = 0
+    nuisance["label"] = "Object"
+
+    # Drop nuisance markers for images that already have a real positive bbox.
+    if not keep.empty and {"xmin", "ymin", "xmax", "ymax"}.issubset(keep.columns):
+        positive_images = set(
+            keep.loc[
+                ~(
+                    (keep["xmin"] == 0)
+                    & (keep["xmax"] == 0)
+                    & (keep["ymin"] == 0)
+                    & (keep["ymax"] == 0)
+                ),
+                "image_path",
+            ]
+        )
+        nuisance = nuisance[~nuisance["image_path"].isin(positive_images)]
+
+    nuisance = nuisance.drop_duplicates(
+        subset=[c for c in ("image_path", "xmin", "ymin", "xmax", "ymax", "label") if c in nuisance.columns]
+    )
+
+    tag = f"[{source}] " if source else ""
+    print(
+        f"{tag}nuisance_to_hard_negative: {int(mask.sum())} nuisance rows "
+        f"-> {len(nuisance)} hard-negative markers "
+        f"({nuisance['image_path'].nunique()} images); "
+        f"source counts: {nuisance_counts}"
+    )
+
+    return pd.concat([keep, nuisance], ignore_index=True)
 
 def undersample(train_df: pd.DataFrame, ratio: float) -> pd.DataFrame:
     """

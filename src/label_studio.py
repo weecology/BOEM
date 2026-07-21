@@ -45,6 +45,7 @@ def upload_to_label_studio(
     folder_name,
     preannotations,
     species_to_genus=None,
+    import_chunk_size=100,
 ):
     """
     Upload images to Label Studio and import image tasks.
@@ -81,6 +82,7 @@ def upload_to_label_studio(
         local_image_dir=images_to_annotate_dir,
         predictions=preannotations,
         species_to_genus=species_to_genus,
+        chunk_size=import_chunk_size,
     )
 
 def check_for_new_annotations(url, project_name, csv_dir, image_dir):
@@ -376,6 +378,7 @@ def import_image_tasks(
     local_image_dir,
     predictions=None,
     species_to_genus=None,
+    chunk_size=100,
 ):
     """
     Import image tasks into Label Studio project.
@@ -414,8 +417,7 @@ def import_image_tasks(
             data_dict["prediction_summary"] = "No prediction data for this task."
             upload_dict = {"data": data_dict}
         tasks.append(upload_dict)
-    
-    chunk_size = 100
+
     for i in range(0, len(tasks), chunk_size):
         label_studio_project.import_tasks(tasks[i:i + chunk_size])
 
@@ -427,9 +429,15 @@ def download_completed_tasks(label_studio_project, csv_dir):
     else:
         images, labels = [], []
     for labeled_task in labeled_tasks:
+        # get_labeled_tasks() can return tasks whose annotations were deleted or
+        # cancelled, leaving an empty list. Skip them rather than indexing [0].
+        task_annotations = labeled_task.get('annotations') or []
+        if not task_annotations:
+            print(f"Skipping task {labeled_task.get('id')} with no annotations")
+            continue
         image_path = os.path.basename(labeled_task['data']['image'])
         images.append(image_path)
-        label_json = labeled_task['annotations'][0]["result"]
+        label_json = task_annotations[0]["result"]
         if len(label_json) == 0:
             result = {
                     "image_path": image_path,
@@ -438,19 +446,22 @@ def download_completed_tasks(label_studio_project, csv_dir):
                     "xmax": 0,
                     "ymax": 0,
                     "label": 0,
-                    "annotator":labeled_task["annotations"][0]["created_username"],
+                    "annotator":task_annotations[0]["created_username"],
                     'flight_name': labeled_task['data']['flight_name']
                 }
             result = pd.DataFrame(result, index=[0])
         else:
             result = convert_json_to_dataframe(label_json)
-            image_path = os.path.basename(labeled_task['data']['image'])
             result["image_path"] = image_path
-            result["annotator"] = labeled_task["annotations"][0]["created_username"]
+            result["annotator"] = task_annotations[0]["created_username"]
             result["flight_name"] = labeled_task['data']['flight_name']
         labels.append(result)
 
-    annotations =  pd.concat(labels) 
+    if not labels:
+        print("No new annotations")
+        return None
+
+    annotations =  pd.concat(labels)
     print("There are {} new annotations".format(annotations.shape[0]))
 
     # Save csv in dir with timestamp

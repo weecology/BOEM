@@ -25,7 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.annotators import get_annotator
 from src.label_studio import get_api_key
 
-UBFAI_CROPS_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+UBFAI_CROPS_DIR = "/blue/ewhite/b.weinstein/BOEM/training/crops"
 EXCLUDE_CSV = frozenset({"train.csv", "test.csv", "zero_shot.csv"})
 EXCLUDE_PREFIX = "train_max_empty_"
 

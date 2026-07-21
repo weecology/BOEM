@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 from torchmetrics.classification import MulticlassConfusionMatrix
 
 
-cropmodel = CropModel.load_from_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/3caaa23614c041eaa7edcc1231cf216b.ckpt")
-root_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/val"
+cropmodel = CropModel.load_from_checkpoint("/blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/3caaa23614c041eaa7edcc1231cf216b.ckpt")
+root_dir = "/blue/ewhite/b.weinstein/BOEM/training/classification/crops/val"
 
 # Create dataset
 val_ds = ImageFolder(root=root_dir, transform=cropmodel.get_transform(augment=False))

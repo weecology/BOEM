@@ -322,6 +322,11 @@ def predict(
     m.config["workers"] = workers
 
     if metadata_lookup:
+        # PR #1334's predict_tile(metadata=...) takes one image's metadata, so this path runs
+        # image-by-image. Each call builds and tears down a DataLoader; forking `workers`
+        # processes to load a single image's ~35 patches costs more than it saves and leaves
+        # the GPU idle. Load in-process here; the batched path below still uses config workers.
+        m.config["workers"] = 0
         predictions = []
         for image_path in image_paths:
             basename = os.path.basename(str(image_path))

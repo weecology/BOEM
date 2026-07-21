@@ -11,7 +11,7 @@ import pandas as pd
 
 ANNOTATIONS_BASE = "/blue/ewhite/b.weinstein/BOEM/annotations"
 DETECTION_CROPS_BASE = "/blue/ewhite/b.weinstein/BOEM/detection/crops"
-UBFAI_CROPS = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+UBFAI_CROPS = "/blue/ewhite/b.weinstein/BOEM/training/crops"
 LABEL = "Tursiops truncatus"
 
 

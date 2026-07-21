@@ -33,6 +33,7 @@ dependencies = [
   "python-dotenv>=1.2.1",
   "dotenv",
   "scikit-learn",
+  "scikit-image",
   "folium",
   "contextily",
   "pillow",
@@ -54,7 +55,11 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
+# Detection needs tmp/hpc-balanced-empty-frames; restore this line once the DeepForest PR merges to main.
+# deepforest = { git = "https://github.com/bw4sz/DeepForest.git", branch = "tmp/hpc-balanced-empty-frames" }
+# Temporary: classification needs claude/friendly-beaver (CropModel.load_from_disk(metadata_csv=...), weecology PR #1334).
 deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "claude/friendly-beaver" }
+
 torch = [
   { index = "pytorch-cu128", marker = "sys_platform != 'darwin'" },
 ]

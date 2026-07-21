@@ -21,7 +21,7 @@ def test_build_crop_metadata_rows(tmp_path):
     }).to_csv(metadata_dir / "20241220_104800_captures.csv", index=False)
 
     annotations = pd.DataFrame({
-        "image_path": ["C1_L1_F0001_T20241220_104801_000.jpg"],
+        "image_path": ["C1_L1_F0001_T20241220_104801_000_0.png"],
         "label": ["genus species"],
         "xmin": [10],
         "ymin": [10],

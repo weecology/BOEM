@@ -1,8 +1,13 @@
 import os
+import re
 from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
+
+# Detection crops are named "{parent_frame}_{tile_index}.png"; strip the trailing
+# tile index to recover the original frame Basename used in the captures CSVs.
+_TILE_SUFFIX_RE = re.compile(r"_\d+$")
 
 
 def flight_datetime_key(flight_name: str) -> str:
@@ -65,29 +70,75 @@ def metadata_for_image(
     return cache[flight_name].get(_image_stem(image_path))
 
 
+def _parent_basename(image_path: str, bname_parent) -> str:
+    """Recover the original frame Basename for a detection-crop row.
+
+    Prefer the explicit ``bname_parent`` column; otherwise strip the trailing
+    ``_{tile_index}`` that write_crops appends to the frame stem.
+    """
+    if bname_parent is not None and not pd.isna(bname_parent) and str(bname_parent):
+        return str(bname_parent)
+    return _TILE_SUFFIX_RE.sub("", _image_stem(image_path))
+
+
+def build_capture_index(
+    metadata_dir: str | Path,
+    needed_basenames: set[str] | None = None,
+) -> dict[str, dict]:
+    """Build a ``{Basename: {lat, lon, date}}`` index across every captures CSV.
+
+    Captures CSVs are named by flight-START datetime (``{YYYYMMDD_HHMMSS}_captures.csv``),
+    which is NOT derivable from an individual frame's capture timestamp, so we scan
+    all of them once and key by the per-frame ``Basename``. Passing ``needed_basenames``
+    keeps only the frames we actually need, bounding memory.
+    """
+    metadata_dir = Path(metadata_dir)
+    index: dict[str, dict] = {}
+    for captures_path in sorted(metadata_dir.glob("*_captures.csv")):
+        header = pd.read_csv(captures_path, nrows=0).columns
+        if not {"Basename", "Lat", "Lon"} <= set(header):
+            continue
+        key = captures_path.name[: -len("_captures.csv")]
+        date = flight_date(key)
+        if not date:
+            continue
+        chunk = pd.read_csv(captures_path, usecols=["Basename", "Lat", "Lon"])
+        chunk = chunk.drop_duplicates(subset=["Basename"])
+        for basename, lat, lon in zip(chunk.Basename, chunk.Lat, chunk.Lon):
+            basename = str(basename)
+            if needed_basenames is not None and basename not in needed_basenames:
+                continue
+            if basename not in index:
+                index[basename] = {"lat": float(lat), "lon": float(lon), "date": date}
+    return index
+
+
 def build_crop_metadata_rows(
     annotations: pd.DataFrame,
     metadata_dir: str | Path,
     default_flight_name: str,
 ) -> pd.DataFrame:
-    """Build DeepForest CropModel metadata rows for crops written by classification.write_crops."""
-    cache: dict[str, dict[str, dict]] = {}
+    """Build DeepForest CropModel metadata rows for crops written by classification.write_crops.
+
+    Matches each detection crop to its original frame's lat/lon/date via the frame
+    ``Basename`` (from the ``bname_parent`` column), looked up in a global index of
+    all captures CSVs. ``default_flight_name`` is retained for signature compatibility
+    and is unused now that matching is Basename-based.
+    """
+    image_paths = [getattr(r, "image_path") for r in annotations.itertuples(index=False)]
+    parents = [
+        _parent_basename(getattr(r, "image_path"), getattr(r, "bname_parent", None))
+        for r in annotations.itertuples(index=False)
+    ]
+    index = build_capture_index(metadata_dir, needed_basenames=set(parents))
+
     rows = []
-    for crop_index, row in enumerate(annotations.itertuples(index=False)):
-        image_path = getattr(row, "image_path")
-        flight_name = getattr(row, "flight_name", default_flight_name)
-        if pd.isna(flight_name) or not flight_name:
-            flight_name = default_flight_name
-        metadata = metadata_for_image(
-            image_path=image_path,
-            metadata_dir=metadata_dir,
-            flight_name=str(flight_name),
-            cache=cache,
-        )
+    for image_path, parent in zip(image_paths, parents):
+        metadata = index.get(parent)
         if metadata is None or not metadata["date"]:
             continue
         rows.append({
-            "filename": f"{_image_stem(image_path)}_{crop_index}.png",
+            "filename": os.path.basename(image_path),
             "lat": metadata["lat"],
             "lon": metadata["lon"],
             "date": metadata["date"],

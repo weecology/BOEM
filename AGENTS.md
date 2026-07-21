@@ -1,5 +1,14 @@
 # Agent Instructions
 
+## Job Ledger
+
+Before submitting a SLURM job from this repo (sbatch), and after checking on
+one that finished, log it in `JOB_LEDGER.md` at the repo root — one entry per
+job ID, with why/result/next. This repo's jobs also land in the shared
+`~/logs/job_ledger.md`, but that file mixes in unrelated repos (MillionTrees,
+etc.), so it's not sufficient on its own for reconstructing BOEM-only history.
+`JOB_LEDGER.md` is the source of truth for "what happened" in this project.
+
 # To set up a development environment with all dependencies (including extras for development and testing),
 # use uv (https://github.com/astral-sh/uv):
 

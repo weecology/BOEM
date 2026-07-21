@@ -106,7 +106,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python verify_dataset_counts.py <train_crop_image_dir>")
         print("\nExample:")
-        print("  python verify_dataset_counts.py '/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train/3d88dbea165744a4b64574d054017402'")
+        print("  python verify_dataset_counts.py '/blue/ewhite/b.weinstein/BOEM/training/classification/crops/train/3d88dbea165744a4b64574d054017402'")
         sys.exit(1)
     
     train_crop_dir = sys.argv[1]

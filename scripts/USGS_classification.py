@@ -200,7 +200,7 @@ def main(cfg: DictConfig):
 
     # From the detection script: use only per-image CSVs (exclude train/test/zero_shot) to avoid
     # duplicates and Object vs species label conflicts (prepare_USGS sets label=Object in combined splits).
-    ubfai_crops_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+    ubfai_crops_dir = "/blue/ewhite/b.weinstein/BOEM/training/crops"
     all_csvs = glob.glob(os.path.join(ubfai_crops_dir, "*.csv"))
     per_image_csvs = [
         x for x in all_csvs

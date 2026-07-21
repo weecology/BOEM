@@ -16,9 +16,15 @@
 ulimit -c 0
 
 
-uv run python -u scripts/prepare_USGS.py
+# prepare_USGS already run separately
+# uv run python -u scripts/prepare_USGS.py
 
 export NCCL_IB_DISABLE=1
 export NCCL_NVLS_ENABLE=0
 export NCCL_DEBUG=INFO
+
+# Isolated env: classification needs the claude/friendly-beaver DeepForest branch (PR #1334, metadata_csv),
+# while detection trains against the shared .venv (tmp/hpc-balanced-empty-frames). Keep them separate so
+# this job's uv sync does not mutate the detection job's environment.
+export UV_PROJECT_ENVIRONMENT=/blue/ewhite/b.weinstein/src/BOEM/.venv-classification
 uv run python -u /blue/ewhite/b.weinstein/src/BOEM/scripts/USGS_classification.py

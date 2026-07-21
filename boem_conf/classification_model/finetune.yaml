@@ -1,6 +1,6 @@
 force_train: False
-checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints/buffer_30/5a5d6698f2e74f1b8c21cdb0e187b080.ckpt
-checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train
+checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/buffer_30/d8995ca8690046ce9dd775fb42f55cb1.ckpt
+checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/training/classification/crops/train
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train
 val_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/val

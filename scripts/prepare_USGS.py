@@ -52,19 +52,20 @@ import numpy as np
 import pandas as pd
 import PIL.Image
 import torch
-from deepforest.preprocess import split_raster
 from deepforest.utilities import read_file
 
 # --- Paths ---
 ANNOTATIONS_BASE = "/blue/ewhite/b.weinstein/BOEM/annotations"
 IMAGERY_BASE = "/blue/ewhite/b.weinstein/BOEM/imagery"
+SCREENED_IMAGES_BASE = "/blue/ewhite/b.weinstein/BOEM/screened_images"
 DETECTION_CROPS_BASE = "/blue/ewhite/b.weinstein/BOEM/detection/crops"
-UBFAI_BASE = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data"
-UBFAI_IMAGES = os.path.join(UBFAI_BASE, "images_parent")
-UBFAI_CROPS = os.path.join(UBFAI_BASE, "crops")
-CUMULATIVE_CSV = os.path.join(UBFAI_BASE, "20260112_annotation_cumulative.csv")
+# Read-only Globus source (annotations + raw imagery)
 AWS_ANNOTATIONS_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Data Collection/annotation_aws"
 AWS_IMAGERY_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Data Collection/imagery"
+# Derived training artifacts (NOT inside the read-only Globus collection)
+TRAINING_BASE = "/blue/ewhite/b.weinstein/BOEM/training"
+UBFAI_IMAGES = AWS_IMAGERY_DIR  # crops are split off the AWS imagery in place
+UBFAI_CROPS = os.path.join(TRAINING_BASE, "crops")
 PATCH_SIZE = 1000
 PATCH_OVERLAP = 0
 
@@ -130,7 +131,7 @@ def parse_args():
     parser.add_argument(
         "--zero-shot-flights",
         type=str,
-        default=None,
+        default="JPG_20260202_094800,JPG_2023_Dec14",
         help="Comma-separated flight names to use as zero-shot holdout (overrides random selection).",
     )
     parser.add_argument(
@@ -189,79 +190,108 @@ def _normalize_annotation_columns(ann: pd.DataFrame) -> pd.DataFrame:
 
 
 def _load_aws_annotations() -> pd.DataFrame:
-    """Load all annotation manifests from the AWS annotation directory.
+    """Load human-curated annotations from the AWS annotation directory.
 
-    Returns a combined DataFrame with the same schema as the cumulative CSV
-    (bname_parent, label, left, top, width, height, ...).  Only rows whose
-    bname_parent has a matching .JPG in AWS_IMAGERY_DIR are kept.
+    Only keeps rows from Sagemaker `private.us-east-1.*` jobs (human review).
+    Tallgrass and Normandeau rows are machine predictions and must never enter
+    the training ground truth. Also drops rows whose bname_parent has no
+    matching .JPG in AWS_IMAGERY_DIR.
     """
     csv_files = glob.glob(os.path.join(AWS_ANNOTATIONS_DIR, "*.csv"))
     if not csv_files:
         print("No AWS annotation manifests found; skipping.")
         return pd.DataFrame()
-    parts = []
-    for f in csv_files:
-        parts.append(pd.read_csv(f, low_memory=False))
+    parts = [pd.read_csv(f, low_memory=False) for f in csv_files]
     aws = pd.concat(parts, ignore_index=True)
 
-    # Keep only rows that have a matching image on disk
+    before = len(aws)
+    aws = aws[aws["source"].fillna("").str.startswith("private.")]
+    print(
+        f"AWS source filter: kept {len(aws):,} human rows, "
+        f"dropped {before - len(aws):,} machine rows."
+    )
+
     imagery_stems = {
         os.path.splitext(fn)[0] for fn in os.listdir(AWS_IMAGERY_DIR)
     }
     aws = aws[aws["bname_parent"].isin(imagery_stems)]
+
+    # Remove NA labels
+    aws = aws[~aws.label.isna()]
+
+    # Preserve the raw annotator label so downstream debugging can tell apart
+    # an empty marker that came from a "Bird" auto-empty vs. a FalsePositive
+    # nuisance conversion vs. a real positive that got blanket-relabeled to
+    # "Object". Carried through every concat/dedup below.
+    aws["original_label"] = aws["label"].astype(str)
+
     print(
-        f"AWS annotations: {len(aws)} rows, "
-        f"{aws['bname_parent'].nunique()} unique images with imagery on disk."
+        f"AWS annotations after image filter: {len(aws):,} rows, "
+        f"{aws['bname_parent'].nunique():,} unique images."
     )
     return aws
 
 
-def _symlink_aws_images(bname_parents: set[str]):
-    """Symlink images from AWS_IMAGERY_DIR into UBFAI_IMAGES for new bname_parents."""
-    os.makedirs(UBFAI_IMAGES, exist_ok=True)
-    n_new = 0
-    for bname in bname_parents:
-        src = os.path.join(AWS_IMAGERY_DIR, f"{bname}.JPG")
-        dst = os.path.join(UBFAI_IMAGES, f"{bname}.JPG")
-        if not os.path.exists(dst) and os.path.exists(src):
-            os.symlink(src, dst)
-            n_new += 1
-    print(f"Symlinked {n_new} new images into {UBFAI_IMAGES}")
+def _ubfai_crop_worker(task: tuple) -> str:
+    """Run split_raster for one UBFAI parent image (pickled args; top-level for spawn).
+
+    Mirrors `_detection_crop_worker` but uses `allow_empty=False` so we don't
+    explode the crop count with empty tiles from large UBFAI scenes — those
+    are not hard negatives, just empty image regions.
+    """
+    image_path, records = task
+    import pandas as pd
+    from src import data_processing
+
+    annotation_df = pd.DataFrame.from_records(records)
+    data_processing.process_image(
+        image_path=image_path,
+        annotation_df=annotation_df,
+        root_dir=UBFAI_IMAGES,
+        save_dir=UBFAI_CROPS,
+        patch_size=PATCH_SIZE,
+        patch_overlap=PATCH_OVERLAP,
+        allow_empty=False,
+    )
+    return image_path
 
 
 def _regenerate_ubfai_crops(df: pd.DataFrame):
-    """Regenerate UBFAI crops using Dask for parallel split_raster calls."""
-    from dask.distributed import as_completed
-    from src.cluster import start
+    """Regenerate per-image UBFAI crops with ProcessPoolExecutor.
 
-    client = start(cpus=5, mem_size="40GB")
-
-    def process_image(image_annotations):
-        x = image_annotations.image_path.unique()[0]
-        filename = os.path.join(UBFAI_CROPS, x.replace(".JPG", ".csv"))
-        if os.path.exists(filename):
-            return pd.read_csv(filename)
-        try:
-            split_raster(
-                annotations_file=image_annotations,
-                patch_size=PATCH_SIZE,
-                patch_overlap=PATCH_OVERLAP,
-                path_to_raster=os.path.join(UBFAI_IMAGES, x),
-                root_dir=UBFAI_IMAGES,
-                base_dir=UBFAI_CROPS,
-                allow_empty=False,
-            )
-            return filename
-        except Exception as e:
-            print(f"Error processing {x}: {e}")
-            return None
-
-    futures = [
-        client.submit(process_image, df[df["image_path"] == x])
-        for x in df.image_path.unique()
-    ]
-    for future in as_completed(futures):
-        future.result()
+    Skips any image whose crop CSV already exists (idempotent for resumes).
+    Runs inside a single sbatch allocation — no nested slurm jobs.
+    """
+    os.makedirs(UBFAI_CROPS, exist_ok=True)
+    images = df["image_path"].unique()
+    tasks = []
+    for image_path in images:
+        out_csv = os.path.join(UBFAI_CROPS, image_path.replace(".JPG", ".csv"))
+        if os.path.exists(out_csv):
+            continue
+        ann = df[df["image_path"] == image_path]
+        tasks.append((image_path, ann.to_dict("records")))
+    if not tasks:
+        print("All UBFAI crops already exist; nothing to regenerate.")
+        return
+    n_workers = min(_detection_crop_parallel_workers(), len(tasks))
+    print(
+        f"UBFAI regenerate: {len(tasks):,} images to crop, {n_workers} workers"
+    )
+    n_done = 0
+    n_failed = 0
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        futures = [pool.submit(_ubfai_crop_worker, t) for t in tasks]
+        for fut in as_completed(futures):
+            try:
+                fut.result()
+                n_done += 1
+            except Exception as e:
+                n_failed += 1
+                print(f"  failed: {e}")
+            if n_done % 500 == 0:
+                print(f"  progress: {n_done:,}/{len(tasks):,}")
+    print(f"UBFAI regenerate done: {n_done:,} succeeded, {n_failed:,} failed.")
 
 
 # ---------------------------------------------------------------------------
@@ -296,11 +326,24 @@ def generate_detection_crops():
     )
 
     for flight_name in flights:
-        root_dir = os.path.join(IMAGERY_BASE, flight_name)
-        save_dir = os.path.join(DETECTION_CROPS_BASE, flight_name)
-        if not os.path.isdir(root_dir):
-            print(f"  Skip {flight_name}: imagery dir not found {root_dir}")
+        # Try the primary imagery dir first; fall back to screened_images for
+        # older flights whose imagery was archived there but never copied into
+        # IMAGERY_BASE. Without this fallback ~40 flights' worth of annotations
+        # are silently dropped at stage 0.
+        primary = os.path.join(IMAGERY_BASE, flight_name)
+        fallback = os.path.join(SCREENED_IMAGES_BASE, flight_name)
+        if os.path.isdir(primary):
+            root_dir = primary
+        elif os.path.isdir(fallback):
+            root_dir = fallback
+            print(f"  {flight_name}: using screened_images fallback")
+        else:
+            print(
+                f"  Skip {flight_name}: imagery dir not found in "
+                f"{IMAGERY_BASE} or {SCREENED_IMAGES_BASE}"
+            )
             continue
+        save_dir = os.path.join(DETECTION_CROPS_BASE, flight_name)
 
         csvs = []
         for sub in ("train", "validation", "review"):
@@ -393,38 +436,30 @@ def generate_detection_crops():
 
 
 # ---------------------------------------------------------------------------
-# Stage 1: Pre-workflow annotations (UBFAI cumulative CSV)
+# Stage 1: Pre-workflow annotations (AWS human-curated)
 # ---------------------------------------------------------------------------
 
 
 def process_preworkflow_annotations(
     regenerate_crops: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Crop and label-normalise the pre-workflow UBFAI cumulative annotations.
+    """Crop and label-normalise the pre-workflow human annotations.
 
-    Reads the cumulative annotation CSV, validates image existence, optionally
-    regenerates crops, normalises labels (background classes become empty-image
-    markers, actual detections become "Object"), and performs an initial 95/5
-    train/test split by image.
+    Reads AWS human-curated annotations (Sagemaker private.* jobs only),
+    validates image existence, optionally regenerates crops, normalises labels
+    (non-biodiversity classes become hard-negative empty markers, actual
+    detections become "Object"), and performs an initial 95/5 train/test split
+    by parent scene.
 
     Returns:
         (train, test) DataFrames of crop annotations.
     """
-    df = pd.read_csv(CUMULATIVE_CSV, low_memory=False)
-
-    # Merge in AWS annotations that are not already covered by the cumulative CSV
-    aws = _load_aws_annotations()
-    if not aws.empty:
-        existing_bnames = set(df["bname_parent"].unique())
-        aws_new = aws[~aws["bname_parent"].isin(existing_bnames)]
-        print(
-            f"AWS source adds {aws_new['bname_parent'].nunique()} new images "
-            f"({len(aws_new)} rows) not in cumulative CSV."
+    df = _load_aws_annotations()
+    if df.empty:
+        raise RuntimeError(
+            f"No human annotations found in {AWS_ANNOTATIONS_DIR}"
         )
-        _symlink_aws_images(set(aws_new["bname_parent"].unique()))
-        df = pd.concat([df, aws_new], ignore_index=True)
-
-    print(df.label.value_counts())
+    print(df.label.value_counts(dropna=False).head(10))
 
     df["image_path"] = df["bname_parent"] + ".JPG"
 
@@ -447,27 +482,42 @@ def process_preworkflow_annotations(
     if regenerate_crops:
         _regenerate_ubfai_crops(df)
 
-    # Read all crop CSVs (produced by earlier split_raster runs)
-    crop_csvs = glob.glob(os.path.join(UBFAI_CROPS, "*.csv"))
+    # Read all per-image crop CSVs produced by earlier split_raster runs.
+    # CRITICAL: skip the top-level output files (train.csv, test.csv,
+    # zero_shot.csv, train_max_empty_*.csv, …). Those are PRIOR-RUN outputs
+    # written to this same directory; if we slurp them back in, every prior
+    # row gets concatenated alongside its species-labeled source row and
+    # survives dedup-on-label, producing 2x duplication after the blanket
+    # relabel-to-"Object" in stage 3.
+    output_basenames = {"train.csv", "test.csv", "zero_shot.csv"}
+    def _is_per_image_crop_csv(path: str) -> bool:
+        base = os.path.basename(path)
+        if base in output_basenames:
+            return False
+        if base.startswith(("train_", "test_", "zero_shot_")):
+            return False
+        return True
+
+    crop_csvs = [
+        f for f in glob.glob(os.path.join(UBFAI_CROPS, "*.csv"))
+        if _is_per_image_crop_csv(f)
+    ]
     crop_annotations = pd.concat([pd.read_csv(x) for x in crop_csvs])
 
-    # Drop non-biodiversity labels (Buoy, Algae, Boat, Tree, Artificial,
-    # Unknown/Other, stray numerics). The previous Stage-1 logic tried to
-    # convert these into empty markers but the second .loc ran against the
-    # post-mutated label column, which silently relabeled every row to
-    # "FalsePositive" and left all original bboxes intact, so non-bio rows
-    # were leaking into the positive set with their original coordinates.
-    from src.data_processing import filter_non_biodiversity
-    crop_annotations = filter_non_biodiversity(
-        crop_annotations, source="prepare_USGS/stage1"
-    )
+    # Preserve the original annotator label before any downstream filtering.
+    if "original_label" not in crop_annotations.columns:
+        crop_annotations["original_label"] = crop_annotations["label"].astype(str)
 
     # Deduplicate by (image_path, bbox, label) — empty markers (all-zero bbox)
     # collapse to one row per image; real annotations dedupe identical boxes.
+    # NOTE: keep the ORIGINAL labels here (don't filter, don't blanket-relabel
+    # to "Object"). Stage 3 splits everything into hard-negative vs positive
+    # buckets AFTER concat, using `is_blacklisted_label` on the original
+    # labels. If we filtered or relabeled here, the bucket logic would lose
+    # the information it needs.
     dedup_subset = [c for c in ("image_path", "xmin", "ymin", "xmax", "ymax", "label")
                     if c in crop_annotations.columns]
     crop_annotations = crop_annotations.drop_duplicates(subset=dedup_subset)
-    crop_annotations["label"] = "Object"
 
     # 95/5 train/test split by parent scene (group all crops of the same scene together
     # so no parent image straddles the split boundary).
@@ -514,9 +564,17 @@ def collect_workflow_annotations(update_labels: bool = True) -> pd.DataFrame:
     for csv_file in glob.glob(
         os.path.join(DETECTION_CROPS_BASE, "**", "*.csv"), recursive=True
     ):
+        # Skip any CSV that lives at the top level of DETECTION_CROPS_BASE —
+        # those are strays from buggy older runs and don't carry a real flight.
+        # The canonical layout is DETECTION_CROPS_BASE/<flight>/<image>.csv.
+        if os.path.dirname(csv_file) == DETECTION_CROPS_BASE.rstrip("/"):
+            print(f"Skipping stray top-level CSV (no flight dir): {csv_file}")
+            continue
         flight_name = os.path.basename(os.path.dirname(csv_file))
         annotations = pd.read_csv(csv_file)
         annotations["flight"] = flight_name
+        if "original_label" not in annotations.columns and "label" in annotations.columns:
+            annotations["original_label"] = annotations["label"].astype(str)
         # Paths must be basename-only so they resolve under flat UBFAI_CROPS
         annotations["image_path"] = annotations["image_path"].astype(str).apply(
             os.path.basename
@@ -532,6 +590,8 @@ def collect_workflow_annotations(update_labels: bool = True) -> pd.DataFrame:
             print(f"Skipping {csv_file}, already exists in {dest_csv}")
             annotations = pd.read_csv(dest_csv)
             annotations["flight"] = flight_name
+            if "original_label" not in annotations.columns and "label" in annotations.columns:
+                annotations["original_label"] = annotations["label"].astype(str)
             annotations["image_path"] = annotations["image_path"].astype(str).apply(
                 os.path.basename
             )
@@ -566,7 +626,7 @@ def create_train_test_split(
     flight_annotations: pd.DataFrame,
     n_zeroshot_flights: int = 2,
     zero_shot_flights: list[str] | None = None,
-    max_test_images: int = 100,
+    max_test_images: int | None = None,
     max_zeroshot_images: int | None = None,
 ):
     """Combine pre-workflow and workflow annotations into final train/test splits.
@@ -587,12 +647,10 @@ def create_train_test_split(
     flight_train = pd.concat([pd.read_csv(x) for x in train_csvs + reviewed_csvs])
     flight_val = pd.concat([pd.read_csv(x) for x in val_csvs])
 
-    # Drop non-biodiversity labels from workflow flight crops before they get
-    # concatenated with the pre-workflow data and uniformly relabeled "Object".
-    from src.data_processing import filter_non_biodiversity
-    flight_annotations = filter_non_biodiversity(
-        flight_annotations, source="prepare_USGS/stage3/flight"
-    )
+    # NOTE: do NOT filter or transform flight_annotations here. The
+    # consolidated hard-negative split runs once below (after combined_train /
+    # combined_test / combined_zeroshot are built) so AWS-sourced and
+    # flight-sourced nuisance labels go through the same logic in one place.
 
     # Normalise via deepforest read_file
     train = read_file(train.drop(columns="geometry"), root_dir=UBFAI_CROPS)
@@ -635,22 +693,86 @@ def create_train_test_split(
     combined_train = pd.concat([train, train_flight])
     combined_test = pd.concat([test, test_flight])
 
-    # Drop exact duplicate annotation rows (same image, box, label) to avoid
-    # double-counting the same crop when merging pre-workflow and workflow data.
-    dup_subset = ["image_path", "xmin", "ymin", "xmax", "ymax", "label"]
+    # ---- Reconcile train/test/zero-shot at parent level ----
+    # Stage 1's random 95/5 split (over UBFAI_CROPS/*.csv) is independent of
+    # Stage 3's workflow assignment (annotations/{train,validation,review}/)
+    # and the zero-shot flight holdout. Without this pass, the SAME parent's
+    # crops can appear in both combined_train and combined_test, and zero-shot
+    # flights' crops leak ~95/5 into train/test because Stage 2 copies their
+    # per-image CSVs into UBFAI_CROPS and Stage 1 splits everything there
+    # without flight awareness.
+    def _parent_of(p):
+        base = os.path.basename(str(p))
+        stem, ext = os.path.splitext(base)
+        if ext.lower() == ".png":
+            last = stem.rfind("_")
+            if last > 0 and stem[last + 1:].isdigit():
+                return stem[:last]
+            return stem
+        return stem
+
+    zs_parents = (
+        set(_parent_of(p) for p in zeroshot_flight["image_path"].unique())
+        if not zeroshot_flight.empty
+        else set()
+    )
+    train_flight_parents = set(
+        _parent_of(p) for p in flight_train["image_path"].unique()
+    )
+    test_flight_parents = set(
+        _parent_of(p) for p in flight_val["image_path"].unique()
+    )
+
+    combined_train = combined_train.copy()
+    combined_test = combined_test.copy()
+    combined_train["_parent"] = combined_train["image_path"].apply(_parent_of)
+    combined_test["_parent"] = combined_test["image_path"].apply(_parent_of)
+
+    before_t, before_v = len(combined_train), len(combined_test)
+    combined_train = combined_train[~combined_train["_parent"].isin(zs_parents)]
+    combined_test = combined_test[~combined_test["_parent"].isin(zs_parents)]
+    combined_train = combined_train[~combined_train["_parent"].isin(test_flight_parents)]
+    combined_test = combined_test[~combined_test["_parent"].isin(train_flight_parents)]
+    overlap_parents = set(combined_train["_parent"]) & set(combined_test["_parent"])
+    if overlap_parents:
+        print(
+            f"[reconcile] dropping {len(overlap_parents):,} parents from test "
+            "(no workflow signal, give train precedence)"
+        )
+        combined_test = combined_test[~combined_test["_parent"].isin(overlap_parents)]
+
+    combined_train = combined_train.drop(columns="_parent")
+    combined_test = combined_test.drop(columns="_parent")
+    print(
+        f"[reconcile] train: {before_t:,} -> {len(combined_train):,} rows | "
+        f"test: {before_v:,} -> {len(combined_test):,} rows | "
+        f"zs_parents={len(zs_parents):,} "
+        f"train_flight_parents={len(train_flight_parents):,} "
+        f"test_flight_parents={len(test_flight_parents):,}"
+    )
+
+    # NOTE: do NOT dedup on (image_path, bbox, label) here. Stage 3 later
+    # blanket-relabels every surviving row to "Object", so a species-labeled
+    # row and a previously-"Object"-labeled twin at the same bbox would
+    # survive a label-aware dedup and only become duplicates AFTER the
+    # relabel. The consolidated post-relabel dedup below catches those.
+
+    # ---- Hard-negative bucket split (consolidated) ----
+    # All rows whose label is in NON_BIODIVERSITY_LABELS (Buoy, Algae, Boat,
+    # Tree, Artificial, Unknown/Other, FalsePositive) or is a stray numeric
+    # become zero-bbox empty markers (hard negatives). Everything else keeps
+    # its bbox and gets relabeled "Object" below.
+    from src.data_processing import is_blacklisted_label, nuisance_to_hard_negative
     for name, df in (("train", combined_train), ("test", combined_test)):
-        if all(col in df.columns for col in dup_subset):
-            dup_mask = df.duplicated(subset=dup_subset, keep="first")
-            n_dup = int(dup_mask.sum())
-            if n_dup:
-                print(
-                    f"[prepare_USGS:{name}] dropping {n_dup} exact duplicate rows "
-                    "(image_path+xmin+ymin+xmax+ymax+label)"
-                )
-                if name == "train":
-                    combined_train = combined_train.loc[~dup_mask]
-                else:
-                    combined_test = combined_test.loc[~dup_mask]
+        if df.empty or "label" not in df.columns:
+            continue
+        mask = df["label"].apply(is_blacklisted_label)
+        print(f"\n[{name}] Hard-negative bucket ({int(mask.sum()):,} rows) — label counts:")
+        print(df.loc[mask, "label"].value_counts(dropna=False).head(20).to_string())
+        print(f"[{name}] Positive Object bucket ({int((~mask).sum()):,} rows) — label counts:")
+        print(df.loc[~mask, "label"].value_counts(dropna=False).head(25).to_string())
+    combined_train = nuisance_to_hard_negative(combined_train, source="prepare_USGS/stage3/train")
+    combined_test  = nuisance_to_hard_negative(combined_test,  source="prepare_USGS/stage3/test")
 
     # Mark empty images (zeroed coords); keep them in test and zero-shot
     combined_train["empty_image"] = (
@@ -666,8 +788,34 @@ def create_train_test_split(
         & (combined_test["ymax"] == 0)
     )
 
+    # Blanket-relabel surviving positive rows to "Object" for the single-class
+    # detector. nuisance_to_hard_negative already set hard-negative rows to
+    # "Object" (with bbox=0); this catches the species-level labels.
+    # Stash the original label first so it survives the relabel for debugging.
+    for df in (combined_train, combined_test):
+        if "original_label" not in df.columns:
+            df["original_label"] = df["label"].astype(str)
     combined_train["label"] = "Object"
     combined_test["label"] = "Object"
+
+    # Final dedup AFTER relabel — collapses (a) species + prior-"Object" twins
+    # at the same bbox and (b) multiple nuisance-derived empty markers per
+    # image. Keep the first occurrence so original_label stays informative.
+    dedup_subset = ["image_path", "xmin", "ymin", "xmax", "ymax", "label"]
+    for name in ("train", "test"):
+        df = combined_train if name == "train" else combined_test
+        before = len(df)
+        df = df.drop_duplicates(subset=dedup_subset, keep="first")
+        n_dropped = before - len(df)
+        if n_dropped:
+            print(
+                f"[prepare_USGS:{name}] post-relabel dedup dropped {n_dropped:,} "
+                f"duplicate rows ({before:,} -> {len(df):,})"
+            )
+        if name == "train":
+            combined_train = df
+        else:
+            combined_test = df
 
     # Remove oversized (2000 px wide) images from the test set
     oversized = [

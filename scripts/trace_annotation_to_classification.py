@@ -17,7 +17,7 @@ import pandas as pd
 
 ANNOTATIONS_BASE = "/blue/ewhite/b.weinstein/BOEM/annotations"
 DETECTION_CROPS_BASE = "/blue/ewhite/b.weinstein/BOEM/detection/crops"
-UBFAI_CROPS = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+UBFAI_CROPS = "/blue/ewhite/b.weinstein/BOEM/training/crops"
 
 
 def main():
@@ -87,7 +87,7 @@ def main():
     print()
 
     # 3) UBFAI crops
-    print("3) UBFAI CROPS (UBFAI Images with Detection Data/crops/*.csv)")
+    print("3) UBFAI CROPS (training/crops/*.csv)")
     if os.path.isfile(ubfai_csv):
         df = pd.read_csv(ubfai_csv)
         has_label = df["label"].astype(str).str.contains(label, case=False, na=False).any()

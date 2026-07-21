@@ -19,9 +19,9 @@ ulimit -c 0
 # as CropModel), FIRST run USGS_classification.py and set SPLIT_DIR to that run's
 # split dir (checkpoint_dir/buffer_30/<comet_id>) containing usgs_train_split.csv
 # and usgs_val_split.csv.
-ANNOTATIONS_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
-IMAGE_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
-CHECKPOINT_DIR="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/checkpoints"
+ANNOTATIONS_DIR="/blue/ewhite/b.weinstein/BOEM/training/crops"
+IMAGE_DIR="/blue/ewhite/b.weinstein/BOEM/training/crops"
+CHECKPOINT_DIR="/blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints"
 OUTPUT_DIR="${BOEM_OUTPUT_DIR:-output/usgs_hier}"
 TAXONOMY="taxonomy.json"
 EXPAND_PIXELS="${BOEM_EXPAND_PIXELS:-30}"

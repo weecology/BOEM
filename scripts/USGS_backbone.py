@@ -2,12 +2,23 @@ from deepforest import main
 import pandas as pd
 import os
 from pytorch_lightning.loggers import CometLogger
-from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning import Callback
 import torch
 import argparse
 import tempfile
+from contextlib import nullcontext
 from deepforest import visualize
+from deepforest import augmentations as df_aug
+from deepforest.callbacks import ImagesCallback
 from deepforest.utilities import read_file
+from omegaconf import OmegaConf
+import kornia.augmentation as K
+
+# Register RandomAffine so it can be referenced from the augmentations config.
+df_aug._SUPPORTED_TRANSFORMS["RandomAffine"] = (
+    K.RandomAffine, {"degrees": 0, "scale": (0.9, 1.1), "p": 0.2}
+)
 
 # Parse arguments
 parser = argparse.ArgumentParser(description="Train DeepForest model")
@@ -24,7 +35,7 @@ parser.add_argument(
 parser.add_argument(
     "--n-log-images",
     type=int,
-    default=10,
+    default=20,
     help="Number of validation/zero-shot images to log with predictions.",
 )
 parser.add_argument(
@@ -39,14 +50,35 @@ parser.add_argument(
     default=None,
     help="Cap proportion of empty images in the validation/test set (e.g. 0.25 = max 25%%).",
 )
+parser.add_argument(
+    "--positive-batch-fraction",
+    type=float,
+    default=None,
+    help="Fraction of each train batch reserved for annotated images "
+         "(rest are hard negatives). None = uniform shuffle (DeepForest default). "
+         "Requires the balanced-batch DeepForest branch.",
+)
+parser.add_argument(
+    "--exp-name",
+    type=str,
+    default=None,
+    help="Comet experiment name. Falls back to EXP_NAME env var, then an auto-derived name.",
+)
 args = parser.parse_args()
+
+exp_name = args.exp_name or os.environ.get("EXP_NAME")
+if not exp_name:
+    parts = ["detection"]
+    if args.positive_batch_fraction is not None:
+        parts.append(f"posfrac{args.positive_batch_fraction}")
+    exp_name = "_".join(parts)
 
 # Use parsed arguments
 batch_size = args.batch_size
 workers = args.workers
 
-savedir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
-root_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+savedir = "/blue/ewhite/b.weinstein/BOEM/training/crops"
+root_dir = "/blue/ewhite/b.weinstein/BOEM/training/crops"
 
 train = pd.read_csv(os.path.join(savedir, "train.csv"), low_memory=False)
 test = pd.read_csv(os.path.join(savedir, "test.csv"), low_memory=False)
@@ -116,7 +148,10 @@ print("Number of empty images in train set:", train["empty_image"].sum())
 print("Number of empty images in test set:", test["empty_image"].sum())
 
 # Initalize Deepforest model
-m = main.deepforest()
+# score_thresh must be set via config_args here: it is baked into the torchvision
+# RetinaNet at model construction. Assigning m.config["score_thresh"] after this
+# point updates only the dict, not the live model.
+m = main.deepforest(config_args={"score_thresh": 0.4})
 m.load_model("weecology/deepforest-bird")
 m.label_dict = {"Object":0}
 m.numeric_to_label_dict = {0:"Object"}
@@ -129,7 +164,12 @@ m.config["validation"]["root_dir"] = root_dir
 m.config["batch_size"] = batch_size
 m.config["train"]["epochs"] = args.epochs
 m.config["workers"] = workers
-m.config["validation"]["val_accuracy_interval"] = 5
+m.config["validation"]["val_accuracy_interval"] = 3
+# Skip per-row PIL.Image.open()-based coordinate check. Our bboxes are clean
+# (verified via prepare_USGS bucket-split), and at ~1M annotation rows the
+# check takes hours of pure I/O on Lustre with no findings.
+m.config["train"]["validate_coordinates"] = False
+m.config["validation"]["validate_coordinates"] = False
 m.config["train"]["scheduler"]["type"] = "ReduceLROnPlateau"
 m.config["train"]["scheduler"]["params"]["mode"] = "min"
 m.config["train"]["scheduler"]["params"]["patience"] = 3
@@ -137,30 +177,33 @@ m.config["train"]["scheduler"]["params"]["factor"] = 0.5
 m.config["train"]["scheduler"]["params"]["eps"] = 0
 m.config["validation"]["lr_plateau_target"] = "val_classification"
 m.config["train"]["lr"] = args.lr
+# TF32 matmul for B200 speedup. bf16-mixed is disabled because DeepForest's
+# format_boxes calls .numpy() on prediction tensors and numpy doesn't support
+# bfloat16, which makes validation crash. Re-enable once upstream casts to float.
+m.config["matmul_precision"] = "high"
+if args.positive_batch_fraction is not None:
+    m.config = OmegaConf.merge(
+        m.config,
+        {"train": {"positive_batch_fraction": args.positive_batch_fraction}},
+    )
 
 # Augmentations (kornia-based in DeepForest >=2.1). Aligned with the bird detector's
-# augmentation set: RandomResizedCrop for scale variation + flips/rotation, then
-# PadIfNeeded so all samples come out at 1000x1000.
-# Use OmegaConf.merge — direct assignment fails because the structured schema types
-# train.augmentations as list[str], even though the parser accepts list-of-dicts.
-from omegaconf import OmegaConf
-m.config = OmegaConf.merge(m.config, {"train": {"augmentations": [
-    {"RandomResizedCrop": {"size": [800, 800], "scale": [0.3, 1.0], "p": 0.5}},
-    {"Rotate": {"degrees": 15, "p": 0.5}},
-    {"HorizontalFlip": {"p": 0.5}},
-    {"VerticalFlip": {"p": 0.3}},
-    {"PadIfNeeded": {"size": [1000, 1000]}},
-]}})
+selected_augs = []
+selected_augs.append({"Rotate": {"degrees": 15, "p": 0.5}})
+selected_augs.append({"HorizontalFlip": {"p": 0.5}})
+selected_augs.append({"VerticalFlip": {"p": 0.3}})
+selected_augs.append({"RandomAffine": {"degrees": 0, "scale": (0.9, 1.1), "p": 0.3}})
+
+m.config = OmegaConf.merge(m.config, {"train": {"augmentations": selected_augs}})
 
 comet_logger = CometLogger(project_name="BOEM", workspace="bw4sz")
 comet_logger.experiment.add_tag("detection")
+comet_logger.experiment.set_name(exp_name)
+comet_logger.experiment.log_parameter("exp_name", exp_name)
 
 # Log the training and test sets
-comet_logger.experiment.log_table("train.csv", train)
-comet_logger.experiment.log_table("test.csv", test)
-
-# Pytorch lightning save checkpoint
-#simple_profiler = SimpleProfiler(dirpath=os.path.join(tmpdir,"profiler"), filename="profiler.txt", extended=True)
+#comet_logger.experiment.log_table("train.csv", train)
+#comet_logger.experiment.log_table("test.csv", test)
 
 # Log the devices
 devices = torch.cuda.device_count()
@@ -177,10 +220,35 @@ if args.early_stopping_patience is not None:
     comet_logger.experiment.log_parameter(
         "early_stopping_patience", args.early_stopping_patience
     )
+if args.positive_batch_fraction is not None:
+    comet_logger.experiment.log_parameter(
+        "positive_batch_fraction", args.positive_batch_fraction
+    )
+    comet_logger.experiment.add_tag("balanced_batches")
 
 # Log data sizes
 comet_logger.experiment.log_parameter("train_size", train.shape[0])
 comet_logger.experiment.log_parameter("test_size", test.shape[0])
+
+
+def comet_context(name):
+    """DDP-safe Comet logging context.
+
+    On non-zero ranks PyTorch-Lightning hands back a dummy experiment whose
+    context_manager() returns None (not a context manager), which crashes a bare
+    ``with comet_logger.experiment.context_manager(...)``. Fall back to a no-op so
+    every rank still executes the collective validate()/fit() calls in the body.
+    """
+    cm = comet_logger.experiment.context_manager(name)
+    return cm if cm is not None else nullcontext()
+
+
+# Run id for checkpoint paths. Real Comet experiment id on rank 0; on non-zero DDP
+# ranks experiment.id is a dummy (not a str), so fall back to the SLURM job id so all
+# workers agree on a clean directory name (only rank 0 actually writes checkpoints).
+_run_id = comet_logger.experiment.id
+if not isinstance(_run_id, str):
+    _run_id = os.environ.get("SLURM_JOB_ID", "local")
 
 
 def _log_prediction_images(model, ann_df, image_root, context, n_images, tmpdir):
@@ -243,14 +311,20 @@ if zero_shot_df is not None and "empty_image" not in zero_shot_df.columns:
         & (zero_shot_df["ymax"] == 0)
     )
 
-with comet_logger.experiment.context_manager("zero_shot_pretraining"):
+with comet_context("zero_shot_pretraining"):
     m.config["validation"]["csv_file"] = zeroshot_csv
     m.config["validation"]["root_dir"] = savedir
+    # Force interval=1 so the one-shot validate() at epoch 0 actually computes
+    # box metrics (DeepForest gates _compute_epoch_metrics on (epoch+1) % interval == 0).
+    _saved_val_interval = m.config["validation"]["val_accuracy_interval"]
+    m.config["validation"]["val_accuracy_interval"] = 1
+    _zs_strategy = "ddp" if devices > 1 else "auto"
     m.create_trainer(
-        logger=comet_logger, accelerator="gpu", strategy="ddp",
+        logger=comet_logger, accelerator="gpu", strategy=_zs_strategy,
         num_nodes=1, devices=devices, fast_dev_run=False,
     )
     pre_zero_shot_results = m.trainer.validate(m)
+    m.config["validation"]["val_accuracy_interval"] = _saved_val_interval
     pre_zero_shot_metrics = pre_zero_shot_results[0] if pre_zero_shot_results else {}
     print("\nZero-shot evaluation (pre-training):")
     print(f"  Box Precision: {pre_zero_shot_metrics.get('box_precision', 'N/A')}")
@@ -281,49 +355,45 @@ if args.early_stopping_patience is not None:
         )
     )
 
+images_save_dir = tempfile.mkdtemp(prefix="deepforest_images_")
+callbacks.append(
+    ImagesCallback(
+        save_dir=images_save_dir,
+        prediction_samples=5,
+        dataset_samples=5,
+        every_n_epochs=5,
+        select_random=True,
+    )
+)
+
+checkpoint_dir = f"/blue/ewhite/b.weinstein/BOEM/training/checkpoints/{_run_id}"
+os.makedirs(checkpoint_dir, exist_ok=True)
+callbacks.append(
+    ModelCheckpoint(
+        dirpath=checkpoint_dir,
+        filename="epoch{epoch:02d}-val_cls{val_classification:.4f}",
+        auto_insert_metric_name=False,
+        save_top_k=-1,
+        every_n_epochs=1,
+        save_last=True,
+    )
+)
+
+# Single-GPU: "auto" avoids the DDP wrapper overhead that "ddp" pays even at nranks=1.
+strategy = "ddp" if devices > 1 else "auto"
 m.create_trainer(
-    logger=comet_logger, accelerator="gpu", strategy="ddp",
+    logger=comet_logger, accelerator="gpu", strategy=strategy,
     num_nodes=1, devices=devices, fast_dev_run=False,
     callbacks=callbacks,
 )
 
-# # Create a temporary directory for saving visualizations
-# with tempfile.TemporaryDirectory() as tmpdir:
-#     # Filter non-empty train annotations
-#     non_empty_train = train[~train.empty_image]
-#     n_train = min(5, non_empty_train.shape[0])
-#     for img_path in non_empty_train.image_path.sample(n=n_train).unique():
-#         ann = non_empty_train[non_empty_train.image_path == img_path]
-#         ann.root_dir = savedir
-#         ann = read_file(ann, root_dir=m.config["validation"]["root_dir"])
-#         short_name = os.path.basename(img_path)
-#         visualize.plot_annotations(ann, root_dir=ann.root_dir, savedir=tmpdir)
-#         comet_logger.experiment.log_image(
-#             os.path.join(tmpdir, short_name),
-#             metadata={"name": short_name, "context": "detection_train"}
-#         )
-
-#     # Filter non-empty test annotations
-#     non_empty_test = test[~test.empty_image]
-#     n_test = min(5, non_empty_test.shape[0])
-#     for img_path in non_empty_test.image_path.sample(n=n_test).unique():
-#         ann = non_empty_test[non_empty_test.image_path == img_path]
-#         ann.root_dir = savedir
-#         ann = read_file(ann, root_dir=m.config["validation"]["root_dir"])
-#         short_name = os.path.basename(img_path)
-#         visualize.plot_annotations(ann, root_dir=ann.root_dir, savedir=tmpdir)
-#         comet_logger.experiment.log_image(
-#             os.path.join(tmpdir, short_name),
-#             metadata={"name": short_name, "context": "detection_validation"}
-#         )
-
 m.trainer.fit(m)
 
 # Save the model
-m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/{}.pl".format(comet_logger.experiment.id))
+m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/training/checkpoints/{}.pl".format(_run_id))
 
 # Post-training validation prediction images (in-distribution errors)
-with comet_logger.experiment.context_manager("validation_predictions"):
+with comet_context("validation_predictions"):
     with tempfile.TemporaryDirectory() as tmpdir:
         _log_prediction_images(
             m, test, root_dir,
@@ -333,11 +403,15 @@ with comet_logger.experiment.context_manager("validation_predictions"):
         )
 
 # Zero-shot evaluation on held-out flights (generalization to unseen flights)
-with comet_logger.experiment.context_manager("zero_shot_evaluation"):
+with comet_context("zero_shot_evaluation"):
     m.config["validation"]["csv_file"] = zeroshot_csv
     m.config["validation"]["root_dir"] = savedir
-    m.create_trainer(logger=comet_logger, accelerator="gpu", strategy="ddp", num_nodes=1, devices=devices, fast_dev_run=False)
+    _saved_val_interval = m.config["validation"]["val_accuracy_interval"]
+    m.config["validation"]["val_accuracy_interval"] = 1
+    _zs_strategy = "ddp" if devices > 1 else "auto"
+    m.create_trainer(logger=comet_logger, accelerator="gpu", strategy=_zs_strategy, num_nodes=1, devices=devices, fast_dev_run=False)
     zero_shot_results = m.trainer.validate(m)
+    m.config["validation"]["val_accuracy_interval"] = _saved_val_interval
     zero_shot_metrics = zero_shot_results[0] if zero_shot_results else {}
     print("\nZero-shot evaluation results (post-training):")
     print(f"  Box Precision: {zero_shot_metrics.get('box_precision', 'N/A')}")

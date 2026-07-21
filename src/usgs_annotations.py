@@ -8,7 +8,7 @@ from typing import Optional
 
 import pandas as pd
 
-USGS_CROPS_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+USGS_CROPS_DIR = "/blue/ewhite/b.weinstein/BOEM/training/crops"
 TRAIN_CSV = os.path.join(USGS_CROPS_DIR, "train.csv")
 TEST_CSV = os.path.join(USGS_CROPS_DIR, "test.csv")
 

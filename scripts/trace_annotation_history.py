@@ -21,7 +21,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ANNOTATIONS_BASE = "/blue/ewhite/b.weinstein/BOEM/annotations"
 DETECTION_CROPS_BASE = "/blue/ewhite/b.weinstein/BOEM/detection/crops"
-UBFAI_BASE = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data"
+UBFAI_BASE = "/blue/ewhite/b.weinstein/BOEM/training"
 UBFAI_CROPS = os.path.join(UBFAI_BASE, "crops")
 CUMULATIVE_CSV = os.path.join(UBFAI_BASE, "20260112_annotation_cumulative.csv")
 

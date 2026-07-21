@@ -25,12 +25,19 @@ check_annotations: false
 # Force upload bypasses the pipeline, useful for debugging and starting a new project
 force_upload: False
 image_dir: /blue/ewhite/b.weinstein/BOEM/imagery/JPG_20241107_135800
+# Namespace for crop/checkpoint dirs, caches, and metadata lookup. Defaults to the
+# image_dir basename. Override when leaf dir names repeat across flights — neaq gives
+# every date a "Belly camera edited", which would collide into a single namespace.
+flight_name: null
 
 predict:
   patch_size: 1000
   patch_overlap: 0
   min_score: 0.85
-  batch_size: 8
+  # Images are ~6464x4852 -> 35 patches at patch_size=1000. batch_size=8 meant 5 forward
+  # passes per image and left the B200 at 6.6% memory / 39C (comet 6c9fd7b2). 64 fits all
+  # patches of an image in one pass.
+  batch_size: 64
   workers: 5
   # For web viz, expand pixels on all sides
   buffer: 60
@@ -47,7 +54,9 @@ propagate:
 
 detection_model:
   force_train: False
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/checkpoints/a1c5649615f94b33a4e0dc2a721009fc.pl
+  # Latest round (job 36523583). Run hit the 24h wall at epoch 16/20, so this is the
+  # per-epoch ModelCheckpoint rather than a final .pl; load_from_checkpoint reads it fine.
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/a09c69331af8496380cbf99e3859d656/epoch16-val_cls0.0163.ckpt
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -85,7 +94,9 @@ active_learning:
   # (uses transformed_taxonomy.json to expand e.g. Aves -> all bird species, Cepphus -> guillemots).
   taxonomy_path: /blue/ewhite/b.weinstein/src/BOEM/transformed_taxonomy.json
   taxonomy_aliases:
-    - 'Mysticeti'  # e.g. [Aves, Mammalia, Cepphus] for Birds, Mammals, or Guillemots
+    # Seals: Phocidae expands to its leaves (Halichoerus/H. grypus, Phoca/P. vitulina),
+    # then gets filtered to the labels the classification model actually knows.
+    - 'Phocidae'  # e.g. [Aves, Mammalia, Cepphus] for Birds, Mammals, or Guillemots
 
   # Rarest strategy parameters:
   drop_n_most_common: 5  # Number of most common classes to drop

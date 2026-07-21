@@ -32,7 +32,7 @@ from deepforest.model import CropModel
 from src import label_studio as ls_mod
 
 # Paths to resolve parent patch and annotation CSVs (match investigate_duplicate_crops / prepare_USGS).
-UBFAI_CROPS = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/crops"
+UBFAI_CROPS = "/blue/ewhite/b.weinstein/BOEM/training/crops"
 DETECTION_CROPS_BASE = "/blue/ewhite/b.weinstein/BOEM/detection/crops"
 
 # Crop filename like C1_L6_F560_T20241219_173703_737_23.png -> parent stem C1_L6_F560_T20241219_173703_737
@@ -375,7 +375,7 @@ def run():
     parser = argparse.ArgumentParser(description="Find high-loss classification crops and upload to Label Studio")
     parser.add_argument("--config", type=Path, default=PROJECT_ROOT / "boem_conf" / "classification_model" / "finetune.yaml")
     parser.add_argument("--checkpoint", type=str, default=None)
-    parser.add_argument("--train_crop_dir", type=Path, default="/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train/buffer_30/8d6309e78a4b49c9947e2100f6df93de")
+    parser.add_argument("--train_crop_dir", type=Path, default="/blue/ewhite/b.weinstein/BOEM/training/classification/crops/train/buffer_30/8d6309e78a4b49c9947e2100f6df93de")
     parser.add_argument("--top_n", type=int, default=100)
     parser.add_argument(
         "--max_crops",

@@ -196,6 +196,11 @@ def generate_pool_predictions(
         pool = random.sample(pool, pool_limit)
     print(f"Predicting on {len(pool)} images (pool_limit={pool_limit})")
 
+    if not pool:
+        # A flight can have nothing left to predict on (all images already annotated);
+        # deepforest's predict_tile raises IndexError on an empty path list.
+        return pd.DataFrame()
+
     preannotations = detection.predict(
         m=model,
         image_paths=pool,

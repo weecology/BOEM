@@ -35,6 +35,6 @@ predicted_frame = pd.DataFrame({"predicted_class":predicted_class, "predicted_pr
 
 
 trained_classification_model.create_trainer()
-trained_classification_model.load_from_disk(train_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/train",
-                                            val_dir = "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/classification/crops/val",)
+trained_classification_model.load_from_disk(train_dir = "/blue/ewhite/b.weinstein/BOEM/training/classification/crops/train",
+                                            val_dir = "/blue/ewhite/b.weinstein/BOEM/training/classification/crops/val",)
 trained_classification_model.trainer.validate(trained_classification_model, trained_classification_model.val_dataloader()) # validate the model

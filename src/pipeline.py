@@ -49,7 +49,7 @@ class Pipeline:
 
         self.comet_logger = CometLogger(project_name=self.config.comet.project, workspace=self.config.comet.workspace)
         self.comet_logger.experiment.add_tag("pipeline")
-        flight_name = os.path.basename(self.config.image_dir)
+        flight_name = self._flight_name()
         self.comet_logger.experiment.add_tag(flight_name)
         self.comet_logger.experiment.log_parameters(self.config)
         self.comet_logger.experiment.log_parameter("flight_name", flight_name)
@@ -69,6 +69,16 @@ class Pipeline:
         """Return Comet experiment id as string (handles both property and method API)."""
         eid = self.comet_logger.experiment.id
         return eid() if callable(eid) else eid
+
+    def _flight_name(self):
+        """Name used for crop/checkpoint dirs, caches and metadata lookup.
+
+        Defaults to the image_dir basename. Datasets whose leaf directories repeat
+        across flights (neaq: every date has a "Belly camera edited") must override
+        this, or all dates collide into one namespace and overwrite each other.
+        """
+        override = getattr(self.config, "flight_name", None)
+        return str(override) if override else os.path.basename(self.config.image_dir)
 
     def _classification_metadata_dir(self):
         cls_metadata_dir = getattr(self.config.classification_model, "metadata_dir", None)
@@ -92,12 +102,12 @@ class Pipeline:
         lookup = metadata_lookup_for_images(
             image_paths=pool,
             metadata_dir=metadata_dir,
-            default_flight_name=os.path.basename(self.config.image_dir),
+            default_flight_name=self._flight_name(),
         )
         if pool and not lookup:
             raise ValueError(
                 "classification_model.use_metadata=True but no image metadata "
-                f"matched flight {os.path.basename(self.config.image_dir)}"
+                f"matched flight {self._flight_name()}"
             )
         return lookup
 
@@ -203,22 +213,20 @@ class Pipeline:
 
         self.check_annotations()
 
-        flight_name = os.path.basename(self.config.image_dir)
+        flight_name = self._flight_name()
         if project_name is None:
             project_name = f"BOEM - Full Flight - {flight_name}"
 
         # Run predictions on images not yet annotated (existing_images uses basenames)
         unannotated = [img for img in self.all_images if os.path.basename(img) not in self.existing_images]
         full_flight_cache = os.path.join(self.config.image_dir, ".full_flight_predictions.csv")
-        pool_cache = os.path.join(self.config.image_dir, ".prediction_cache", "pool_predictions.csv")
         pool_predictions = None
         if unannotated:
+            # Only the full-flight cache is valid here. The active-learning pool cache
+            # covers a random pool_limit-sized sample, not the flight.
             if os.path.isfile(full_flight_cache):
                 print(f"Loading cached full-flight predictions from {full_flight_cache}")
                 pool_predictions = pd.read_csv(full_flight_cache)
-            elif os.path.isfile(pool_cache):
-                print(f"Loading cached pool predictions from {pool_cache}")
-                pool_predictions = pd.read_csv(pool_cache)
             else:
                 # No cache — load models and run predictions
                 detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
@@ -404,7 +412,7 @@ class Pipeline:
                     balance_classes=getattr(self.config.classification_model, "balance_classes", False),
                     use_metadata=self._use_classification_metadata(),
                     metadata_dir=self._classification_metadata_dir(),
-                    flight_name=os.path.basename(self.config.image_dir),
+                    flight_name=self._flight_name(),
                     metadata_dim=getattr(self.config.classification_model, "metadata_dim", 32),
                     metadata_dropout=getattr(self.config.classification_model, "metadata_dropout", 0.5))
             else:
@@ -433,10 +441,23 @@ class Pipeline:
         if os.path.isdir(cache_dir):
             ckpt_file = os.path.join(cache_dir, "detection_checkpoint.txt")
             pred_file = os.path.join(cache_dir, "pool_predictions.csv")
+            min_score_file = os.path.join(cache_dir, "min_score.txt")
             if os.path.isfile(ckpt_file) and os.path.isfile(pred_file):
                 with open(ckpt_file) as f:
                     cached_ckpt = f.read().strip()
-                if cached_ckpt == actual_detection_checkpoint:
+                # The cache stores only boxes >= the min_score it was written at, so it is
+                # only valid when that threshold is <= the current one (cache is a superset).
+                # A lower current min_score (or an unmarked/old cache) must force re-prediction.
+                try:
+                    with open(min_score_file) as f:
+                        cached_min_score = float(f.read().strip())
+                except (OSError, ValueError):
+                    cached_min_score = None
+                min_score_ok = (
+                    cached_min_score is not None
+                    and cached_min_score <= self.config.predict.min_score
+                )
+                if cached_ckpt == actual_detection_checkpoint and min_score_ok:
                     cached_df = pd.read_csv(pred_file)
                     if "score" in cached_df.columns:
                         min_score = self.config.predict.min_score
@@ -454,8 +475,13 @@ class Pipeline:
                                 f"running detection+classification on {len(prediction_pool)} images "
                                 f"(previously had ≥{min_score} detections) instead of {len(pool)}"
                             )
-        if not use_cached_pool and os.path.isdir(cache_dir):
-            print("Prediction cache skipped (new or different detection checkpoint, or no cached predictions)")
+        if not use_cached_pool:
+            # The cache block above narrows prediction_pool to images that previously scored
+            # >=min_score. When that set is empty (e.g. a flight where the last run found
+            # nothing) we must fall back to the full pool, or we would predict on 0 images.
+            prediction_pool = pool
+            if os.path.isdir(cache_dir):
+                print("Prediction cache skipped (new or different detection checkpoint, or no cached predictions)")
 
         trained_classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
@@ -510,6 +536,8 @@ class Pipeline:
         os.makedirs(cache_dir, exist_ok=True)
         with open(os.path.join(cache_dir, "detection_checkpoint.txt"), "w") as f:
             f.write(actual_detection_checkpoint)
+        with open(os.path.join(cache_dir, "min_score.txt"), "w") as f:
+            f.write(str(self.config.predict.min_score))
         flightline_predictions.to_csv(os.path.join(cache_dir, "pool_predictions.csv"), index=False)
 
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id
@@ -614,7 +642,7 @@ class Pipeline:
         # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
         final_predictions = flightline_predictions.copy(deep=True)
         final_predictions["set"] = "prediction"
-        final_predictions["flight_name"] = os.path.basename(self.config.image_dir)
+        final_predictions["flight_name"] = self._flight_name()
 
         # Add in the existing training and validation annotations
         if self.existing_training is not None:
@@ -687,7 +715,7 @@ class Pipeline:
         if metadata_dir:
             try:
                 captures, img_w, img_h = load_geospatial_metadata(
-                    os.path.basename(self.config.image_dir), metadata_dir,
+                    self._flight_name(), metadata_dir,
                 )
                 final_predictions = georeference_predictions(
                     final_predictions, captures, img_w, img_h,

@@ -15,7 +15,7 @@
 
 ulimit -c 0
 
-# Usage: sbatch submit_upload_full_flight.sh JPG_20241107_135800
-FLIGHT_NAME=${1:?Usage: sbatch submit_upload_full_flight.sh FLIGHT_NAME}
+# Usage: sbatch submit_upload_full_flight.sh JPG_20241107_135800 [--skip-annotated]
+: ${1:?Usage: sbatch submit_upload_full_flight.sh FLIGHT_NAME [extra args]}
 
-uv run python scripts/upload_full_flight.py "$FLIGHT_NAME"
+uv run python scripts/upload_full_flight.py "$@"

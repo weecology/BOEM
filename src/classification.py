@@ -214,10 +214,19 @@ def preprocess_and_train(
             )
             use_metadata = False
             metadata_csv = None
-        metadata_csv = os.path.join(checkpoint_dir, "classification_crop_metadata.csv")
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        metadata_rows.to_csv(metadata_csv, index=False)
-        print(f"[preprocess_and_train] wrote crop metadata sidecar {metadata_csv}")
+        else:
+            # Per-process filename so concurrent metadata runs (e.g. an embedding-dim
+            # sweep) do not race on a single shared sidecar path.
+            metadata_csv = os.path.join(
+                checkpoint_dir, f"classification_crop_metadata_{os.getpid()}.csv"
+            )
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            metadata_rows.to_csv(metadata_csv, index=False)
+            n_crops = len(pd.concat([train_df, validation_df]))
+            print(
+                f"[preprocess_and_train] wrote crop metadata sidecar {metadata_csv} "
+                f"({len(metadata_rows)}/{n_crops} crops matched to flight metadata)"
+            )
 
     load_kwargs = {
         "train_dir": str(train_crop_image_dir),

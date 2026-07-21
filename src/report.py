@@ -15,7 +15,6 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import MaxNLocator
 import folium
 import folium.raster_layers
-import contextily as ctx
 import cv2
 import rasterio
 from PIL import Image
@@ -331,10 +330,6 @@ def generate_summary_maps(gdf, output_path):
         ax.set_ylim(ymin, ymax)
         ax.set_aspect("equal")
         try:
-            ctx.add_basemap(ax, crs="EPSG:4326", source=ctx.providers.Esri.OceanBasemap)
-        except Exception as e:
-            print("Could not add basemap tiles: " + str(e))
-        try:
             wms_img = _fetch_wms_image((xmin, ymin, xmax, ymax), width=width, height=height)
             ax.imshow(
                 wms_img,
@@ -522,10 +517,6 @@ def _render_pdf_page1(pdf, gdf, species_list, colors, summary_map_path,
     ax_map.set_xlim(minx - margin, maxx + margin)
     ax_map.set_ylim(miny - margin, maxy + margin)
     ax_map.set_aspect("equal")
-    try:
-        ctx.add_basemap(ax_map, crs="EPSG:4326", source=ctx.providers.Esri.WorldImagery)
-    except Exception as e:
-        print("Could not add basemap: " + str(e))
 
     # Legend: color only top 5 most common species; rest as "Other" (gray)
     top_n = 5
@@ -583,7 +574,12 @@ def _render_pdf_page2(pdf, predictions, crop_info, species_list, colors,
 
     ax_bar = fig.add_axes([0.06, 0.55, 0.45, 0.38])
     bar_colors = [colors.get(sp, "#888888") for sp in species_counts.index]
-    species_counts.plot.barh(ax=ax_bar, color=bar_colors)
+    if len(species_counts):
+        species_counts.plot.barh(ax=ax_bar, color=bar_colors)
+    else:
+        # A flight can legitimately have zero predictions; pandas rejects color=[].
+        ax_bar.text(0.5, 0.5, "No predictions", ha="center", va="center",
+                    transform=ax_bar.transAxes, fontsize=9, color="#888888")
     ax_bar.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax_bar.set_xlabel("Count")
     ax_bar.set_title("Predictions by Species", fontsize=11)

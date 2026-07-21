@@ -6,8 +6,8 @@ Auth: reads token from $HF_HOME/token (set via `huggingface-cli login`) or $HF_T
 from deepforest import main
 
 CHECKPOINT = (
-    "/blue/ewhite/b.weinstein/BOEM/UBFAI Images with Detection Data/"
-    "checkpoints/a1c5649615f94b33a4e0dc2a721009fc.pl"
+    "/blue/ewhite/b.weinstein/BOEM/training/"
+    "checkpoints/19022856f861432485a1d3911d85e967.pl"
 )
 REPO_ID = "weecology/deepforest-marine-biodiversity"
 LABEL_DICT = {"Object": 0}

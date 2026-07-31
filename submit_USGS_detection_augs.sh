@@ -5,7 +5,10 @@
 #SBATCH --account=ewhite
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=200GB
+# Bumped from 200GB: job 38309080 reported sstat MaxRSS 244GB over the 200GB request and
+# survived, and this crop set is ~4.5% larger (608,980 vs 582,531 train rows). Cheap
+# insurance against an OOM 12h into a 12.5h run.
+#SBATCH --mem=300GB
 #SBATCH --time=24:00:00
 #SBATCH --output=/home/b.weinstein/logs/detection_BOEM_aug_%x_%j.out
 #SBATCH --error=/home/b.weinstein/logs/detection_BOEM_aug_%x_%j.err

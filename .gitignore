@@ -162,3 +162,21 @@ cython_debug/
 #.idea/
 
 .DS_Store
+
+# BOEM run artifacts — training output, SLURM logs, and local caches.
+# These accumulate in the repo root during HPC runs and must never be committed
+# (flock_dataset.zip alone is 2.6GB).
+lightning_logs/
+outputs/
+output/
+tmp/
+data/
+.cometml-runs/
+.comet.config
+.label_studio.config
+slurm-*.out
+flock_dataset/
+flock_dataset.zip
+sbatch.log
+.claude/
+.vscode/

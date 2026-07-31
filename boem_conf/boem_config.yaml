@@ -54,9 +54,15 @@ propagate:
 
 detection_model:
   force_train: False
-  # Latest round (job 36523583). Run hit the 24h wall at epoch 16/20, so this is the
-  # per-epoch ModelCheckpoint rather than a final .pl; load_from_checkpoint reads it fine.
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/a09c69331af8496380cbf99e3859d656/epoch16-val_cls0.0163.ckpt
+  # Latest round (job 38309080, Comet d1248ed881a847128752f86d1370add3). Completed all 10
+  # epochs; epoch09 is the best (val_classification 0.0144, vs 0.0163 for the previous
+  # a09c6933/epoch16). Per-epoch ModelCheckpoint rather than a final .pl;
+  # load_from_checkpoint reads it fine.
+  # NOTE: trained on the crops as of job 38309076, which predate the neaq fix — this
+  # detector has never seen a neaq frame. Superseded once the neaq-inclusive retrain lands.
+  # Ignore box_recall on the Comet run (~0.06): see deepforest_box_recall_issue.md, empty
+  # frames count in the denominator but never the numerator.
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/d1248ed881a847128752f86d1370add3/epoch09-val_cls0.0144.ckpt
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0

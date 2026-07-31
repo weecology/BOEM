@@ -397,9 +397,19 @@ def import_image_tasks(
         print(f"Importing {image_name} into Label Studio")
         basename = os.path.basename(image_name)
         flight_name = os.path.dirname(image_name).split("/")[-1]
+
+        # Compute relative path from local_image_dir to image_name to preserve directory structure
+        # This handles datasets with nested subdirectories (e.g., NEAQ) correctly
+        try:
+            relative_path = os.path.relpath(image_name, local_image_dir)
+        except ValueError:
+            # If relpath fails (different drives on Windows, etc), fall back to basename
+            relative_path = basename
+
         data_dict = {
             'image': os.path.join("/data/local-files/?d=BOEM/input/", basename),
             'flight_name': flight_name,
+            'image_relative_path': relative_path,
         }
         if predictions is not None:
             prediction = predictions.get(basename, pd.DataFrame())
@@ -435,7 +445,15 @@ def download_completed_tasks(label_studio_project, csv_dir):
         if not task_annotations:
             print(f"Skipping task {labeled_task.get('id')} with no annotations")
             continue
-        image_path = os.path.basename(labeled_task['data']['image'])
+
+        # Use relative_path if available (preserves directory structure for nested datasets like NEAQ),
+        # otherwise fall back to basename for backwards compatibility with old Label Studio exports
+        task_data = labeled_task['data']
+        if 'image_relative_path' in task_data:
+            image_path = task_data['image_relative_path']
+        else:
+            image_path = os.path.basename(task_data['image'])
+
         images.append(image_path)
         label_json = task_annotations[0]["result"]
         if len(label_json) == 0:

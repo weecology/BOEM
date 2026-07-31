@@ -41,6 +41,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import argparse
+import functools
 import glob
 import os
 import random
@@ -59,6 +60,10 @@ ANNOTATIONS_BASE = "/blue/ewhite/b.weinstein/BOEM/annotations"
 IMAGERY_BASE = "/blue/ewhite/b.weinstein/BOEM/imagery"
 SCREENED_IMAGES_BASE = "/blue/ewhite/b.weinstein/BOEM/screened_images"
 DETECTION_CROPS_BASE = "/blue/ewhite/b.weinstein/BOEM/detection/crops"
+# neaq imagery is nested <date>/<camera dir>/, and the camera dir name is what Label
+# Studio records as flight_name — so one flight_name ("Belly camera edited") spans many
+# date dirs and cannot be resolved to a single root_dir.
+NEAQ_BASE = "/blue/ewhite/b.weinstein/BOEM/neaq"
 # Read-only Globus source (annotations + raw imagery)
 AWS_ANNOTATIONS_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Data Collection/annotation_aws"
 AWS_IMAGERY_DIR = "/blue/ewhite/b.weinstein/BOEM/UBFAI Data Collection/imagery"
@@ -99,6 +104,20 @@ def _detection_crop_worker(task: tuple) -> str:
         allow_empty=True,
     )
     return image_path
+
+
+@functools.lru_cache(maxsize=None)
+def _neaq_image_index(flight_name: str) -> dict:
+    """Map basename -> absolute path for one neaq camera dir across every date dir.
+
+    Basenames carry the capture date (NEAQ_20220421_B_1427.JPG), so they are unique
+    across the whole tree; this is what lets a flat annotation CSV be resolved back
+    to the right date dir.
+    """
+    return {
+        os.path.basename(p): p
+        for p in glob.glob(os.path.join(NEAQ_BASE, "*", flight_name, "*.JPG"))
+    }
 
 
 def parse_args():
@@ -309,8 +328,6 @@ def generate_detection_crops():
     is newer than the existing crop CSV (or the crop CSV is missing). Crops
     whose annotations have not changed are left untouched.
     """
-    from src import data_processing
-
     flight_dirs = set()
     for sub in ("train", "validation", "review"):
         parent = os.path.join(ANNOTATIONS_BASE, sub)
@@ -332,17 +349,27 @@ def generate_detection_crops():
         # are silently dropped at stage 0.
         primary = os.path.join(IMAGERY_BASE, flight_name)
         fallback = os.path.join(SCREENED_IMAGES_BASE, flight_name)
+        neaq_index = {}
         if os.path.isdir(primary):
             root_dir = primary
         elif os.path.isdir(fallback):
             root_dir = fallback
             print(f"  {flight_name}: using screened_images fallback")
         else:
+            # Last resort: neaq, where this flight_name is a camera dir repeated under
+            # many date dirs. Resolve per image instead of picking one root_dir.
+            neaq_index = _neaq_image_index(flight_name)
+            if not neaq_index:
+                print(
+                    f"  Skip {flight_name}: imagery dir not found in "
+                    f"{IMAGERY_BASE}, {SCREENED_IMAGES_BASE} or {NEAQ_BASE}"
+                )
+                continue
+            root_dir = None
             print(
-                f"  Skip {flight_name}: imagery dir not found in "
-                f"{IMAGERY_BASE} or {SCREENED_IMAGES_BASE}"
+                f"  {flight_name}: using neaq fallback "
+                f"({len(neaq_index)} images indexed across date dirs)"
             )
-            continue
         save_dir = os.path.join(DETECTION_CROPS_BASE, flight_name)
 
         csvs = []
@@ -363,16 +390,32 @@ def generate_detection_crops():
         combined = pd.concat(parts, ignore_index=True).drop_duplicates()
         combined = _normalize_annotation_columns(combined)
 
-        # Keep only annotations whose images actually exist on disk
-        combined["_path"] = combined["image_path"].apply(
-            lambda p: os.path.join(root_dir, p)
-        )
-        combined = combined[combined["_path"].apply(os.path.exists)].drop(
-            columns=["_path"]
-        )
+        # Resolve every annotation to an absolute image path, then keep only the ones
+        # that exist on disk. Splitting the resolved path into (dir, basename) lets one
+        # flight span several roots, which neaq requires and nested relative image_paths
+        # (see src/label_studio.py image_relative_path) also benefit from.
+        if neaq_index:
+            resolved = combined["image_path"].apply(
+                lambda p: neaq_index.get(os.path.basename(p))
+            )
+        else:
+            resolved = combined["image_path"].apply(
+                lambda p: os.path.join(root_dir, p)
+            )
+        combined["_path"] = resolved
+        combined = combined[
+            combined["_path"].notna() & combined["_path"].apply(
+                lambda p: isinstance(p, str) and os.path.exists(p)
+            )
+        ]
         if combined.empty:
             print(f"  Skip {flight_name}: no annotations with existing images")
             continue
+
+        # Re-key onto (containing dir, basename) so each group has a valid root_dir
+        combined["_root"] = combined["_path"].apply(os.path.dirname)
+        combined["image_path"] = combined["_path"].apply(os.path.basename)
+        combined = combined.drop(columns=["_path"])
 
         # Per image: max mtime of any annotation CSV that contains it
         image_ann_mtime = combined.groupby("image_path")["_source_mtime"].max()
@@ -396,22 +439,16 @@ def generate_detection_crops():
 
         combined_refresh = combined[combined["image_path"].isin(images_to_refresh)]
         n_workers = min(_detection_crop_parallel_workers(), len(images_to_refresh))
-        if n_workers <= 1:
-            data_processing.preprocess_images(
-                combined_refresh,
-                root_dir=root_dir,
-                save_dir=save_dir,
-                patch_size=PATCH_SIZE,
-                patch_overlap=PATCH_OVERLAP,
-                allow_empty=True,
-            )
-        else:
-            tasks = []
-            for image_path in images_to_refresh:
-                ann = combined_refresh[combined_refresh["image_path"] == image_path]
+
+        # One task per image, carrying the root_dir that image actually lives under.
+        tasks = []
+        for image_root, group in combined_refresh.groupby("_root"):
+            group = group.drop(columns=["_root"])
+            for image_path in group["image_path"].unique():
+                ann = group[group["image_path"] == image_path]
                 tasks.append(
                     (
-                        root_dir,
+                        image_root,
                         save_dir,
                         image_path,
                         ann.to_dict("records"),
@@ -419,9 +456,15 @@ def generate_detection_crops():
                         PATCH_OVERLAP,
                     )
                 )
+
+        n_roots = combined_refresh["_root"].nunique()
+        if n_workers <= 1:
+            for task in tasks:
+                _detection_crop_worker(task)
+        else:
             print(
                 f"  {flight_name}: parallel split_raster "
-                f"({len(tasks)} images, {n_workers} workers)"
+                f"({len(tasks)} images, {n_roots} root dirs, {n_workers} workers)"
             )
             with ProcessPoolExecutor(max_workers=n_workers) as pool:
                 futures = [pool.submit(_detection_crop_worker, t) for t in tasks]

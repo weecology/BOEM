@@ -27,4 +27,7 @@ export NCCL_DEBUG=INFO
 # while detection trains against the shared .venv (tmp/hpc-balanced-empty-frames). Keep them separate so
 # this job's uv sync does not mutate the detection job's environment.
 export UV_PROJECT_ENVIRONMENT=/blue/ewhite/b.weinstein/src/BOEM/.venv-classification
-uv run python -u /blue/ewhite/b.weinstein/src/BOEM/scripts/USGS_classification.py
+# use_metadata=False for this round: metadata is not needed and the lookup adds
+# no value while several recent flights (neaq/BRI) have no capture metadata at all.
+uv run python -u /blue/ewhite/b.weinstein/src/BOEM/scripts/USGS_classification.py \
+    classification_model.use_metadata=False

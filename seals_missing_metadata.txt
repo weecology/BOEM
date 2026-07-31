@@ -1,0 +1,26 @@
+# Flights excluded from the seals run: no <datetime>_captures.csv in metadata_aflight_csvs
+# (classifier requires spatiotemporal metadata; pipeline raises without it)
+# 23 flights, 189,477 images
+imagery/JPG_20260202_141900	70213	images
+imagery/JPG_20241219_131500	37292	images
+imagery/JPG_20241219_120500	20052	images
+screened_images/JPG_2021_March24	7530	images
+screened_images/SE_JPG_2023_April25_NC	5812	images
+screened_images/JPG_2024_Feb29a	5179	images
+screened_images/JPG_March29b	4712	images
+screened_images/JPG_2023_Dec14	4489	images
+screened_images/SE_JPG_2023_April24_NC	4226	images
+imagery/JPG_20241219_150200	4055	images
+screened_images/JPG_2024_Jan31	3936	images
+screened_images/2023_June20b_JPG	3848	images
+screened_images/JPG_2024_Feb29b	3419	images
+screened_images/JPG_2024_Jan5_6b	3320	images
+screened_images/2023_Sept5_jpgs	3141	images
+screened_images/JPG_2024_Jan31b	2581	images
+screened_images/2023_June21_800ft_JPG	1510	images
+screened_images/JPG_2024_Jan27	1018	images
+screened_images/JPG_20241219_120500	912	images
+screened_images/2023_Sept7_jpgs	787	images
+screened_images/JPG_20241219_131500	650	images
+screened_images/JPG_20241219__150200	489	images
+screened_images/JPG_20260202_141900	306	images

@@ -133,7 +133,9 @@ class LabelStudioAnnotator(BaseAnnotator):
         instance_cfg = self.cfg.annotation.label_studio.instances[instance_name]
         return ls_mod.check_for_new_annotations(
             url=self.cfg.annotation.label_studio.url,
-            csv_dir=os.path.dirname(self.cfg.annotation.label_studio.instances.train.csv_dir),
+            # Strip the flight suffix added in __init__; download_completed_tasks re-appends
+            # the flight_name carried on each task, which need not match cfg.image_dir.
+            csv_dir=os.path.dirname(instance_cfg.csv_dir),
             project_name=instance_cfg.project_name,
             image_dir=image_dir,
         )

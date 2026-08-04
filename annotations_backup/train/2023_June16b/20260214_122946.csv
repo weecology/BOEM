@@ -1,0 +1,11 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+3125.0,2251.0,3152.0000000000005,2313.0,FalsePositive,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+3125.0,2251.0,3152.0000000000005,2313.0,Dermochelys coriacea,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+2402.0,2034.0,2435.0,2109.0,FalsePositive,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+2402.0,2034.0,2435.0,2109.0,Dermochelys coriacea,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+3270.9999999999995,2842.0,3303.0,2895.0000000000005,FalsePositive,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+3270.9999999999995,2842.0,3303.0,2895.0000000000005,Leucophaeus atricilla,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+3326.0000000000005,2912.0,3357.0,2959.9999999999995,FalsePositive,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+3326.0000000000005,2912.0,3357.0,2959.9999999999995,Leucophaeus atricilla,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+3644.0,2168.0,3702.0,2228.0,FalsePositive,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b
+3644.0,2168.0,3702.0,2228.0,Dermochelys coriacea,C1_L2_F408_T20230616_101744_418.jpg," benweinstein2010@gmail.com, 2",2023_June16b

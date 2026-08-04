@@ -1,0 +1,43 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+5102.0,3782.0,5177.0,3891.0,Morus bassanus,C7_L11_F3569_T20230905_125157_023.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+2476.0,2051.0,2663.0,2153.0,FalsePositive,C7_L2_F549_T20230905_110950_667.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3421.0,436.0,3598.0,599.0,FalsePositive,C6_L12_F4024_T20230905_125846_663.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+1314.0,698.0,1352.9999999999998,742.0,Larus delawarensis/argentatus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+1062.0,854.0,1128.0,878.0,Larus delawarensis/argentatus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+4607.0,3123.0,4806.0,3279.9999999999995,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+5369.0,2308.0,5465.0,2378.0,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+4946.097738063885,2227.0,5066.000000000012,2355.9819003585394,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+5517.0,2290.0,5606.0,2358.0,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+5719.0,2199.0000000000005,5800.0,2355.0000000000005,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+4918.999999999999,2145.0,4986.999999999999,2241.0,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+6244.000000000001,2215.0,6341.000000000001,2263.0,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+4749.109518402858,838.479630117346,4814.99006076922,918.3348329856649,Larus marinus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+5950.930321571055,1575.1438765775865,6036.774664654497,1682.948400449816,Larus argentatus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+6228.427151538461,2090.2099350782414,6378.155656916558,2217.9782596675514,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+4050.3764933050693,3075.2217361799094,4220.0687994002465,3274.8597433507057,Halichoerus grypus,C4_L4_F548_T20230905_113817_365.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+13.0,3008.0,133.99999999999997,3148.0,Halichoerus grypus,C7_L3_F662_T20230905_111226_042.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+1235.0,822.0,1481.0,947.9999999999999,FalsePositive,C5_L12_F3913_T20230905_125721_132.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+884.0000000000001,1204.0,997.0000000000001,1297.0,Halichoerus grypus,C5_L2_F263_T20230905_110550_432.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+117.99999999999999,1000.0,155.0,1080.0,FalsePositive,C2_L10_F3237_T20230905_124713_523.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+739.0,4260.0,913.0,4390.0,Tursiops truncatus,C6_L12_F4227_T20230905_130123_007.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+5089.0,3024.0,5211.0,3158.0,Halichoerus grypus,C6_L3_F662_T20230905_111225_979.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+2510.8678076942215,726.8819841088706,2666.7850912946133,968.4439727855347,Halichoerus grypus,C6_L3_F662_T20230905_111225_979.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3430.0000000000005,1144.0,3523.0000000000005,1333.0000000000002,Tursiops truncatus,C4_L12_F3970_T20230905_125805_507.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3779.0,1016.0,3921.9999999999995,1197.0,Tursiops truncatus,C4_L12_F3970_T20230905_125805_507.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+4297.0,1316.0,4518.0,1429.0,Tursiops truncatus,C4_L12_F3970_T20230905_125805_507.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+4194.5439773594135,1171.4375357918148,4288.794172319541,1373.2558880433903,Tursiops truncatus,C4_L12_F3970_T20230905_125805_507.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+627.0,3000.0,668.0,3108.0,FalsePositive,C1_L10_F3424_T20230905_124937_476.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+717.0000000000001,2262.0,839.0000000000001,2416.0,Delphinidae,C4_L2_F414_T20230905_110757_620.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3299.0,3282.0,3480.0,3470.0,Tursiops truncatus,C4_L2_F414_T20230905_110757_620.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+2845.0,3000.0,2883.0,3096.0,FalsePositive,C1_L10_F3233_T20230905_124710_398.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+2159.0,4000.0,2194.0000000000005,4091.0,FalsePositive,C1_L10_F3233_T20230905_124710_398.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3251.6969093979783,1856.5453640969674,3364.6969093979787,1995.5453640969674,Delphinidae,C2_L4_F673_T20230905_113953_006.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3492.8424724816173,1978.4486536856596,3583.8424724816177,2103.44865368566,Delphinidae,C2_L4_F673_T20230905_113953_006.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3602.612163421415,1793.3818543612135,3689.6121634214146,1962.3818543612135,Delphinidae,C2_L4_F673_T20230905_113953_006.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+1010.0,403.0,1098.0,436.99999999999994,Delphinidae,C3_L4_F1429_T20230905_121644_960.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+1575.0,1191.0,1677.0,1350.0,Tursiops truncatus,C3_L4_F1429_T20230905_121644_960.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3306.3228353118234,1991.3228353118234,3441.3228353118234,2178.3228353118234,Delphinus delphis,C5_L10_F3148_T20230905_124605_132.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3444.9999999999995,1713.9583798218168,3516.9999999999995,1855.9583798218168,Delphinus delphis,C5_L10_F3148_T20230905_124605_132.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3095.5208100890877,1880.6771646881796,3203.4791899109073,2084.2924569708616,Delphinus delphis,C5_L10_F3148_T20230905_124605_132.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+3036.0416201781845,1476.4375697327234,3146.0416201781845,1540.4375697327234,Delphinus delphis,C5_L10_F3148_T20230905_124605_132.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs
+2637.9999999999995,4059.0,2803.9999999999995,4167.0,Tursiops truncatus,C3_L4_F1264_T20230905_121437_913.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_Sept5_jpgs

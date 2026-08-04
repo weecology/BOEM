@@ -1,0 +1,6 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+2699.0,21.0,2738.0,60.99999999999999,Larus argentatus,C3_L1_F109_T20241107_151931_438.jpg," benweinstein2010@gmail.com, 2",JPG_20241107_151700
+42.00000000000001,2337.0,74.0,2393.0,FalsePositive,C3_L1_F109_T20241107_151931_438.jpg," benweinstein2010@gmail.com, 2",JPG_20241107_151700
+42.00000000000001,2337.0,74.0,2393.0,Ardea alba,C3_L1_F109_T20241107_151931_438.jpg," benweinstein2010@gmail.com, 2",JPG_20241107_151700
+35.0,858.0,80.0,919.0,FalsePositive,C3_L1_F109_T20241107_151931_438.jpg," benweinstein2010@gmail.com, 2",JPG_20241107_151700
+35.0,858.0,80.0,919.0,Ardea alba,C3_L1_F109_T20241107_151931_438.jpg," benweinstein2010@gmail.com, 2",JPG_20241107_151700

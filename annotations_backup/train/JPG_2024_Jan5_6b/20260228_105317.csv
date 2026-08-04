@@ -1,0 +1,4 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+669.0,3947.0,694.0,3996.0,FalsePositive,C7_L30_F6689_T20240105_132513_107.jpg," sanacleto@ufl.edu, 24",JPG_2024_Jan5_6b
+4180.0,4278.0,4329.0,4439.0,FalsePositive,C5_L4_F1263_T20240105_114225_654.jpg," sanacleto@ufl.edu, 24",JPG_2024_Jan5_6b
+189.0,4246.000000000001,336.00000000000006,4382.000000000001,FalsePositive,C7_L4_F1264_T20240105_114226_529.jpg," sanacleto@ufl.edu, 24",JPG_2024_Jan5_6b

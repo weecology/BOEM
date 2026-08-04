@@ -1,0 +1,4 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+2003.0,1209.0,2113.0,1331.0000000000002,Laridae,C1_L5_F1209_T20230621_134016_128.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June21_800ft_JPG
+1334.0,4477.0,1512.9999999999998,4666.0,Phocidae,C4_L9_F1712_T20230621_135107_143.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June21_800ft_JPG
+1457.9999999999998,3432.0,1526.0,3541.0,Phocidae,C2_L10_F1838_T20230621_135411_924.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June21_800ft_JPG

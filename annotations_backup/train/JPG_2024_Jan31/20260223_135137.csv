@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+6114.0,3138.0000000000005,6262.0,3221.0,FalsePositive,C4_L4_F2551_T20240131_123624_205.jpg," benweinstein2010@gmail.com, 2",JPG_2024_Jan31
+6114.0,3138.0000000000005,6262.0,3221.0,Larus argentatus,C4_L4_F2551_T20240131_123624_205.jpg," benweinstein2010@gmail.com, 2",JPG_2024_Jan31
+3880.0,4617.0,4000.0,4733.0,FalsePositive,C4_L4_F2551_T20240131_123624_205.jpg," benweinstein2010@gmail.com, 2",JPG_2024_Jan31
+3880.0,4617.0,4000.0,4733.0,Tursiops truncatus,C4_L4_F2551_T20240131_123624_205.jpg," benweinstein2010@gmail.com, 2",JPG_2024_Jan31

@@ -1,0 +1,8 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+504.0,3321.235050672036,620.0,3431.235050672036,FalsePositive,C7_L3_F396_T20230620_091441_969.jpg," benweinstein2010@gmail.com, 2",2023_June20a_JPG
+504.0,3321.235050672036,620.0,3431.235050672036,Tursiops truncatus,C7_L3_F396_T20230620_091441_969.jpg," benweinstein2010@gmail.com, 2",2023_June20a_JPG
+1223.0,203.0,1352.0,265.0,Tursiops truncatus,C2_L13_F4339_T20230620_103913_622.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June20a_JPG
+1577.0,611.0,1758.0,701.0,Tursiops truncatus,C2_L13_F4339_T20230620_103913_622.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June20a_JPG
+1435.0,1053.0,1638.9999999999998,1169.0,Tursiops truncatus,C2_L13_F4339_T20230620_103913_622.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June20a_JPG
+1192.164403505894,388.38666849591345,1382.7279558052903,522.6886005926312,Tursiops truncatus,C2_L13_F4339_T20230620_103913_622.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June20a_JPG
+1662.2211658444062,702.3628070463482,1821.931571581043,820.3307203745461,Tursiops truncatus,C2_L13_F4339_T20230620_103913_622.jpg,"Brier Klossing b.klossing@ufl.edu, 20",2023_June20a_JPG

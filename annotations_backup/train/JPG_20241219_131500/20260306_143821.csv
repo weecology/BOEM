@@ -1,0 +1,3 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+2686.0,579.0,2720.0,642.0,FalsePositive,C6_L1_F1552_T20241219_134552_170.jpg," sanacleto@ufl.edu, 24",JPG_20241219_131500
+6409.784373700268,2357.245307950912,6442.323439449611,2424.5390657493476,Larus argentatus,C5_L1_F3770_T20241219_141925_710.jpg," sanacleto@ufl.edu, 24",JPG_20241219_131500

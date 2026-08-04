@@ -1,0 +1,7 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+6116.0,1053.0,6277.0,1144.0,FalsePositive,C3_L11_F2170_T20230621_140034_237.jpg," benweinstein2010@gmail.com, 2",2023_June21_800ft_JPG
+6116.0,1053.0,6277.0,1144.0,Larus argentatus,C3_L11_F2170_T20230621_140034_237.jpg," benweinstein2010@gmail.com, 2",2023_June21_800ft_JPG
+4675.000000000001,1086.0,4853.000000000001,1178.0,FalsePositive,C3_L11_F2170_T20230621_140034_237.jpg," benweinstein2010@gmail.com, 2",2023_June21_800ft_JPG
+4675.000000000001,1086.0,4853.000000000001,1178.0,Tursiops truncatus,C3_L11_F2170_T20230621_140034_237.jpg," benweinstein2010@gmail.com, 2",2023_June21_800ft_JPG
+5570.0,1033.0,5724.0,1115.0,FalsePositive,C3_L11_F2170_T20230621_140034_237.jpg," benweinstein2010@gmail.com, 2",2023_June21_800ft_JPG
+5570.0,1033.0,5724.0,1115.0,Larus argentatus,C3_L11_F2170_T20230621_140034_237.jpg," benweinstein2010@gmail.com, 2",2023_June21_800ft_JPG

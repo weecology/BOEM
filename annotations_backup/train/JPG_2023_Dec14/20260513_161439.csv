@@ -1,0 +1,4 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+1110.0,1561.0,1231.0,1738.0,Larus argentatus,C2_L17_F3973_T20231214_133631_486.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2023_Dec14
+3881.0,3488.0,3997.0,3637.0000000000005,Larus delawarensis/argentatus,C7_L24_F5015_T20231214_135808_439.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2023_Dec14
+5296.0,1031.0000000000002,5461.0,1188.0000000000002,FalsePositive,C7_L17_F3825_T20231214_133437_736.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2023_Dec14

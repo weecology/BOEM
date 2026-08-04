@@ -1,0 +1,6 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+4929.0,3234.999999999997,5014.99891875319,3351.9998197921977,Morus bassanus,C7_L6_F6677_T20260202_163148_748.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_141900
+3227.0,3669.0000000000005,3582.0,3823.0000000000005,Elasmobranchii,C2_L1_F435_T20260202_144557_024.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_141900
+6259.0,179.0,6377.0,286.0,FalsePositive,C6_L4_F4098_T20260202_154730_895.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_141900
+3800.0,4521.0,3899.0,4700.0,Elasmobranchii,C2_L4_F3780_T20260202_154343_319.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_141900
+2322.0,2536.0,2584.0,2726.0000000000005,Delphinidae,C6_L3_F2616_T20260202_152354_232.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_141900

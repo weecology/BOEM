@@ -1,5 +1,22 @@
 # Agent Instructions
 
+## Annotation Backup
+
+`annotations_backup/` is a git-versioned mirror of the Label Studio annotation CSVs
+in `/blue/ewhite/b.weinstein/BOEM/annotations`. It exists because those CSVs are the
+*only* copy of every human annotation: `check_for_new_annotations` deletes completed
+tasks from the Label Studio server after download, and /blue is Lustre with no
+snapshots. Refresh it after any annotation download:
+
+```
+uv run python scripts/backup_annotations.py           # sync, then commit
+uv run python scripts/backup_annotations.py --check   # report drift, exit 1 if stale
+```
+
+Treat a "changed" (not new) file as a red flag — downloads are append-only, so an
+in-place rewrite means an existing annotation was overwritten. Never delete from
+`annotations_backup/` to match upstream; retaining orphans is the point.
+
 ## Job Ledger
 
 Before submitting a SLURM job from this repo (sbatch), and after checking on

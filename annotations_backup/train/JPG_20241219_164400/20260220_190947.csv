@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+3183.0,4572.0,3221.0,4588.0,FalsePositive,C2_L1_F10_T20241219_165139_794.jpg," benweinstein2010@gmail.com, 2",JPG_20241219_164400
+3183.0,4572.0,3221.0,4588.0,Somateria mollissima,C2_L1_F10_T20241219_165139_794.jpg," benweinstein2010@gmail.com, 2",JPG_20241219_164400
+4281.0,4224.999999999999,4618.0,4662.0,FalsePositive,C2_L1_F10_T20241219_165139_794.jpg," benweinstein2010@gmail.com, 2",JPG_20241219_164400
+4281.0,4224.999999999999,4618.0,4662.0,Larus argentatus,C2_L1_F10_T20241219_165139_794.jpg," benweinstein2010@gmail.com, 2",JPG_20241219_164400

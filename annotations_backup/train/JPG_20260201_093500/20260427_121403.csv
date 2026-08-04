@@ -1,0 +1,4 @@
+image_path,xmin,ymin,xmax,ymax,label,annotator,flight_name
+C6_L6_F5604_T20260201_111550_150.jpg,883.0,3213.0,935.0,3300.0,Larus argentatus,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260201_093500
+C2_L2_F200_T20260201_094720_518.jpg,2884.0,2.0,2959.0,78.0,FalsePositive,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260201_093500
+C1_L3_F359_T20260201_095114_893.jpg,5070.999999999999,1284.9999999999998,5149.999999999999,1387.9999999999998,Thalasseus maximus,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260201_093500

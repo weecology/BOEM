@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+1165.9999999999998,3946.0,1209.9999999999998,3997.9999999999995,FalsePositive,C1_L5_F1031_T20240131_141233_202.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan31b
+300.0,2624.9999999999995,342.0,2702.9999999999995,Gavia immer,C4_L11_F6208_T20240131_153321_594.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan31b
+481.0,626.0,653.0,791.0,FalsePositive,C7_L12_F7699_T20240131_155608_234.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan31b
+6211.0,1608.0,6335.0,1702.0,FalsePositive,C7_L15_F8082_T20240131_160212_422.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan31b

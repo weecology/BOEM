@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+3004.0,759.0,3226.0,898.9999999999999,Pelecanus occidentalis,C3_L1_F2324_T20241219_135635_878.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20241219_131500
+3654.1452482305667,2368.6258902186783,3734.594960839521,2458.620483984627,Larus delawarensis/argentatus,C3_L1_F2324_T20241219_135635_878.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20241219_131500
+4042.0,1728.0,4085.9999999999995,1776.9999999999998,FalsePositive,C2_L1_F1548_T20241219_134548_435.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20241219_131500
+5789.0,2148.0,5889.0,2366.0,Pelecanus occidentalis,C2_L1_F2500_T20241219_140145_972.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20241219_131500

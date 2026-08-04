@@ -1,0 +1,10 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+893.0,4001.0,990.0,4040.0,FalsePositive,C3_L11_F3925_T20240105_122617_982.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+3368.9999999999995,2086.0,3461.9999999999995,2239.0,FalsePositive,C6_L5_F1845_T20240105_115059_966.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+1803.0,1559.0,1858.0,1597.0,FalsePositive,C6_L5_F1845_T20240105_115059_966.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+5109.0,1931.0,5168.0,1971.0,FalsePositive,C3_L20_F5409_T20240105_130004_872.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+4000.0,1213.0,4100.0,1298.0,FalsePositive,C3_L20_F5409_T20240105_130004_872.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+2802.0,850.0,2841.0000000000005,872.0,FalsePositive,C3_L20_F5409_T20240105_130004_872.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+1443.0,4494.0,1489.0,4551.0,FalsePositive,C3_L20_F5409_T20240105_130004_872.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+153.0,1075.0,446.99999999999994,1239.0,FalsePositive,C3_L10_F3389_T20240105_121908_513.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b
+3089.0,2773.0,3289.0000000000005,2953.0,FalsePositive,C7_L30_F7466_T20240105_133511_419.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Jan5_6b

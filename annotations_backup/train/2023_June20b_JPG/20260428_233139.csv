@@ -1,0 +1,7 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+1406.0,537.0,1436.0,580.0,Larus argentatus,C1_L9_F1984_T20230620_135827_173.jpg," benweinstein2010@gmail.com, 2",2023_June20b_JPG
+4215.999999999999,4332.0,4265.0,4416.0,Larus marinus,C1_L9_F1984_T20230620_135827_173.jpg," benweinstein2010@gmail.com, 2",2023_June20b_JPG
+1903.0,4677.0,1968.9999999999998,4717.0,Larus marinus,C1_L9_F1984_T20230620_135827_173.jpg," benweinstein2010@gmail.com, 2",2023_June20b_JPG
+899.0,158.0,923.0,196.0,Larus argentatus,C1_L9_F1984_T20230620_135827_173.jpg," benweinstein2010@gmail.com, 2",2023_June20b_JPG
+773.0000000000001,4373.0,936.0000000000001,4597.0,FalsePositive,C1_L9_F1984_T20230620_135827_173.jpg," benweinstein2010@gmail.com, 2",2023_June20b_JPG
+773.0000000000001,4373.0,936.0000000000001,4597.0,Balaenoptera physalus,C1_L9_F1984_T20230620_135827_173.jpg," benweinstein2010@gmail.com, 2",2023_June20b_JPG

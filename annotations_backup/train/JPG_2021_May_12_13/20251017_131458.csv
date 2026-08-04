@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+5084.537945882195,4679.3134612060985,5112.5379458821935,4720.3134612060985,Sterninae,C2_L4_F1560_T20210513_134445_793.JPG,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2021_May_12_13
+5826.0,796.0,5846.0,859.0,FalsePositive,C7_L6_F2869_T20210513_100945_435.JPG,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2021_May_12_13
+4723.000000000001,1004.0,4754.0,1053.0,FalsePositive,C2_L3_F968_T20210513_105000_132.JPG,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2021_May_12_13
+0.0,0.0,0.0,0.0,FalsePositive,C6_L1_F516_T20210513_111439_943.JPG,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2021_May_12_13

@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+778.9999999999999,1339.0,920.9999999999999,1429.0,FalsePositive,C3_L27_F5691_T20231214_141014_189.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+778.9999999999999,1339.0,920.9999999999999,1429.0,Tursiops truncatus,C3_L27_F5691_T20231214_141014_189.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2634.0,4299.0,2760.0,4441.0,FalsePositive,C4_L10_F1957_T20231214_125648_142.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2634.0,4299.0,2760.0,4441.0,Tursiops truncatus,C4_L10_F1957_T20231214_125648_142.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14

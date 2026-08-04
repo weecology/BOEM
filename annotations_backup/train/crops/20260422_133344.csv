@@ -1,0 +1,10 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+0.0,0.0,0.0,0.0,0,C1_L4_F1433_T20240214_154918_432_11.png," benweinstein2010@gmail.com, 2",crops
+664.2214851727965,798.2516583612081,726.2214851727966,895.2516583612081,FalsePositive,C1_L4_F599_T20231214_122909_127_25.png," benweinstein2010@gmail.com, 2",crops
+664.2214851727965,798.2516583612081,726.2214851727966,895.2516583612081,Tursiops truncatus,C1_L4_F599_T20231214_122909_127_25.png," benweinstein2010@gmail.com, 2",crops
+207.25000000000003,258.5,296.25,394.5,FalsePositive,C2_L17_F4182_T20231214_133912_424_13.png," benweinstein2010@gmail.com, 2",crops
+207.25000000000003,258.5,296.25,394.5,Tursiops truncatus,C2_L17_F4182_T20231214_133912_424_13.png," benweinstein2010@gmail.com, 2",crops
+580.0,440.0,610.0,469.0,FalsePositive,C3_L2_F1688_T20250827_144924_412_34.png," benweinstein2010@gmail.com, 2",crops
+634.0,447.0,760.0,589.0,FalsePositive,C4_L10_F1957_T20231214_125648_142_14.png," benweinstein2010@gmail.com, 2",crops
+634.0,447.0,760.0,589.0,Tursiops truncatus,C4_L10_F1957_T20231214_125648_142_14.png," benweinstein2010@gmail.com, 2",crops
+0.0,0.0,0.0,0.0,0,C7_L7_F2629_T20240131_143827_250_21.png," benweinstein2010@gmail.com, 2",crops

@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+5671.0,3906.0,5743.0,4000.0,FalsePositive,C5_L1_F11_T20250828_125736_680.jpg," benweinstein2010@gmail.com, 2",JPG_20250828_124600
+5671.0,3906.0,5743.0,4000.0,Halichoerus grypus,C5_L1_F11_T20250828_125736_680.jpg," benweinstein2010@gmail.com, 2",JPG_20250828_124600
+4169.0,4760.0,4236.999999999999,4828.0,FalsePositive,C5_L1_F11_T20250828_125736_680.jpg," benweinstein2010@gmail.com, 2",JPG_20250828_124600
+4169.0,4760.0,4236.999999999999,4828.0,Phoca vitulina,C5_L1_F11_T20250828_125736_680.jpg," benweinstein2010@gmail.com, 2",JPG_20250828_124600

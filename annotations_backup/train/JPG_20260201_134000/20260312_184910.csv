@@ -1,0 +1,4 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+5124.000000000001,1227.0,5152.0,1275.9999999999998,Larus,C6_L1_F13_T20260201_135714_123.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260201_134000
+4523.0,4524.0,4681.0,4630.0,Morus bassanus,C1_L5_F5730_T20260201_153103_525.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260201_134000
+2090.0,3190.0,2135.0,3316.0000000000005,Larus argentatus,C1_L5_F5735_T20260201_153107_092.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260201_134000

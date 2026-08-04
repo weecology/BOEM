@@ -1,0 +1,3 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+3000.0,3063.0,3028.0,3094.0,FalsePositive,C1_L1_F226_T20241107_154200_303.jpg," benweinstein2010@gmail.com, 2",JPG_20241107_153700
+3000.0,3063.0,3028.0,3094.0,Larus delawarensis,C1_L1_F226_T20241107_154200_303.jpg," benweinstein2010@gmail.com, 2",JPG_20241107_153700

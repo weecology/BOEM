@@ -1,0 +1,5 @@
+image_path,xmin,ymin,xmax,ymax,label,annotator,flight_name
+C2_L3_F2894_T20260202_131950_073.jpg,6161.0,2839.9999999999995,6221.0,2903.9999999999995,FalsePositive,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_122400
+C7_L1_F634_T20260202_123918_197.jpg,3786.0000000000005,899.0,3837.0000000000005,956.0000000000001,Laridae,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_122400
+C2_L2_F1651_T20260202_125905_660.jpg,862.0,1435.9999999999998,907.0,1522.9999999999998,Thalasseus maximus,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_122400
+C2_L2_F1651_T20260202_125905_660.jpg,4406.0,2942.0,4481.0,2994.0,Pelecanus occidentalis,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260202_122400

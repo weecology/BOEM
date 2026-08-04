@@ -1,0 +1,4 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+2735.0,1591.0,2786.0,1629.0,FalsePositive,C1_L6_F2040_T20240131_104219_394.jpg," benweinstein2010@gmail.com, 2",JPG_2024_Jan31
+2735.0,1591.0,2786.0,1629.0,Larus marinus,C1_L6_F2040_T20240131_104219_394.jpg," benweinstein2010@gmail.com, 2",JPG_2024_Jan31
+4559.726290837207,2591.568140911718,4614.895581681404,2646.7376745664237,FalsePositive,C1_L6_F2040_T20240131_104219_394.jpg," benweinstein2010@gmail.com, 2",JPG_2024_Jan31

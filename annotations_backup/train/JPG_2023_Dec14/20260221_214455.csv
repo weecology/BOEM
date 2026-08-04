@@ -1,0 +1,10 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+1225.0,3344.000000000001,1293.0,3412.000000000001,FalsePositive,C6_L3_F579_T20231214_122716_689.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2151.0,4695.0,2285.9999999999995,4832.0,FalsePositive,C6_L3_F579_T20231214_122716_689.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2151.0,4695.0,2285.9999999999995,4832.0,Tursiops truncatus,C6_L3_F579_T20231214_122716_689.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2307.0,1451.0,2341.0,1481.0,FalsePositive,C6_L9_F1877_T20231214_125429_955.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2307.0,1451.0,2341.0,1481.0,Ardea alba,C6_L9_F1877_T20231214_125429_955.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+1485.0,1583.0,1608.0,1710.0000000000002,FalsePositive,C6_L9_F1877_T20231214_125429_955.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+1485.0,1583.0,1608.0,1710.0000000000002,Halichoerus grypus,C6_L9_F1877_T20231214_125429_955.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2216.0,2156.0,2357.0,2258.0,FalsePositive,C6_L9_F1877_T20231214_125429_955.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14
+2216.0,2156.0,2357.0,2258.0,Tursiops truncatus,C6_L9_F1877_T20231214_125429_955.jpg," benweinstein2010@gmail.com, 2",JPG_2023_Dec14

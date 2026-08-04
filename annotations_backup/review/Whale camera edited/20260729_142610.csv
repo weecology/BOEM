@@ -1,0 +1,138 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+7926.000000000001,1650.0000000000002,7978.000000000001,1691.0000000000002,Anatidae,NEAQ_20220710_00080.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+304.0,7.0,343.0,47.0,FalsePositive,NEAQ_20220710_00080.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2176.999999999999,613.9999999999998,3269.272727272728,2304.9999999999964,Eubalaena glacialis,NEAQ_20220207_0004.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+1272.0,943.9090909090909,2638.4545454545455,2581.000000000001,Eubalaena glacialis,NEAQ_20220207_0005.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+1533.0,1357.3636363636354,2928.0,2974.454545454545,Eubalaena glacialis,NEAQ_20220207_0006.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2279.4545454545437,778.909090909091,3569.0000000000023,2346.999999999996,Eubalaena glacialis,NEAQ_20220220_0004.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2893.9999999999995,1912.7272727272723,3648.5454545454545,3495.9999999999995,Eubalaena glacialis,NEAQ_20220220_0006.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+1149.0000000000005,1860.8181818181802,2842.999999999999,2873.636363636363,Eubalaena glacialis,NEAQ_20220220_0007.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2225.0683199731457,697.1109027575093,3458.5184506770906,2761.66739107485,Eubalaena glacialis,NEAQ_20220220_0013.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2838.090909090908,2264.727272727271,4088.2727272727234,3711.9999999999995,Eubalaena glacialis,NEAQ_20220220_0016.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+1588.7272727272732,1269.363636363636,2691.1818181818185,3367.727272727275,Eubalaena glacialis,NEAQ_20220220_0018.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+1504.9999999999989,1157.090909090908,2616.9090909090905,3057.1818181818157,Eubalaena glacialis,NEAQ_20220220_0020.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5325.000000000001,2769.0,5399.0,2819.0,FalsePositive,NEAQ_20220301_0001.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+3173.9999999999995,2454.0,3257.999999999999,2644.0000000000005,FalsePositive,NEAQ_20220301_0002.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4111.0,2894.9999999999995,4211.0,2999.9999999999995,FalsePositive,NEAQ_20220301_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5526.0,3000.0,5774.999999999999,3083.0,FalsePositive,NEAQ_20220301_0005.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+3164.9999999999995,4160.0,3999.9999999999995,4460.0,FalsePositive,NEAQ_20220301_0008.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+6355.0,3328.0000000000005,6989.0,3720.0,Unknown/Other,NEAQ_20220301_0016.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4745.28832675879,2639.6382092377057,7511.264750508636,3660.98295191545,Eubalaena glacialis,NEAQ_20220301_0016.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4000.4381533829096,2920.0964587729295,4752.031317625091,3768.5737503840046,Eubalaena glacialis,NEAQ_20220301_0023.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+3906.8052110151775,2989.925709647004,4279.448934360366,3388.5247172052905,Eubalaena glacialis,NEAQ_20220301_0023.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5432.402817847352,2857.5323940508847,5593.402817847352,2997.5323940508847,FalsePositive,NEAQ_20220301_0024.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4618.871913289521,3167.2380230237604,5571.343133589054,4178.82814665223,Eubalaena glacialis,NEAQ_20220301_0024.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4576.174927551956,3154.1004889506626,5075.401222329641,3617.198565027333,Eubalaena glacialis,NEAQ_20220301_0024.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+6107.999999999999,2575.0,6269.0,2722.0,Eubalaena glacialis,NEAQ_20220301_0026.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5291.105362816536,2720.788188420905,5812.2637392699535,2992.2248428237353,Eubalaena glacialis,NEAQ_20220301_0026.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5489.2541205306015,2693.6445229806213,6167.845756537678,3434.6665895003493,Eubalaena glacialis,NEAQ_20220301_0026.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+42.0,1147.0,155.99999999999997,1200.0,FalsePositive,NEAQ_20220301_0076.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4593.899957940858,2613.2521254480216,5255.7597053748505,3021.1208773681283,Eubalaena glacialis,NEAQ_20220301_0076.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+6006.0,2854.0,6073.0,2902.0,FalsePositive,NEAQ_20220301_0080.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5488.8296689772615,2368.242714162464,6256.030791338984,2888.68324161252,Eubalaena glacialis,NEAQ_20220301_0080.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4984.3804216487315,2742.716400810989,6169.23914597664,3189.3326841635057,Eubalaena glacialis,NEAQ_20220301_0094.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5859.346460900352,2575.8563345597913,6099.208453542205,2846.7183272014154,Mysticeti,NEAQ_20220301_0099.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+1370.1227392517605,5165.530684812935,1511.486110170362,5253.476033180379,Phoca vitulina,NEAQ_20220323_0001.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+782.3456403569786,5243.054651632563,930.4180225511616,5305.23633709186,Phoca vitulina,NEAQ_20220323_0001.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+6505.000000000001,2108.0,6967.000000000002,2532.0,FalsePositive,NEAQ_20220323_0001.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+6026.0,1694.0,6547.0,1999.9999999999998,FalsePositive,NEAQ_20220323_0001.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+7003.0,2485.9999999999995,7327.999999999999,2930.9999999999995,FalsePositive,NEAQ_20220323_0001.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+0.0,2329.0,526.0,2816.0,FalsePositive,NEAQ_20220323_0003.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4912.172551293098,3785.5623854908445,4977.903465858734,3868.147380714337,Phoca vitulina,NEAQ_20220323_0003.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5219.002775077427,4460.290880816254,5328.554299353488,4517.594755052964,Phoca vitulina,NEAQ_20220323_0003.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+7228.350995305784,5104.360581504179,7282.284053410921,5197.058025122384,Phoca vitulina,NEAQ_20220323_0003.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+7405.318842213265,4902.11161360991,7523.297406818257,4956.044671715048,Phoca vitulina,NEAQ_20220323_0003.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5941.999999999997,5029.871243397143,6014.3862698085695,5117.999999999996,Phoca vitulina,NEAQ_20220323_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+3888.999999999999,4146.0,4010.929015992155,4206.000000000001,Phoca vitulina,NEAQ_20220323_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5284.0,2789.0,5394.0,2870.0,FalsePositive,NEAQ_20220323_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5013.0,2642.0,5087.0,2704.0,FalsePositive,NEAQ_20220323_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5071.0,2564.0,5141.999999999999,2612.0,FalsePositive,NEAQ_20220323_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+6198.536088497503,4835.952224239334,6321.111220554634,4891.111033665043,Phoca vitulina,NEAQ_20220323_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+3723.9671621672865,3409.8955882638497,3788.319106497281,3494.165991553128,Phoca vitulina,NEAQ_20220323_0004.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+227.99999999999997,2023.0000000000002,790.0,2318.0,FalsePositive,NEAQ_20220323_0005.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+2702.9511075081095,3754.1463300932696,2851.058017508554,3817.6207200934596,Phoca vitulina,NEAQ_20220323_0005.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4769.556751079298,4884.560358618449,4856.987040335758,4979.938855989133,Phoca vitulina,NEAQ_20220323_0005.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+5111.329699990917,4677.906947648632,5258.371550104055,4761.363132847981,Phoca vitulina,NEAQ_20220323_0005.JPG," sanacleto@ufl.edu, 24",Whale camera edited
+4019.999999999999,1421.0,4060.9999999999995,1463.0,FalsePositive,NEAQ_20220323_0010.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3897.81766322147,2064.0843689414214,5346.850087869885,3565.7267877318423,Eubalaena glacialis,NEAQ_20220323_0010.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4321.775478750769,2053.173270848083,5523.637885825209,3767.9435227417766,Eubalaena glacialis,NEAQ_20220323_0011.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3359.1018672323935,2485.00000000001,5956.458012887604,4256.6182706392665,Cetacea,NEAQ_20220323_0012.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+9179.0,3467.0,9229.0,3489.0,FalsePositive,NEAQ_20220323_0012.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+7095.000000000001,3054.0000000000005,7185.000000000002,3143.0000000000005,FalsePositive,NEAQ_20220323_0013.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+6869.0,3770.0,6893.0,3811.0,FalsePositive,NEAQ_20220323_0013.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3499.120327673376,3385.381872822896,6787.830115256189,5395.490471962298,Cetacea,NEAQ_20220323_0013.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3241.999999999995,1334.9999999999998,4978.999999999999,2435.9999999999995,Eubalaena glacialis,NEAQ_20220323_0015.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5103.000000000001,1746.0,6876.0,2601.0,Eubalaena glacialis,NEAQ_20220323_0015.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2574.0,2276.9999999999995,5021.999999999999,3500.9999999999995,Eubalaena glacialis,NEAQ_20220323_0015.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3286.0000000000036,1819.999999999998,4761.000000000001,3164.0,Eubalaena glacialis,NEAQ_20220323_0016.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4689.0,2943.0,6165.0,4005.0,Eubalaena glacialis,NEAQ_20220323_0016.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2331.0,3015.0,4563.0,3932.999999999999,Eubalaena glacialis,NEAQ_20220323_0016.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3260.000000000001,1911.999999999999,4439.999999999996,3168.9999999999986,Eubalaena glacialis,NEAQ_20220323_0017.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4266.0,2970.0,5669.999999999999,4176.000000000001,Eubalaena glacialis,NEAQ_20220323_0017.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2187.0,2970.0,4014.0,3843.0,Eubalaena glacialis,NEAQ_20220323_0017.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4547.999999999969,1573.9999999999886,6153.504485027611,2150.0500840783916,Eubalaena glacialis,NEAQ_20220323_0018.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4826.458699418184,2026.3615212798122,6157.963184445759,3246.173799265144,Eubalaena glacialis,NEAQ_20220323_0018.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4149.2661652632905,1892.8533920085158,5800.352410670587,2543.127359430467,Eubalaena glacialis,NEAQ_20220323_0018.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4830.021724908145,3279.765838150645,6709.719911987221,4544.751915401159,Eubalaena glacialis,NEAQ_20220323_0018.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4000.000000000009,1694.0000000000034,5452.306176304399,2243.4145953766197,Eubalaena glacialis,NEAQ_20220323_0019.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4650.167921962609,1954.5220520207947,5814.706335260284,3207.6497196540427,Eubalaena glacialis,NEAQ_20220323_0019.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4430.966880056629,1307.0987947917117,5950.98227890544,2061.5182023085845,Eubalaena glacialis,NEAQ_20220323_0019.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4380.672252888837,3005.9395346815595,6040.394949425958,4525.954933530371,Eubalaena glacialis,NEAQ_20220323_0019.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4599.999999999982,1.4114686248992252,6004.244472628122,910.6294042046244,Eubalaena glacialis,NEAQ_20220323_0020.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4122.999999999981,220.99999999999952,5638.591430237965,927.303950266469,Eubalaena glacialis,NEAQ_20220323_0020.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4551.383864319575,331.6867473291202,5634.614001166577,1830.5749599429923,Eubalaena glacialis,NEAQ_20220323_0020.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4169.314319927765,1574.4624082078403,5542.245539884996,3275.175708721859,Eubalaena glacialis,NEAQ_20220323_0020.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3629.083909614162,3778.4955149723673,4925.48822648495,5490.999999999921,Eubalaena glacialis,NEAQ_20220323_0021.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4326.6656699938085,2628.32834996932,4909.882919075288,4240.91973462938,Eubalaena glacialis,NEAQ_20220323_0021.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3890.1726313686067,2532.966828689499,5282.165342881221,3274.6855727801626,Eubalaena glacialis,NEAQ_20220323_0021.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4469.3228836037815,2157.027191273684,5764.7905530772,3366.130349448874,Eubalaena glacialis,NEAQ_20220323_0021.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3979.8256949661904,1688.7235161532685,6122.854996243424,2961.809166040571,Eubalaena glacialis,NEAQ_20220323_0024.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3840.2006010518407,2251.6904583020278,5774.0848985725015,3306.536438767843,Eubalaena glacialis,NEAQ_20220323_0024.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+6565.219383921863,419.23365890308025,7451.019534184824,2015.0262960180307,Eubalaena glacialis,NEAQ_20220323_0024.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+1047.5634861006772,425.99549211119444,3441.2524417731033,1494.365138993238,Eubalaena glacialis,NEAQ_20220323_0024.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5993.000000000002,1367.0000000000002,7085.000000000001,2579.0,Eubalaena glacialis,NEAQ_20220323_0025.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3230.999999999999,1932.9999999999986,4639.000000000001,3363.0,Eubalaena glacialis,NEAQ_20220323_0025.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3402.0,1602.0000000000002,5256.0,3015.0,Eubalaena glacialis,NEAQ_20220323_0025.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+1269.0,-2.8137492336099967e-14,3231.0,936.0,Eubalaena glacialis,NEAQ_20220323_0025.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3401.0000000000005,2606.0,4060.9999999999977,4072.9999999999977,Eubalaena glacialis,NEAQ_20220323_0026.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3605.999999999999,2479.9999999999977,4971.0,4199.000000000001,Eubalaena glacialis,NEAQ_20220323_0026.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5693.000000000004,3122.0000000000014,7093.999999999999,4171.999999999999,Eubalaena glacialis,NEAQ_20220323_0026.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2304.0,396.0,4140.0,1601.9999999999998,Eubalaena glacialis,NEAQ_20220323_0026.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5442.000000000005,4068.000000000006,6531.411343222318,4709.181499574665,Eubalaena glacialis,NEAQ_20220323_0027.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3389.9597652269254,2675.2756761090573,4063.118348570887,3841.1585833439613,Eubalaena glacialis,NEAQ_20220323_0027.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4701.578035866191,2706.50468255285,5676.617014833476,3421.3019411552013,Eubalaena glacialis,NEAQ_20220323_0027.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4948.062576538607,3483.7691632852466,5753.076964867468,4705.170304198002,Eubalaena glacialis,NEAQ_20220323_0027.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5418.412493932631,3774.100350467868,6412.999999999977,4402.999999999993,Eubalaena glacialis,NEAQ_20220323_0028.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4952.113064389013,2422.90127139211,5800.815256705361,3138.3646210093043,Eubalaena glacialis,NEAQ_20220323_0028.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5028.41087207264,3206.6640505529344,5783.38057865042,4278.533406662825,Eubalaena glacialis,NEAQ_20220323_0028.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3699.647412461195,2301.5685656650126,4245.461047306583,3427.547742443959,Eubalaena glacialis,NEAQ_20220323_0028.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4679.590665888949,3288.9999999999977,5554.999999999991,4285.636572095185,Eubalaena glacialis,NEAQ_20220323_0029.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4957.440140187137,2471.8229372498,5657.354125500391,3194.3254539381583,Eubalaena glacialis,NEAQ_20220323_0029.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5122.220070093568,3786.87311248373,5916.1197196256835,4540.141223297394,Eubalaena glacialis,NEAQ_20220323_0029.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3816.634740489246,2231.719687919064,4274.2784804749945,3289.7584262347386,Eubalaena glacialis,NEAQ_20220323_0029.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5451.0,3285.0000000000005,6891.9999999999945,4516.999999999998,Eubalaena glacialis,NEAQ_20220323_0030.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3239.000000000001,2202.0000000000005,4723.000000000001,2720.9999999999986,Eubalaena glacialis,NEAQ_20220323_0030.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4212.0,2655.0,5832.0,4563.0,Eubalaena glacialis,NEAQ_20220323_0030.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5301.0,3672.0000000000005,6111.000000000001,4590.000000000001,Eubalaena glacialis,NEAQ_20220323_0030.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5110.953560165301,3410.5588675749796,6418.999999999953,4632.999999999976,Eubalaena glacialis,NEAQ_20220323_0031.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4713.175621387015,3584.5817603796863,5708.9076340018755,4712.400672627132,Eubalaena glacialis,NEAQ_20220323_0031.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3813.968650811346,2842.863016289023,5571.740468998809,4717.480937997617,Eubalaena glacialis,NEAQ_20220323_0031.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2940.1630070880997,2233.231171830944,4545.526864161042,2873.3446085119267,Eubalaena glacialis,NEAQ_20220323_0031.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4950.0,2766.0,5999.999999999997,3967.000000000001,Eubalaena glacialis,NEAQ_20220323_0032.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3132.0000000000023,1441.9999999999989,4592.0,2099.0,Eubalaena glacialis,NEAQ_20220323_0032.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4622.0000000000055,3133.9999999999995,5242.999999999999,3985.9999999999995,Eubalaena glacialis,NEAQ_20220323_0032.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3670.0,2177.9999999999995,5410.0,3839.999999999998,Eubalaena glacialis,NEAQ_20220323_0032.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+5124.999999999999,2932.0000000000005,5964.9999999999945,4275.000000000005,Eubalaena glacialis,NEAQ_20220323_0033.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4766.999999999999,3468.0,5202.999999999999,4143.0,Eubalaena glacialis,NEAQ_20220323_0033.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3442.9999999999986,1547.999999999999,4919.000000000002,2202.9999999999995,Eubalaena glacialis,NEAQ_20220323_0033.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3654.0,2439.0,5508.0,3987.000000000001,Eubalaena glacialis,NEAQ_20220323_0033.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4971.000000000008,2773.9999999999977,5794.999999999999,4206.999999999995,Eubalaena glacialis,NEAQ_20220323_0034.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4545.0,3114.0,5400.000000000001,3780.0,Eubalaena glacialis,NEAQ_20220323_0034.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3717.0,2268.0,5688.0,3554.9999999999995,Eubalaena glacialis,NEAQ_20220323_0034.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3816.0,1053.0,5229.0,2024.9999999999998,Eubalaena glacialis,NEAQ_20220323_0034.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+3722.3553719008255,1314.9504132231407,4476.9504132231405,2612.000000000002,Eubalaena glacialis,NEAQ_20220323_0035.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+2939.231404958679,903.0330578512396,5020.28099173554,1927.05785123967,Eubalaena glacialis,NEAQ_20220323_0035.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4131.297520661157,0.0,5135.429752066117,557.8512396694215,Eubalaena glacialis,NEAQ_20220323_0035.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4942.820938252879,3341.078946789014,6530.296918148925,3924.2957685679403,Cetacea,NEAQ_20220326_0096.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4470.999999999983,2680.999999999998,5276.2562951734335,3265.877679805585,Cetacea,NEAQ_20220326_0098.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited
+4572.595621540506,2929.163271263768,5087.986321080325,3385.5275188662563,Cetacea,NEAQ_20220326_0099.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale camera edited

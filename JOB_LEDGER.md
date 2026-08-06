@@ -478,3 +478,54 @@ boem_conf/boem_config.yaml detection_model.checkpoint at the new hash. Watch tha
 now fits under 300GB. Checkpoints land in
 /blue/ewhite/b.weinstein/BOEM/training/checkpoints/<comet_hash>/ — use those mtimes as
 the liveness signal, not the stdout log (the rich progress bar does not flush to file).
+
+## 38458860 (result addendum) — detection augs, neaq-inclusive crops
+COMPLETED 2026-08-01T01:59, 12h53m, all 10 epochs. Comet hash
+6fd54c2201e14ce99de8634e4a7fe5cb. Best epoch08-val_cls0.0143, essentially tied with
+38309080's d1248ed8/epoch09 0.0144 — folding neaq into the detector cost nothing and
+gained nothing measurable on val_classification. Final-epoch val_classification 0.0252
+is epoch09 noise, not the selected checkpoint.
+Next: boem_conf/boem_config.yaml still points at d1248ed8/epoch09. Left alone
+deliberately — the 2026-08-06 retrain (38834235) supersedes both, so the pointer swap
+should happen once against that result rather than twice.
+
+## 38834217 — 2026-08-06 14:05 — submit_prepare_annotations.sh (--mem=128GB) — SUBMITTED
+Why: fold the 2026-08-06 Label Studio pull into detection/crops and the UBFAI training
+CSVs. scripts/download_annotations.py wrote 62 new CSVs (train 3,012 rows / 130 images /
+15 flights; validation 232 / 78 / 42; review 898 / 525 / 5). Most are re-downloads of
+tasks left on the server by the 2026-07-29 pull — genuinely new imagery is 74 train, 1
+validation, 283 review images. All 62 mirrored into annotations_backup/ and committed
+(8b12eec); backup --check reports 0 new / 0 changed / 1,137 total.
+Used submit_prepare_annotations.sh rather than submit_prepare_USGS.sh so the zero-shot
+holdout is PINNED to JPG_20260202_141900 + JPG_20260201_134000. The 07-30 run
+(38374816) used the unpinned script and drew JPG_20260202_094800 + JPG_2023_Dec14 at
+random, so its train/test split is not comparable to anything before or after it.
+Pinning from here on makes successive runs a data-only comparison.
+--mem bumped 64GB -> 128GB on the command line (not in the file): 38309076 fit in 64GB
+at 582k train rows, but the crop set has grown since and 38374816 asked for 128GB.
+Stage 0 is incremental — only images whose annotation CSV is newer get re-cropped — so
+expect roughly the 733 touched images to refresh, not the full tree.
+Result: PENDING.
+Next: check "Zero-shot held-out flights" in the log is the pinned pair, and that
+train.csv/test.csv row counts grew from 608,980 / 134,154.
+
+## 38834235 — 2026-08-06 14:05 — submit_USGS_detection_augs.sh — SUBMITTED (afterok:38834217)
+Why: retrain detection on the 08-06 crops. Defaults unchanged from 38458860
+(POSITIVE_BATCH_FRACTION=0.90, batch 64, workers 32, lr 0.001, 10 epochs, 300GB), so
+this is again a data-only delta.
+Result: PENDING. Expect ~13h on hpg-b200.
+Next: compare best val_classification against 0.0143 (38458860) and 0.0144 (38309080).
+Do NOT compare box_recall across runs — see deepforest_box_recall_issue.md. If it wins,
+repoint boem_conf/boem_config.yaml detection_model.checkpoint at the new hash; that
+pointer is currently two retrains stale.
+
+## 38834236 — 2026-08-06 14:05 — submit_USGS_classification.sh — SUBMITTED (afterok:38834217)
+Why: retrain the metadata-free classifier on the same 08-06 crops. Runs concurrently
+with 38834235; they read the crops read-only and use separate environments (.venv for
+detection, .venv-classification for classification) so neither job's uv sync can mutate
+the other's.
+Result: PENDING. Expect ~3h.
+Next: compare Micro-Average Accuracy against 38374817/e79ca03e's 0.764 and watch whether
+Eubalaena glacialis moves off 0.0 accuracy — the 08-06 review pull added 283 new images
+from the neaq camera dirs, which is where right whale crops come from. If it improves,
+repoint boem_conf/classification_model/finetune.yaml at the new hash.

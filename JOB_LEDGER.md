@@ -505,9 +505,20 @@ Pinning from here on makes successive runs a data-only comparison.
 at 582k train rows, but the crop set has grown since and 38374816 asked for 128GB.
 Stage 0 is incremental — only images whose annotation CSV is newer get re-cropped — so
 expect roughly the 733 touched images to refresh, not the full tree.
-Result: PENDING.
-Next: check "Zero-shot held-out flights" in the log is the pinned pair, and that
-train.csv/test.csv row counts grew from 608,980 / 134,154.
+Result: **COMPLETED, 28m35s.** Zero-shot holdout is the pinned pair
+{JPG_20260201_134000, JPG_20260202_141900}, as intended. AWS source filter kept 419,012
+human rows (dropped 4,095,159 machine); 398,887 rows / 63,644 images after the image
+filter. Hard-negative conversion 26,589 -> 17,023 markers (train), 1,666 -> 811 (test);
+post-relabel dedup dropped 165,593 train / 6,392 test rows.
+Totals: **train 621,844 rows** (was 608,980), **test 132,578** (was 134,154),
+**zero_shot 22,996** (was 13,768).
+test shrinking and zero_shot nearly doubling is NOT data loss — it is the pinned holdout
+swapping which flights sit in which split. 38374816 held out JPG_20260202_094800 +
+JPG_2023_Dec14 at random; those flights are back in train/test now and the two pinned
+flights left. Only train-vs-train comparisons against 38374816 are meaningful, and only
+loosely; from 38834217 onward the split is stable and successive runs are clean
+data-only deltas.
+Next: none. 38834235 and 38834236 released from Dependency to Priority at 14:35.
 
 ## 38834235 — 2026-08-06 14:05 — submit_USGS_detection_augs.sh — SUBMITTED (afterok:38834217)
 Why: retrain detection on the 08-06 crops. Defaults unchanged from 38458860

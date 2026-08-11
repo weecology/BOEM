@@ -540,3 +540,48 @@ Next: compare Micro-Average Accuracy against 38374817/e79ca03e's 0.764 and watch
 Eubalaena glacialis moves off 0.0 accuracy — the 08-06 review pull added 283 new images
 from the neaq camera dirs, which is where right whale crops come from. If it improves,
 repoint boem_conf/classification_model/finetune.yaml at the new hash.
+
+## 38834235 (result addendum) — detection, 08-06 crops, posfrac 0.90
+COMPLETED 2026-08-07T03:40, 12h49m, all 10 epochs. Best val_classification 0.01369,
+beating 38458860's 0.0143 and 38309080's 0.0144 — the 08-06 crop set is a real gain.
+zero_shot_evaluation_val_classification 0.01305 against pretraining 0.1656.
+Next: boem_conf/boem_config.yaml detection_model.checkpoint is now three retrains stale
+(still d1248ed8/epoch09). Deliberately left alone again — the 39211658 posfrac-0.5 run
+supersedes this, so the pointer swap should happen once against whichever of the two wins.
+
+## 39211655 — 2026-08-11 15:33 — submit_prepare_annotations.sh (--mem=128GB) — SUBMITTED
+Why: fold the 2026-08-11 Label Studio pull into detection crops before retraining.
+scripts/download_annotations.py wrote 10 new CSVs (train 514 rows / 73 images / 8
+flights; validation none; review 122 / 32 / 2). Unlike the 08-06 pull these are all
+genuinely new labels, not re-downloads — the 08-06 session ran delete_completed_tasks.py
+so nothing stale was left on the server. All 10 mirrored into annotations_backup/ and
+committed (cea8855); backup reports 10 new / 0 changed / 1,271 total.
+Used submit_prepare_annotations.sh so the zero-shot holdout stays PINNED to
+JPG_20260202_141900 + JPG_20260201_134000, matching 38834217. That keeps this a clean
+data-only delta against the 08-06 crops (train 621,844 rows / test 132,578 /
+zero_shot 22,996).
+--mem 128GB on the command line, as with 38834217. Stage 0 is incremental, so expect
+roughly the ~105 touched images to re-crop, not the full tree. 38834217 took 28m35s.
+Result: PENDING.
+Next: none; 39211658 releases on afterok.
+
+## 39211658 — 2026-08-11 15:33 — submit_USGS_detection_augs.sh — SUBMITTED (afterok:39211655)
+Why: **POSITIVE_BATCH_FRACTION=0.5, down from the 0.90 default.** Every detection run to
+date (38309080, 38458860, 38834235) reserved 90% of each batch for annotated images; the
+resulting models are miscalibrated on empty frames, which is the bulk of real survey
+imagery. 0.5 gives an even split of annotated images and hard negatives per batch.
+Passed as `--export=ALL,POSITIVE_BATCH_FRACTION=0.5` rather than by editing the script,
+so the file's 0.90 default is untouched and this run is reproducible from the ledger
+alone. EXP_NAME auto-derives to detection_posfrac0.5_39211658.
+Everything else is unchanged from 38834235 (batch 64, workers 32, lr 0.001, 10 epochs,
+300GB, hpg-b200), so the only deltas against it are the 08-11 labels and the batch
+fraction.
+Result: PENDING. Expect ~13h.
+Next: compare best val_classification against 38834235's 0.01369. Note this is NOT a
+clean comparison — val_classification is a loss on the val set, and changing the batch
+composition changes what the model is optimized for, so a slightly worse number here can
+still be the better field model. Weight zero_shot_evaluation_val_classification and
+per-image false positives on empty frames more heavily than val_classification.
+Do NOT compare box_recall across runs — see deepforest_box_recall_issue.md.
+Whichever run wins, repoint boem_conf/boem_config.yaml detection_model.checkpoint once;
+it is currently three retrains stale at d1248ed8/epoch09.

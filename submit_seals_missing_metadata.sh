@@ -30,7 +30,9 @@ echo "[seals_nomd] task $SLURM_ARRAY_TASK_ID -> $IMAGE_DIR"
 # run hard-raised on these. classification_model.use_metadata=False is SAFE on d8995ca8
 # (verified job 37325655): architecture comes from checkpoint hparams and metadata was never
 # actually trained in, so the flag only skips the lookup (CropModel zero-fills). It also routes
-# to the faster batched detection path (metadata_lookup=None), which pairs with batch_size=64.
+# to the batched detection path (metadata_lookup=None), where batch_size counts *images*, not
+# patches. 16 is kept here as the value this flight's runs were done at; boem_config's default
+# is now 1, which benchmarked both faster and far leaner (job 39225777).
 export UV_PROJECT_ENVIRONMENT=/blue/ewhite/b.weinstein/src/BOEM/.venv-classification
 
 srun uv run --no-sync python main.py \

@@ -128,28 +128,45 @@ def get_leaf_labels_for_taxonomy_aliases(
     return result
 
 
-def human_review(predictions, min_detection_score=0.6, min_classification_score=0.5, confident_threshold=0.5):
+def human_review(predictions, min_detection_score=0.85, review_low=0.3, review_high=0.6):
     """
-    Predict on images and divide into confident and uncertain predictions.
+    Split trusted detections into confident and uncertain by classifier confidence.
+
+    Only boxes the detector is sure about (score >= min_detection_score) are considered;
+    among those, the classifier score partitions them into three bands:
+
+        cropmodel_score <  review_low   -> ignored (classifier had nothing to say; the
+                                           detection is most likely spurious)
+        review_low <= s <= review_high  -> uncertain, send to human review
+        cropmodel_score >  review_high  -> confident, safe to auto-annotate
+
+    Uncertainty is box-level but review is image-level: any image holding at least one
+    uncertain box goes to review, and is withheld from the confident set even if its
+    other boxes scored above review_high.
+
     Args:
-        confident_threshold (float): The threshold for confident predictions.
-        min_classification_score (float, optional): The minimum class score for a prediction to be included. Defaults to 0.1.
-        min_detection_score (float, optional): The minimum detection score for a prediction to be included. Defaults to 0.1.
-        predictions (pd.DataFrame, optional): A DataFrame of existing predictions. Defaults to None.
-        Returns:
-        tuple: A tuple of confident and uncertain predictions.
+        predictions (pd.DataFrame): Predictions with score / cropmodel_score / image_path.
+        min_detection_score (float): Detection score floor. Defaults to 0.85.
+        review_low (float): Lower edge of the ambiguous band. Defaults to 0.3.
+        review_high (float): Upper edge of the ambiguous band. Defaults to 0.6.
+
+    Returns:
+        tuple: (confident_predictions, uncertain_predictions)
     """
-    filtered_predictions = predictions[
-        (predictions["score"] >= min_detection_score) &
-        (predictions["cropmodel_score"] < min_classification_score)
-    ]
+    if review_low > review_high:
+        raise ValueError(
+            f"review_low ({review_low}) must be <= review_high ({review_high})"
+        )
 
-    uncertain_predictions = filtered_predictions[
-        filtered_predictions["cropmodel_score"] <= confident_threshold]
+    detected = predictions[predictions["score"] >= min_detection_score]
 
-    confident_predictions = filtered_predictions[
-        ~filtered_predictions["image_path"].isin(
-            uncertain_predictions["image_path"])]
+    uncertain_predictions = detected[
+        (detected["cropmodel_score"] >= review_low) &
+        (detected["cropmodel_score"] <= review_high)]
+
+    confident_predictions = detected[
+        (detected["cropmodel_score"] > review_high) &
+        ~detected["image_path"].isin(uncertain_predictions["image_path"])]
 
     return confident_predictions, uncertain_predictions
 

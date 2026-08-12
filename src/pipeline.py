@@ -620,9 +620,10 @@ class Pipeline:
         human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]
         
         confident_predictions, uncertain_predictions = human_review(
-            confident_threshold=self.config.pipeline.confidence_threshold,
-            min_classification_score=self.config.active_learning.min_classification_score,
-            min_detection_score=self.config.active_learning.min_detection_score,
+            min_detection_score=getattr(
+                self.config.human_review, "min_detection_score", self.config.predict.min_score),
+            review_low=getattr(self.config.human_review, "review_low", 0.3),
+            review_high=getattr(self.config.human_review, "review_high", 0.6),
             predictions=human_review_pool.copy(deep=True),
         )
 

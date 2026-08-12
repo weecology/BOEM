@@ -585,3 +585,72 @@ per-image false positives on empty frames more heavily than val_classification.
 Do NOT compare box_recall across runs — see deepforest_box_recall_issue.md.
 Whichever run wins, repoint boem_conf/boem_config.yaml detection_model.checkpoint once;
 it is currently three retrains stale at d1248ed8/epoch09.
+
+## 39223916, 39225777 — 2026-08-11 — benchmark_inference.py — COMPLETED
+Why: Size inference throughput on one B200 ahead of the incoming Globus survey, to
+answer GPU utilization / sustainability / hours-per-TB at the configured batch size.
+60-100 images from JPG_20260712_100400 (6464x4852, 5.6 MB, 35 patches at patch_size
+1000). 39225777 runs each batch size in a FRESH process; 39223916 reused one process
+and produced a false OOM at batch 32 from the prior case's fragmentation.
+Result: THE CONFIGURED predict.batch_size=64 CANNOT RUN. deepforest's
+predict_tile(dataloader_strategy="batch") batches IMAGES, not patches — MultiImage
+__len__ is len(paths) and collate_fn flattens every crop — so batch_size=64 means
+64*35=2240 patches in one forward pass, needing ~416 GB on a 179 GB card. 32/48/64 all
+OOM. The comment in boem_conf/boem_config.yaml ("64 fits all patches of an image in one
+pass") has the unit wrong; batch_size=1 already puts all 35 patches in one pass.
+Throughput is INVERSELY related to batch size — bigger is strictly worse on both axes:
+  batch  img/s  peak GB  h/TB      batch  img/s  peak GB  h/TB
+      1   3.88      6.5  13.5         16   2.50    101.5  20.9  (from 39223916)
+      2   3.69     12.8  14.2         24   1.49    152.2  35.0
+      4   3.28     25.5  15.9         32+  OOM
+      8   2.66     50.8  19.7
+Peak memory is linear at ~6.4 GB per image in the batch. GPU SM utilization sampled
+1-30% and bursty; memory at batch 1 is 6.5/179 GB = 3.6%. The workload is data-bound
+(JPEG decode + Lustre read + patch construction), not GPU-bound — which is exactly why
+raising the batch size hurts. One B200 at batch 1 = ~3.9 img/s = ~22 MB/s = ~13.5 h/TB.
+Detection only; the CropModel pass was not measured.
+NOTE: the batch_size=16 case in 39225777 died on `Disk quota exceeded` writing
+hparams.yaml, not on OOM — /blue/ewhite is 33T/33T full. Its numbers above come from
+39223916. Same quota failure killed 39211655 (prep_ann) and stranded 39211658.
+Next: set predict.batch_size to 1 (or 2) and fix the misleading comment. Free /blue
+before the Globus transfer lands. For a full survey, fan out across the 8 GPUs per
+b200 node rather than raising the batch size.
+
+## 39271997-39272011, 39272127-39272145 — 2026-08-12 11:31 — submit_all_flights.sh — RUNNING
+Why: First pass over the 20 new JPG_202607* flights (533,893 images, ~3.3 TB) with the
+detector repointed to a09c6933/epoch16 and the classifier to 56e8585a. Full coverage:
+active_learning.pool_limit=null, so every image is scored rather than a 500-image sample.
+Also the first run of the redefined human-review band (see below) at human_review.n=30.
+
+Checkpoints: detection a09c69331af8496380cbf99e3859d656/epoch16-val_cls0.0163.ckpt;
+classification buffer_30/56e8585add144d1eabba1f00c411b985.ckpt. The classifier was
+verified to be model.* only with no metadata_encoder and 70 classes — same architecture
+as the e79ca03e it replaces — so use_metadata stays false and nothing else moved.
+
+Human review was redefined before this run. It used to be
+  score >= 0.8 AND cropmodel_score < 0.3, then a second cut at cropmodel_score <= 0.6.
+The second cut was implied by the first, so uncertain == filtered and
+confident_predictions was ALWAYS EMPTY — every confident_predictions.csv logged to Comet
+before today is an empty table, and "Images auto-annotated: 0" meant nothing. The 0.8
+detection floor was also dead, since the pool is already cut at predict.min_score=0.85.
+Worse, the rule excluded the genuinely ambiguous cases: it kept only cropmodel_score
+< 0.3 and threw away the 0.3-0.6 band where the classifier is actually torn.
+Now: score >= human_review.min_detection_score (0.85) AND
+review_low (0.3) <= cropmodel_score <= review_high (0.6) -> review;
+above review_high -> confident/auto-annotate; below review_low -> ignored as a likely
+spurious detection. New keys live under human_review so that active_learning's
+min_classification_score keeps its real meaning as a floor in select_images and report.
+
+GOTCHA — check_annotations does not survive a parallel fan-out. All 20 jobs launched
+with check_annotations=True, and each one downloads completed Label Studio tasks AND
+DELETES them from the same shared project. The 7 that started together each pulled a
+different count (914 / 894 / 894 / 893 / 710 / 245 / 241 / 236) because they were eating
+each other's queue, and three logged HTTP 500 "Save with update_fields did not affect any
+rows" deleting tasks a sibling had already removed. Not fatal — writes are per-task under
+each task's own flight_name — but the pull got split at random across 7 jobs. The 10
+still-pending jobs were cancelled and resubmitted as 39272127-39272145 with
+check_annotations=False; the 10 already running kept the flag.
+Next: pull annotations ONCE before a fan-out, then submit every flight with
+check_annotations=False. Worth enforcing in submit_all_flights.sh rather than by hand.
+Throughput lands in /blue/ewhite/b.weinstein/BOEM/throughput.csv (one line per flight:
+images, bytes, wall seconds, img/s, hours-per-TB) to answer the per-TB-per-GPU question.

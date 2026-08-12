@@ -75,13 +75,37 @@ module load ffmpeg
 HEADER
 }
 
-PYTHON_CMD="uv run python main.py check_annotations=True active_learning.pool_limit=100000 predict.batch_size=4 debug=False"
+# pool_limit=null scores every image in the flight rather than a random subsample.
+# batch_size must stay 1: peak memory is ~6.4 GB per image in the batch, so the 4 this
+# used to pass needs ~25.5 GB and does not fit the 24 GB L4 requested above. It is also
+# the fastest setting — see the benchmark table in boem_conf/boem_config.yaml.
+PYTHON_CMD="uv run python main.py check_annotations=True active_learning.pool_limit=null predict.batch_size=1 debug=False"
+
+# Coarse throughput accounting: one CSV line per flight, wall time over image count and
+# bytes, so we can answer "how long per TB per GPU". Deliberately loose — it times the
+# whole pipeline (detection + classification + report), not just inference, and the size
+# walk is a single find over the directory.
+THROUGHPUT_CSV="/blue/ewhite/b.weinstein/BOEM/throughput.csv"
+
+emit_timed_run() {
+  local folder="$1"
+  cat <<TIMED
+echo "Processing: ${folder}"
+read n_images n_bytes < <(find "${folder}" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' \) -printf '%s\n' | awk '{n++; b+=\$1} END {print n+0, b+0}')
+t_start=\$SECONDS
+${PYTHON_CMD} image_dir="${folder}"
+rc=\$?
+elapsed=\$(( SECONDS - t_start ))
+awk -v f="\$(basename ${folder})" -v j="\$SLURM_JOB_ID" -v n="\$n_images" -v b="\$n_bytes" -v s="\$elapsed" -v rc="\$rc" \
+  'BEGIN { tb = b / 1099511627776; printf "%s,%s,%d,%d,%d,%.4f,%.3f,%.1f,%d\n", f, j, n, b, s, s/3600, (s>0 ? n/s : 0), (tb>0 ? (s/3600)/tb : 0), rc }' >> "${THROUGHPUT_CSV}"
+TIMED
+}
 
 submit_parallel() {
   local folder="$1"
   sbatch < <(
     slurm_header
-    printf '%s image_dir="%s"\n' "$PYTHON_CMD" "$folder"
+    emit_timed_run "$folder"
   )
   sleep "$SLEEP_SEC"
 }
@@ -90,8 +114,7 @@ submit_serial() {
   sbatch < <(
     slurm_header
     for folder in "$@"; do
-      printf 'echo "Processing: %s"\n' "$folder"
-      printf '%s image_dir="%s"\n' "$PYTHON_CMD" "$folder"
+      emit_timed_run "$folder"
     done
   )
 }

@@ -34,10 +34,19 @@ predict:
   patch_size: 1000
   patch_overlap: 0
   min_score: 0.85
-  # Images are ~6464x4852 -> 35 patches at patch_size=1000. batch_size=8 meant 5 forward
-  # passes per image and left the B200 at 6.6% memory / 39C (comet 6c9fd7b2). 64 fits all
-  # patches of an image in one pass.
-  batch_size: 64
+  # This counts IMAGES, not patches: predict_tile(dataloader_strategy="batch") batches
+  # whole images and flattens their crops, so one forward pass sees
+  # batch_size * 35 patches for this ~6464x4852 camera. batch_size=1 therefore already
+  # puts all 35 patches of an image in a single pass.
+  # Benchmarked on one B200 (job 39225777, 60 images of JPG_20260712_100400): throughput
+  # is inversely related to batch size and peak memory is linear at ~6.4 GB per image.
+  #   1 -> 3.88 img/s,   6.5 GB      8 -> 2.66 img/s,  50.8 GB
+  #   2 -> 3.69 img/s,  12.8 GB     16 -> 2.50 img/s, 101.5 GB
+  #   4 -> 3.28 img/s,  25.5 GB     24 -> 1.49 img/s, 152.2 GB
+  # 32 and above OOM the 179 GB card. The workload is data-bound (JPEG decode + Lustre
+  # read + patch construction), not GPU-bound, which is why a bigger batch only hurts.
+  # Scale out across GPUs instead of raising this. ~3.9 img/s = ~13.5 h per TB per GPU.
+  batch_size: 1
   workers: 5
   # For web viz, expand pixels on all sides
   buffer: 60
@@ -54,15 +63,11 @@ propagate:
 
 detection_model:
   force_train: False
-  # Latest round (job 38309080, Comet d1248ed881a847128752f86d1370add3). Completed all 10
-  # epochs; epoch09 is the best (val_classification 0.0144, vs 0.0163 for the previous
-  # a09c6933/epoch16). Per-epoch ModelCheckpoint rather than a final .pl;
-  # load_from_checkpoint reads it fine.
-  # NOTE: trained on the crops as of job 38309076, which predate the neaq fix — this
-  # detector has never seen a neaq frame. Superseded once the neaq-inclusive retrain lands.
+  # Comet a09c69331af8496380cbf99e3859d656, epoch16 (val_classification 0.0163) — chosen
+  # 2026-08-12 over d1248ed8/epoch09 (0.0144) for the JPG_202607* run.
   # Ignore box_recall on the Comet run (~0.06): see deepforest_box_recall_issue.md, empty
   # frames count in the denominator but never the numerator.
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/d1248ed881a847128752f86d1370add3/epoch09-val_cls0.0144.ckpt
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/a09c69331af8496380cbf99e3859d656/epoch16-val_cls0.0163.ckpt
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -127,8 +132,17 @@ active_testing:
   patch_overlap: 0
   min_score: 0
 
-human_review: 
-  n: 1
+human_review:
+  n: 30
+  # A box goes to review when the detector is confident but the classifier is not:
+  #   score >= min_detection_score AND review_low <= cropmodel_score <= review_high.
+  # Below review_low the classifier had nothing to say and the detection is most likely
+  # spurious; above review_high it is auto-annotated (confident_predictions).
+  # Keep min_detection_score >= predict.min_score — the pool is already cut at that value,
+  # so anything lower is a no-op.
+  min_detection_score: 0.85
+  review_low: 0.3
+  review_high: 0.6
 
 report:
   enabled: true

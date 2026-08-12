@@ -56,13 +56,15 @@ export UV_PROJECT_ENVIRONMENT=/blue/ewhite/b.weinstein/src/BOEM/.venv-classifica
 # The flag only skips the lookup, so CropModel.forward zero-fills the metadata half of the
 # classifier input (deepforest model.py:522-526). Verified by scripts/verify_metadata_fallback.py.
 #
-# predict.batch_size=4, NOT boem_config's 64. batch_size means different things on the two
-# predict_tile paths. With a metadata_lookup (seals) deepforest uses the per-image "single"
-# strategy and batch_size counts *patches* — hence the config comment "64 fits all patches of
-# an image in one pass". Without one, detection.py:356 uses "batch" -> the MultiImage dataset,
-# where each item is a whole image and batch_size counts *images*, each expanding to ~70
-# patches (9504x6336 / 1000). 64 there = 4,480 patches in one forward pass: pilot 37330544
-# died asking cuDNN for 170.90 GiB on an 178 GiB B200. 4 images ~= 280 patches ~= 11 GB.
+# predict.batch_size=4. batch_size counts *images*, not patches: detection.py uses
+# dataloader_strategy="batch" -> the MultiImage dataset, whose __len__ is the number of paths
+# and whose collate_fn flattens every crop, so one forward pass sees batch_size * patches-per-
+# image. These frames are 9504x6336 -> ~70 patches, so 4 images ~= 280 patches ~= 11 GB, while
+# the old default of 64 meant 4,480 patches: pilot 37330544 died asking cuDNN for 170.90 GiB
+# on an 178 GiB B200. boem_config's default is now 1 (benchmarked fastest and leanest, job
+# 39225777); 4 is kept here only because it is the value this flight's runs were done at.
+# (With a metadata_lookup the strategy is still "batch" — detection.py just passes one path at
+# a time, so the DataLoader yields a single image and batch_size has no effect on that path.)
 #
 # report/flythrough off: not needed to get predictions into Label Studio, and generate_report
 # was the dominant cost per task.

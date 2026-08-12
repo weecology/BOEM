@@ -1,15 +1,11 @@
 force_train: False
-# Metadata-free classifier (job 38374817, Comet e79ca03e4e1b45f6820c009df6c190b5): plain
-# CropModel, state_dict is model.* only with no metadata_encoder, 70 classes. First
-# checkpoint trained on neaq-inclusive crops (prepare job 38374816). Micro-Average
-# Accuracy 0.764, Macro-Average Precision 0.638, val_loss 2.77 — beats the previous
-# dce44064 (0.745 / 0.632 / 4.45) on all three.
+# Metadata-free classifier (Comet 56e8585add144d1eabba1f00c411b985, epoch 45): plain
+# CropModel, state_dict is model.* only with no metadata_encoder, 70 classes — verified
+# 2026-08-12 by inspecting the state_dict. Same architecture as the previous
+# e79ca03e4e1b45f6820c009df6c190b5, so it drops in without other changes.
 # Must be paired with use_metadata: false below — the older d8995ca8 checkpoint has a
 # metadata_encoder and the two are NOT interchangeable.
-# Known-bad classes at 0.0 accuracy: Eubalaena glacialis (new 70th class, came in with
-# neaq and is not yet learned), Ardea herodias, Mergus merganser, Puffinus puffinus,
-# Phalaropus lobatus, Pluvialis squatarola, Podiceps auritus, Pterodroma hasitata.
-checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/buffer_30/e79ca03e4e1b45f6820c009df6c190b5.ckpt
+checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/buffer_30/56e8585add144d1eabba1f00c411b985.ckpt
 checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/training/classification/crops/train
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train

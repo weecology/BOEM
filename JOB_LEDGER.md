@@ -654,3 +654,182 @@ Next: pull annotations ONCE before a fan-out, then submit every flight with
 check_annotations=False. Worth enforcing in submit_all_flights.sh rather than by hand.
 Throughput lands in /blue/ewhite/b.weinstein/BOEM/throughput.csv (one line per flight:
 images, bytes, wall seconds, img/s, hours-per-TB) to answer the per-TB-per-GPU question.
+
+## 39272217 (L4/hpg-turin), 39272218 (B200/hpg-b200) — 2026-08-12 — submit_worker_sweep.sh — SUBMITTED
+Why: Test whether the DataLoader is the bottleneck behind 39225777's result (throughput
+inversely related to batch size, GPU utilization in the single digits). Sweeps
+predict.workers 0/2/5/10 at batch_size=1 on the SAME 60 images of JPG_20260712_100400,
+run on both an L4 (24 GB) and a B200 (179 GB). If the workload is data-bound, workers
+should move throughput and the two GPUs should land close together; if the L4 is much
+slower, the forward pass matters more than 39225777 suggested.
+batch_size pinned to 1 because batch 4 peaked at 25.5 GB and does not fit an L4. A
+trailing batch=2 case probes L4 headroom (12.8 GB on the B200, so it should just fit).
+Each case runs in a fresh process. Fixed en route: the benchmark warmed up at a
+hardcoded batch_size=32, which would have OOM'd the L4 before any case ran; it now warms
+up at the smallest batch in the sweep.
+NOTE: detection checkpoint changed under this work — config now points at
+a09c6933/epoch16, while 39223916/39225777 measured d1248ed8/epoch09. Same RetinaNet and
+same 256.8 MB file, and timing is dominated by decode+I/O, but this sweep is the first
+measurement on the current checkpoint.
+Result: COMPLETED (L4 9m58s, B200 3m59s). Workers is the lever ON THE B200 ONLY.
+  B200 (batch=1): w0 1.47 img/s (35.6 h/TB) · w2 2.11 · w5 4.11 (12.7 h/TB) · w10 4.03
+  L4   (batch=1): w0 0.65 · w2 0.79 · w5 0.78 · w10 0.78 (67 h/TB)
+The two GPUs did NOT land close together: the B200 is 5.3x the L4 at the same batch size.
+B200 sampled 12-26% util at 6.5/179 GB (data-bound, workers=5 is the knee, 10 adds
+nothing — the job only had 12 cores). L4 sampled 92% util with p90 100% (compute-bound;
+workers buy nothing past 2). batch=2 on B200 gave 3.93 img/s, again worse than batch=1,
+confirming 39225777.
+
+THE "5.3x PIPELINE OVERHEAD" IS NOT REAL — it is a hardware mismatch, not overhead.
+The 4.11 img/s above is the B200; submit_all_flights.sh requests `--gpus=l4:1`, so the
+20 production flights ran on L4 hardware. The like-for-like comparison is L4 detection-
+only 0.78 img/s vs L4 full-pipeline 0.782 img/s. Checked against throughput.csv for all
+20 flights: predicted seconds at 0.78 img/s vs actual is -0.3% across 682,578 s
+(189.6 GPU-h actual vs 190.1 predicted). Classification + crop writing + Label Studio +
+flythrough + report cost nothing measurable and there is no overhead left to profile.
+The reason they are free: the whole survey produced 91 boxes >=min_score 0.85 across
+533,893 images (~0.017%). Jobs 39272011 and 39272144 found ZERO detections and still
+ran at 0.783/0.786 img/s — identical to every other flight. Per-flight fixed cost is
+~50 s (39271997: 5616 images, 7253 s actual vs 7200 s predicted).
+
+BUG in scripts/benchmark_inference.py gpu_ceiling(): it builds `torch.rand(batch_size,
+3, patch_size, patch_size)`, i.e. ONE patch per forward call at batch_size=1, while real
+inference pushes all 35 patches of an image in one pass. So the reported "ceiling" is
+latency-bound on kernel launches and is not a ceiling — the B200's measured 144 patch/s
+EXCEEDS its own reported 136 patch/s ceiling. The L4 "1.12 img/s equivalent" number is
+the same artifact and should not be quoted. The L4 compute-bound conclusion still holds,
+but it rests on the 92% mean / 100% p90 utilization, not on the ceiling figure.
+Next: the lever is the GPU, not the pipeline and not predict.workers. Move production
+off `--gpus=l4:1` to hpg-b200 (5.3x: ~190 GPU-h -> ~36). B200 nodes are 112 cores /
+8 GPUs = 14 cores per GPU, and a process needs ~6 (workers=5 + main), so ~2 concurrent
+flights per GPU and ~16 per node; at 6.5/179 GB memory is nowhere near binding. Fix
+gpu_ceiling to feed batch_size * patches_per_image patches before quoting it again.
+SEPARATE CONCERN, not a throughput issue: 91 detections from 3.3 TB deserves a look at
+whether min_score=0.85 is too high. The cache cannot answer it — pool_predictions.csv is
+written AFTER the min_score filter, so the discarded score distribution is unrecoverable
+without a rerun at a lower threshold.
+
+## 39385379 — 2026-08-13 — submit_threshold_sweep.sh — SUBMITTED
+Why: re-derive predict.min_score for the checkpoint that will actually go live. The
+20-flight run inherited 0.85 from a differently-calibrated model. Same-flight control on
+JPG_20260202_141900: a1c5649 at cut 0.85 gave 406 boxes (score mean 0.950, max 0.998,
+59% above 0.95); a09c6933/epoch16 on the same flight at cut 0.50 gave 103 boxes with
+**max 0.798** — it would have returned ZERO at 0.85. On the 20 new flights it barely
+clears: mean 0.883, max 0.935, 80 of 100 boxes in the single bin just above the cut.
+Ben's criterion: favour recall — accept false positives so annotators are not handed a
+queue that is already missing real objects.
+Confirms the cache note above with the code cite: pipeline.py:448-450 states the cache
+stores only boxes >= the min_score it was written at, and the same block forces
+re-prediction when the current min_score is lower. All 20 min_score.txt read 0.85 and the
+lowest score present anywhere is 0.85001.
+Substrate instead: the 648 human-reviewed full frames of the PINNED zero-shot holdout
+(JPG_20260202_141900 + JPG_20260201_134000) — 1,279 annotation rows = 1,229 real objects
+plus 50 human-marked FalsePositive, all 648 frames resolving on disk. Both flights are
+excluded from training for 38834235, so it is a clean holdout, and within a reviewed
+frame the human marked every object including ones the detector missed — which is what
+makes recall measurable at all. Unlabelled survey imagery cannot answer a recall
+question; you can count boxes but never what was missed.
+scripts/threshold_sweep.py forces score_thresh 0.01 (otherwise the model's own default
+silently truncates the low end and every recall number below it is wrong) and sweeps
+0.05-0.99 offline: box recall, precision, FP/image, image-level recall, greedy IoU
+matching at 0.4. FalsePositive-labelled frames are excluded from both the positive set
+and the FP count so they bias neither metric.
+Second measurement in the same job: 2,000 random UNSCREENED frames from the same flights
+-> images and boxes per 1,000 at each threshold, i.e. the annotator queue size. Needed
+because the reviewed frames were themselves selected by a detector, so they
+under-represent empty ocean and their precision/FP numbers are optimistic. Recall is
+unaffected by that selection bias; queue cost is not.
+Two checkpoints in one job: 55d29b2c/epoch08 (job 38834235, best val_cls 0.01369, the
+candidate) and a09c6933/epoch16 (the incumbent in boem_config). batch_size=1, workers=5.
+Submitted to hpg-b200 rather than l4 per the entry above.
+Result: **COMPLETED, 27m22s.** 648 labelled frames / 1,229 objects, 2,000-frame unscreened
+queue sample, greedy IoU 0.4. JSON in /blue/ewhite/b.weinstein/BOEM/threshold_sweep_*.json.
+
+a09c6933/epoch16 (the incumbent, raw score range 0.0100-0.9310):
+   thresh  box recall   prec   FP/img  img recall  queue img/1k  queue box/1k
+     0.05      67.8%   31.6%    2.78      100.0%        379.5        5144.0
+     0.10      67.0%   60.6%    0.83      100.0%        201.5         923.0
+     0.15      66.1%   70.7%    0.52       99.8%        112.0         290.0
+     0.20      65.0%   74.7%    0.42       99.0%         51.0         104.0
+     0.30      63.0%   78.4%    0.33       97.8%         15.5          26.5   <- CHOSEN
+     0.50      57.9%   84.4%    0.20       94.1%          1.0           1.0
+     0.85      15.9%   98.0%    0.01       29.9%          1.0           1.0   <- was live
+
+**0.85 was discarding ~70% of occupied frames.** That is the headline; it is not a
+marginal miscalibration.
+
+**Image-level recall is the metric that matters, not box recall.** An annotator labels
+every object in a frame they are handed, so a box missed inside a QUEUED frame is
+recovered for free — only a frame that is never queued is truly lost. Box recall is the
+wrong yardstick for a review-queue threshold.
+
+**Box recall ceilings at 67.8% at ANY threshold (even 0.05).** A third of ground-truth
+objects are invisible to this detector no matter where the cut goes, so the "NOT REACHABLE
+at any threshold" lines for the >=80/90/95/99% recall targets are a detector finding, not
+a threshold one. Worth its own investigation (patch size? architecture?); min_score
+cannot touch it.
+
+**Do NOT swap to 55d29b2c/epoch08.** The 38834235 candidate has the better
+val_classification (0.0137 vs 0.0163) and is WORSE on this holdout at every single
+threshold — 97.8% img recall at 0.20 vs a09c6933's 99.0%, at a higher queue cost
+(20.0 vs 51.0 img/1k is not a fair trade once recall is matched: 55d29b2c at 0.10 gives
+65.7% box recall for 125 img/1k, where a09c6933 at 0.15 gives 66.1% for 112). The
+three-retrains-stale pointer turns out to be the correct one — val_cls was misleading.
+Caveat on the queue columns: they come from Feb Gulf frames and the July imagery is much
+sparser (91 boxes >=0.85 across 533,876 images, below the 2,000-frame sample's 1-per-1,000
+resolution floor), so treat them as upper bounds. Everything at/below thresh 0.50 in those
+two columns is at the sample's resolution limit and should not be read precisely.
+Next: DONE — see the 2026-08-14 config entry below.
+
+## (no job) — 2026-08-14 — threshold recalibration: three gates, not one
+Why: act on 39385379. Chose **0.30** (97.8% image recall, 78.4% precision, ~15.5 img/1k)
+rather than the more permissive 0.15/0.20 — deliberately trading ~1-2 points of image
+recall for a queue 3-7x smaller.
+There turned out to be THREE independent detection gates, and lowering only the obvious
+one would have re-predicted the whole 3.45 TB survey and then filtered every new box back
+out before it reached a human:
+  predict.min_score                    0.85 -> 0.30   boem_config.yaml
+  human_review.min_detection_score     0.85 -> 0.30   active_learning.py:161
+  active_learning.min_detection_score  0.80 -> 0.30   starved the TRAINING queue; the
+                                                      survey yielded 91 boxes >= 0.85
+The third one was not in the original plan and is easy to miss — it lives in the
+active_learning block, is spelled the same as the human_review key, and had a different
+value (0.8, not 0.85). Grep for `min_detection_score` before changing a threshold again.
+The chosen value is now recorded NEXT TO the checkpoint hash in boem_config.yaml with the
+full sweep table inline, since that missing pairing is exactly what broke here.
+Per-flight Label Studio upload is capped regardless of threshold: active_learning.n_images
+100 + active_testing.n_images 1 + human_review.n 30 = <=131 images/flight, <=2,620 across
+20 flights. Lowering the threshold does NOT flood Label Studio; it means those ~131 slots
+are drawn from a pool that actually has something in it.
+Note pipeline.py:638 takes `.head(human_review.n)` after sorting by DETECTION score
+descending, so the review queue still skews to the confident end of the 0.30-0.95 range.
+Verified: hydra resolves all three to 0.3 and both checkpoints exist on disk.
+Committed 6461c64 on branch review-band-and-202607-run.
+
+## 39396376-39396399 (20 jobs) — 2026-08-14 09:4x — submit_all_flights.sh — SUBMITTED
+Why: re-run the 20 JPG_202607* flights (533,876 images, 3.45 TB) at the recalibrated
+min_score 0.30. The 2026-08-12 pass at 0.85 returned 91 boxes across the entire survey and
+two flights (39272011, 39272144) returned literally zero — that was the threshold, not the
+imagery.
+Cache: no manual cleanup needed. All 20 .prediction_cache/min_score.txt read 0.85 and
+pipeline.py:449-459 force re-prediction whenever the current min_score is BELOW the cached
+one, so this is automatically a full re-predict. (Verified before submitting.)
+Annotations were pulled ONCE beforehand (scripts/download_annotations.py: 154 train rows /
+1 image, 390 review rows / 218 images; validation none) and all 20 jobs run with
+check_annotations=False, per the 08-12 fan-out gotcha where 7 concurrent jobs ate each
+other's Label Studio queue. download_annotations.py does not delete server-side, so
+nothing was consumed. 71 new CSVs mirrored to annotations_backup/ and committed.
+HARDWARE — stayed on L4 despite the measured 5.3x B200 advantage. hpg-b200 was 85% drained
+at submit time (51 nodes `drain` with "Kill task failed", 538 jobs pending, 14 running,
+**0 free B200 GPUs**) against **101 free L4 GPUs** on hpg-turin. submit_all_flights.sh now
+takes a `--b200` flag instead of hardcoding the partition, so this is a one-flag change
+when b200 recovers; check `sinfo -p hpg-b200` first. Expect ~190 GPU-h again on L4 vs ~36
+on B200.
+Result: PENDING — 10 RUNNING immediately, 10 PENDING on QOSGrpGRES (the ewhite account's
+concurrent-GPU cap), rolling in as the first batch finishes. Expect ~22h for the longest
+flight (JPG_20260711_090800, 21.8h on 08-12).
+Next: confirm the detection count moved off 91 — that is the whole point of the run. Then
+re-check JPG_20260713_141400 (44,577 images, returned ZERO at 0.85) specifically. Watch
+runtime against throughput.csv: the 0.78 img/s model was measured at 91 boxes survey-wide,
+and crop-writing + classification at ~14k boxes is untested, so a slowdown here is
+expected and is not a fault.

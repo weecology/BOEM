@@ -33,7 +33,24 @@ flight_name: null
 predict:
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0.85
+  # CALIBRATED FOR a09c69331af8496380cbf99e3859d656/epoch16 — this value is meaningless
+  # without that pairing, which is precisely how it went wrong before. Re-derive with
+  # scripts/threshold_sweep.py whenever detection_model.checkpoint changes.
+  # Job 39385379 (2026-08-13), 648 human-reviewed holdout frames / 1,229 objects from the
+  # pinned zero-shot pair (JPG_20260202_141900 + JPG_20260201_134000), greedy IoU 0.4:
+  #   thresh  img recall  box recall  prec    queue img/1k
+  #     0.15      99.8%       66.1%   70.7%      112.0
+  #     0.20      99.0%       65.0%   74.7%       51.0
+  #     0.30      97.8%       63.0%   78.4%       15.5   <- chosen
+  #     0.50      94.1%       57.9%   84.4%        1.0
+  #     0.85      29.9%       15.9%   98.0%        1.0   <- the old value
+  # 0.85 was inherited from the differently-calibrated a1c5649 and discarded ~70% of
+  # occupied frames. Image-level recall is the metric that matters: an annotator labels
+  # every object in a frame they are handed, so a box missed inside a QUEUED frame is
+  # recovered for free — only a frame that never gets queued is truly lost.
+  # Box recall ceilings at 67.8% even at thresh 0.05, so a third of objects are invisible
+  # to this detector at ANY threshold. That is a detector problem, not a threshold one.
+  min_score: 0.30
   # This counts IMAGES, not patches: predict_tile(dataloader_strategy="batch") batches
   # whole images and flattens their crops, so one forward pass sees
   # batch_size * 35 patches for this ~6464x4852 camera. batch_size=1 therefore already
@@ -96,7 +113,13 @@ active_learning:
   patch_size: 1000
   patch_overlap: 0
   min_classification_score: 0.3
-  min_detection_score: 0.8  
+  # THIRD detection gate, independent of predict.min_score and human_review.
+  # min_detection_score. Lowered 0.8 -> 0.30 on 2026-08-14 alongside the other two: the
+  # whole 20-flight JPG_202607* survey produced only 91 boxes >= 0.85 across 533,876
+  # images, so a 0.8 floor here left the active-learning training queue selecting from
+  # almost nothing regardless of what predict.min_score was set to.
+  # All three gates are calibrated together for a09c6933/epoch16 — see predict.min_score.
+  min_detection_score: 0.30
   model_checkpoint:
   target_labels:
     - "Tursiops truncatus"
@@ -140,7 +163,11 @@ human_review:
   # spurious; above review_high it is auto-annotated (confident_predictions).
   # Keep min_detection_score >= predict.min_score — the pool is already cut at that value,
   # so anything lower is a no-op.
-  min_detection_score: 0.85
+  # MUST MOVE WITH predict.min_score. active_learning.py:161 applies this as an
+  # independent hard cut, so leaving it at 0.85 while predict.min_score drops to 0.30
+  # would re-predict the whole survey and then filter every new box back out before it
+  # ever reached a human.
+  min_detection_score: 0.30
   review_low: 0.3
   review_high: 0.6
 

@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+2440.0,2926.9999999999995,2472.0,2981.9999999999995,Gavia stellata,C4_L4_F2865_T20240214_120942_796.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Feb29b
+4348.999999999987,4254.000000000001,4395.5583503337175,4297.646680266975,Anatidae,C6_L2_F1556_T20240214_115034_686.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Feb29b
+1501.0,1769.0,1527.0,1828.0,Ardea herodias,C1_L8_F5324_T20240214_124430_388.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Feb29b
+1564.0,1054.0,1656.0,1143.0,FalsePositive,C5_L9_F5382_T20240214_124602_031.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_2024_Feb29b

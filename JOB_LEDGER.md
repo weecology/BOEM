@@ -825,11 +825,48 @@ at submit time (51 nodes `drain` with "Kill task failed", 538 jobs pending, 14 r
 takes a `--b200` flag instead of hardcoding the partition, so this is a one-flag change
 when b200 recovers; check `sinfo -p hpg-b200` first. Expect ~190 GPU-h again on L4 vs ~36
 on B200.
-Result: PENDING — 10 RUNNING immediately, 10 PENDING on QOSGrpGRES (the ewhite account's
-concurrent-GPU cap), rolling in as the first batch finishes. Expect ~22h for the longest
-flight (JPG_20260711_090800, 21.8h on 08-12).
-Next: confirm the detection count moved off 91 — that is the whole point of the run. Then
-re-check JPG_20260713_141400 (44,577 images, returned ZERO at 0.85) specifically. Watch
-runtime against throughput.csv: the 0.78 img/s model was measured at 91 boxes survey-wide,
-and crop-writing + classification at ~14k boxes is untested, so a slowdown here is
-expected and is not a fault.
+Result: **ALL 20 COMPLETED** by 2026-08-15 12:49 (longest JPG_20260710_163500, 21.8h).
+Note the job IDs are NOT contiguous: 39396384/385/391/398 belong to other users. The 20
+BOEM jobs are 39396376-383, 386-390, 392-397, 399.
+**41,694 boxes across 19,080 images (3.57% of 533,876 frames), up from 91.** No flight
+returned zero; JPG_20260713_141400 went 0 -> 1,025. Runtime was unchanged despite ~458x
+more boxes (192.0 GPU-h vs 189.6 on 08-12), confirming the 08-12 finding that
+classification + crop writing cost nothing measurable — the workload is decode+I/O bound.
+
+**THE 0.30 NEVER TOOK EFFECT — the live cut is 0.40.** Lowest score anywhere in the survey
+is 0.400001 and the (0.30, 0.40] bin is empty across all 20 caches. Cause: the checkpoint
+a09c6933/epoch16 carries `score_thresh: 0.4` in its saved hyper_parameters, and
+`src/detection.py:load()` uses `main.deepforest.load_from_checkpoint()`, which restores
+that config — so the RetinaNet head never emits a box below 0.4 and `predict.min_score=0.3`
+is a no-op below it. This is exactly the trap scripts/threshold_sweep.py:104-114 guards
+against by forcing `m.model.score_thresh = floor`; the production load path does not.
+Cost per the 39385379 sweep: image recall 96.6% at 0.40 vs 97.8% at 0.30 (box recall 60.8%
+vs 63.0%). Real but small — do NOT re-run 3.45 TB for it alone; fix the load path and pick
+it up on the next pass. There are now FOUR gates, not the three logged on 08-14.
+
+Label Studio (live API read 2026-08-17): 633 tasks from this run — 490 review, 107 train,
+36 validation. 19 of 20 flights contributed a review batch (<=30 each).
+
+**JPG_20260711_141200 (39396382) exited rc=1 but SLURM says COMPLETED.** The sbatch wrapper
+records `$?` to throughput.csv and keeps going, so the failure is invisible in sacct — read
+the rc column. `paramiko.ssh_exception.SSHException: Server connection dropped` at
+label_studio.py:545 (`sftp_client.put`) after 30 of its images; the retry loop there only
+catches EOFError, not SSHException. Predictions are safe (2,584 boxes cached), but the
+flight contributed 0 train (of 42) and 0 review (of 30) tasks — only 1 validation task
+landed. Re-upload only; nothing needs recomputing.
+
+**First human review is 34 FalsePositive vs 3 Object** across the 30 annotated review tasks
+(29 from JPG_20260710_155800, 1 from JPG_20260711_090800). Those annotations are still
+server-side only — they postdate the 08-14 pull and are NOT yet in annotations_backup/.
+Caveat: the review band is by construction the classifier's uncertain slice, so a high FP
+rate there is expected and does not directly indict the 93% auto-accepted bucket — but that
+bucket (38,769 boxes) has had zero human checking, and the species counts all come from it.
+Two flights (JPG_20260712_113200, JPG_20260712_100400) hold 25,280 of the 41,694 boxes;
+their detections are ~20-25px and cluster on bright specks in chop that are hard to
+separate from whitecaps by eye.
+Next: (1) pull the 30 new review annotations and back them up; (2) re-upload
+JPG_20260711_141200 and catch SSHException in upload_images' retry loop; (3) fix
+detection.py:load() to override score_thresh from predict.min_score; (4) get review
+coverage across more flights + spot-check the auto-accepted bucket before anyone quotes
+these as counts.
+Summary written up at https://claude.ai/code/artifact/cdea0c3f-0f0e-40de-a778-82d522c30b6a

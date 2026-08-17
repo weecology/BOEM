@@ -367,9 +367,9 @@ def create_sftp_client(user, host, key_filename):
     return sftp
 
 def delete_completed_tasks(label_studio_project):
-    # Delete completed tasks
-    tasks = label_studio_project.get_labeled_tasks()
-    for task in tasks:
+    # Delete completed tasks. Must use the same listing as download_completed_tasks,
+    # or the pipeline deletes tasks it never downloaded.
+    for task in get_annotated_tasks(label_studio_project):
         label_studio_project.delete_task(task["id"])
 
 def import_image_tasks(
@@ -431,16 +431,24 @@ def import_image_tasks(
     for i in range(0, len(tasks), chunk_size):
         label_studio_project.import_tasks(tasks[i:i + chunk_size])
 
+def get_annotated_tasks(label_studio_project):
+    """Every task carrying an annotation.
+
+    get_labeled_tasks() is a filtered view that under-reports — it has been observed
+    returning 218 of 248 annotated tasks, silently leaving the rest behind. get_tasks()
+    is the authoritative listing, so filter that instead.
+    """
+    return [t for t in label_studio_project.get_tasks() if t.get("annotations")]
+
+
 def download_completed_tasks(label_studio_project, csv_dir):
-    labeled_tasks = label_studio_project.get_labeled_tasks()
+    labeled_tasks = get_annotated_tasks(label_studio_project)
     if not labeled_tasks:
         print("No new annotations")
         return None
     else:
         images, labels = [], []
     for labeled_task in labeled_tasks:
-        # get_labeled_tasks() can return tasks whose annotations were deleted or
-        # cancelled, leaving an empty list. Skip them rather than indexing [0].
         task_annotations = labeled_task.get('annotations') or []
         if not task_annotations:
             print(f"Skipping task {labeled_task.get('id')} with no annotations")

@@ -29,7 +29,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from omegaconf import OmegaConf
 
-from src.label_studio import connect_to_label_studio, download_completed_tasks, get_api_key
+from src.label_studio import (
+    connect_to_label_studio,
+    download_completed_tasks,
+    get_annotated_tasks,
+    get_api_key,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "boem_conf" / "annotation" / "label_studio.yaml"
@@ -57,10 +62,8 @@ def main():
         print(f"\n=== {instance_name}: {instance.project_name}")
         project = connect_to_label_studio(url=cfg.url, project_name=instance.project_name)
 
-        tasks = project.get_labeled_tasks()
-        task_ids = [t["id"] for t in tasks if t.get("annotations")]
-        print(f"{instance_name}: {len(task_ids)} labeled tasks with annotations "
-              f"({len(tasks) - len(task_ids)} labeled-but-empty, left in place)")
+        task_ids = [t["id"] for t in get_annotated_tasks(project)]
+        print(f"{instance_name}: {len(task_ids)} tasks carry an annotation")
 
         annotations = download_completed_tasks(label_studio_project=project, csv_dir=instance.csv_dir)
         if annotations is None:

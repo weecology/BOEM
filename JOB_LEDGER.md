@@ -917,3 +917,29 @@ _predictions.csv; annotator crop sheets in /blue/ewhite/b.weinstein/BOEM/qc_crop
 Next: (1) Globus the 202607 metadata; (2) add a background class before any recount — a
 range filter alone cannot fix a detector that emits foam; (3) do NOT quote species counts
 from this run.
+
+## (no job) — 2026-08-17 — reconciling the 0.85 finding with the foam finding
+The two are not in conflict and the distinction is easy to lose: `predict.min_score` gates
+the DETECTION score (`score`), while the 0.99/1.00 confidences in the eider write-up are
+CLASSIFICATION scores (`cropmodel_score`). Across the survey they correlate at **0.0085** —
+detection median 0.441 / max 0.935, classification median 0.9994. The detector barely firing
+and the classifier being certain are simultaneously true because the classifier never sees
+the detection score and has no class with which to reject a crop.
+The 08-12 result stands: at detection >= 0.85 this same 0.30 rerun yields 100 boxes across
+533,876 frames (vs the 91 counted then), and they are mostly REAL — 76 Thalasseus maximus
+plus Leucophaeus atricilla, Pelecanus occidentalis, Larus argentatus/delawarensis. 0.85 was a
+high-precision, near-zero-recall corner, not a garbage filter.
+**What did not transfer was the calibration substrate.** Measured at a common 0.50 floor:
+  Feb holdout (JPG_20260202_141900 + JPG_20260201_134000)   79.1% of boxes >= 0.85, median 0.946
+  July survey (20 flights)                                   1.4% of boxes >= 0.85, median 0.537
+The 39385379 sweep asked "what is lost by cutting at 0.85" on imagery where four-fifths of
+detections already sat above 0.85. July imagery has essentially nothing there. The Feb mix at
+>=0.50 is a clean winter-Gulf list (Larus delawarensis 104, Thalasseus maximus 74, Leucophaeus
+atricilla 55, Pelecanus occidentalis 53) including 21 Morus bassanus, which are CORRECT for the
+Gulf in February. Cold-water share 20.5% Feb vs 81.9% July.
+Lowering the threshold did not cause the foam problem, it revealed it — the defect is the
+missing background class and is orthogonal to the cut. Returning to 0.85 would re-hide it and
+discard the real birds. The 08-14 entry's caveat correctly flagged the Feb queue columns as
+upper bounds, but framed it as queue SIZE; precision was the part that did not survive the move.
+Actual misstep: 190 GPU-h committed to 3.45 TB on a February calibration with no spot-check of
+a few hundred July frames at the new cut. Do that before the next re-predict.

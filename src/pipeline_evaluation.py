@@ -10,6 +10,8 @@ from deepforest.evaluate import evaluate_boxes
 from torchvision.ops.boxes import box_iou
 from torchvision.models.detection._utils import Matcher
 
+from src.classification import map_turtle_labels
+
 class PipelineEvaluation:
     def __init__(self, predictions, annotations, classification_label_dict, detection_true_positive_threshold=0.85, classification_threshold=0.5, species_to_genus=None):
         """Initialize pipeline evaluation.
@@ -115,6 +117,7 @@ class PipelineEvaluation:
             return {}
 
         ann = self.annotations.copy(deep=True)
+        ann["label"] = map_turtle_labels(ann["label"])
         ann = ann[~ann.label.isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
         ann = ann[ann.xmin != 0]
         ann = ann[~ann.label.isnull()]
@@ -204,6 +207,7 @@ class PipelineEvaluation:
 
         # Remove empty frames from classification annotations
         self.classification_annotations = self.annotations.copy(deep=True)
+        self.classification_annotations["label"] = map_turtle_labels(self.classification_annotations["label"])
         self.classification_annotations = self.classification_annotations[~self.classification_annotations.label.isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
         self.classification_annotations = self.classification_annotations[self.classification_annotations.xmin != 0]
         self.classification_annotations = self.classification_annotations[~self.classification_annotations.label.isnull()]

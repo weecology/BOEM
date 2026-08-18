@@ -966,3 +966,33 @@ Royal Tern behaves like a real species; the three dominant classes behave like n
 This per-class ">= 0.65 share" is a cheap screening statistic worth computing on any future run
 before anyone reads the species table.
 Crop sheet: /blue/ewhite/b.weinstein/BOEM/qc_crops_202607/Morus_bassanus.png
+
+## 39613239 — 2026-08-18 — classifier retrain adding a sea turtle class
+**Why:** No turtle class existed despite turtles being common in the annotations. Cause is the
+two-word (binomial) label filter in `filter_annotations` / `USGS_classification.py`: sea turtles
+are annotated at family/order rank — `Cheloniidae`, `Testudines`, `Chelonioidea`, `Dermochelyidae`
+— which are single words, so every one of them was silently dropped before the >25-per-class
+filter ever ran. The explicit drop list (`"Turtle"`, `"Reptile"`) removed the rest. The only
+turtle labels that were binomial (`Dermochelys coriacea` 16 crops, `Caretta caretta` 2,
+`Lepidochelys kempii` 2) were then too rare to clear >25.
+Species-level common names DO exist in the AWS manifests in quantity (`Loggerhead Turtle` 3,241,
+`Kemp's Ridley Turtle` 762) but every one is a Tallgrass/Normandeau MACHINE prediction — the
+`source.startswith("private.")` human filter in prepare_USGS correctly drops them. Human-reviewed
+turtle rows are family/order rank only.
+**Change:** `TURTLE_LABELS` / `map_turtle_labels()` in `src/classification.py` collapse all turtle
+taxa (both taxonomic and common-name forms) onto one two-word class `Chelonioidea sp`, applied
+BEFORE the >25 and two-word filters in `filter_annotations`, `scripts/USGS_classification.py`, and
+both filter sites in `src/pipeline_evaluation.py` so eval scores the class it trains.
+`Reptilia`/`Reptile` deliberately NOT mapped in — class-rank catch-all, not a turtle ID (487 crops
+left on the table; one-line change if wanted).
+**Pool check (dry run of the real filter chain):** 3,081 raw turtle crop rows in
+`/blue/ewhite/b.weinstein/BOEM/training/crops` (Testudines 1,590 + Cheloniidae 1,356 + Chelonioidea
+80 + Caretta 18 + Dermochelyidae 15 + binomials 22); **1,826 survive `filter_annotations`** across
+1,638 parent images. The ~40% loss is the pre-existing `xmin/ymin != 0` rule dropping boxes on a
+patch edge, and applies to every class. 1,638 parents is far above the min_test_images=5 threshold,
+so the class will not be dropped by `train_test_split_by_image`.
+**Config:** unchanged from the previous run (`use_metadata=False`, expand=30, 45 epochs, lr 1e-5,
+batch 96) so the turtle class is the only variable vs the 56e8585 baseline (67 classes).
+**Next:** expect 68 classes. Check the `[turtles]` line in the log for the relabel count, then read
+turtle precision/recall off the Comet confusion matrix — the class lumps hardshells and leatherbacks
+together, so confusion with Mola mola (similar size/shape from altitude) is the thing to look for.

@@ -11,6 +11,43 @@ import pandas as pd
 
 from src.spatiotemporal_metadata import build_crop_metadata_rows
 
+# Sea turtles are annotated at family/order rank ("Cheloniidae", "Testudines"),
+# never as a binomial, so the two-word label filter below silently discarded every
+# turtle crop. Collapse the turtle taxa onto one two-word class so they survive it.
+# "Reptilia"/"Reptile" is deliberately absent: it is a class-rank catch-all, not a
+# turtle identification, and stays in the coarse-label drop list.
+TURTLE_CLASS = "Chelonioidea sp"
+TURTLE_LABELS = frozenset({
+    "Turtle",
+    "Turtle-species unknown",
+    "Testudines",
+    "Chelonioidea",
+    "Cheloniidae",
+    "Cheloniinae",
+    "Chelonia",
+    "Chelonia mydas",
+    "Green Turtle",
+    "Caretta",
+    "Caretta caretta",
+    "Loggerhead Turtle",
+    "Lepidochelys",
+    "Lepidochelys kempii",
+    "Kemp's Ridley Turtle",
+    "Loggerhead/Kemp's Turtle",
+    "Eretmochelys",
+    "Eretmochelys imbricata",
+    "Dermochelyidae",
+    "Dermochelys",
+    "Dermochelys coriacea",
+    "Leatherback Turtle",
+})
+
+
+def map_turtle_labels(labels: pd.Series) -> pd.Series:
+    """Rewrite every turtle taxon to a single two-word class (see TURTLE_LABELS)."""
+    return labels.where(~labels.astype(str).str.strip().isin(TURTLE_LABELS), TURTLE_CLASS)
+
+
 def get_latest_checkpoint(checkpoint_dir, num_classes):
     #Get model with latest checkpoint dir, if none exist make a new model
     if os.path.exists(checkpoint_dir):
@@ -51,6 +88,9 @@ def train(model, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_siz
     return model
 
 def filter_annotations(crop_annotations):
+    crop_annotations = crop_annotations.copy()
+    crop_annotations["label"] = map_turtle_labels(crop_annotations["label"])
+
     # Only keep two word labels
     crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
     crop_annotations = crop_annotations[~crop_annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]

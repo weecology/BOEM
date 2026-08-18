@@ -870,3 +870,50 @@ detection.py:load() to override score_thresh from predict.min_score; (4) get rev
 coverage across more flights + spot-check the auto-accepted bucket before anyone quotes
 these as counts.
 Summary written up at https://claude.ai/code/artifact/cdea0c3f-0f0e-40de-a778-82d522c30b6a
+
+## 39551409, 39553349, 39555477 — 2026-08-17 — classifier confusion matrix (56e8585)
+Why: the 20-flight JPG_202607* survey reports 50.3% Somateria mollissima (20,979 of 41,694
+boxes) and 88.4% cold-water North Atlantic species, in a **Gulf of Mexico** survey where
+none of them occur. Hypothesis under test was that eider is absorbing misclassified
+Morus bassanus. Needed the classifier's own val-set confusion matrix to check.
+First two submissions failed fast: `CropModel.get_transform()` takes `augmentations=`,
+not `augment=` (39551409), and `groupby.apply(..., include_groups=False)` drops the
+grouping column so `d.true` is gone inside the lambda (39553349). Third COMPLETED in
+~1 min on one B200; 3,610 val crops, 70 classes.
+Note `predict_step` reads a 2-tuple batch as `(images, metadata)`, so a bare ImageFolder
+feeds LABELS in as metadata — scripts/classifier_confusion.py wraps it in an images-only
+dataset. Harmless on this metadata-free checkpoint, a silent corruption on d8995ca8.
+
+**The gannet hypothesis is wrong, and the truth is worse.** Morus->Somateria is 1/100 and
+Somateria->Morus is 0/100; gannet holds 0.90 recall / 0.94 precision. The two classes
+separate cleanly in-distribution. The survey's eiders are not hidden gannets.
+**They are not birds.** 200px context crops of conf>0.99 Somateria show dense linear
+wind-rows of foam blobs — 50+ "birds" per 400px patch. Fratercula arctica (2,336 boxes) is
+a near-perfectly stereotyped artifact: a vertical pair of chromatically-fringed dots, the
+same shape every time. The classifier partitions foam-blob geometry into species by
+orientation and count.
+Root cause is structural: **70 classes, no background/FalsePositive class.** A softmax must
+name a species for every crop the detector hands it, and out-of-distribution foam lands on
+the Atlantic sea ducks with saturated confidence (Somateria median score 1.000, 92.8% above
+0.9). Classifier confidence is not a usable filter even in-distribution — val accuracy only
+moves 0.759 -> 0.844 from score>=0 to score>=0.99.
+**Detection score is the discriminator, not classification score.** On the 37 reviewed
+boxes, real objects sit at det 0.71-0.89 and the 34 FalsePositives at median 0.48;
+det>=0.60 keeps 3/3 real and drops 31/34 FP, where cls>=0.90 keeps 1/3 real and 2/34 FP.
+Survey-wide the cold-water share falls 88.2% -> 22.0% and top-1 flips from Somateria to
+Thalasseus maximus (Royal Tern, with Laughing Gull / Brown Pelican / Larus behind it — a
+coherent Gulf-in-July list) once det>=0.70. 82.3% of the survey sits in det 0.40-0.50.
+Two flights carry 25,280 of 41,694 boxes and 120 of them survive det>=0.70.
+**Marine mammals are separately broken** and this is not foam — it is in-distribution val.
+Megaptera novaeangliae precision 0.02 (82 predicted, 2 right) — it is the sink for
+Delphinus delphis (recall 0.15, 46/59 -> Megaptera). Balaenoptera acutorostrata and
+Eubalaena glacialis are 0.00 recall. **Tursiops truncatus, the configured
+active_learning.target_label, is 0.29 recall / 0.33 precision.**
+Metadata: **no 202607 captures CSVs exist anywhere** on /blue or /orange — the directory
+ends at 202602 — and the JPGs carry zero EXIF, so July positions are unrecoverable without
+the Globus pull. The metadata-capable checkpoint d8995ca8 is on disk and intact.
+Outputs: /blue/ewhite/b.weinstein/BOEM/classifier_confusion_56e8585_matrix.csv and
+_predictions.csv; annotator crop sheets in /blue/ewhite/b.weinstein/BOEM/qc_crops_202607/.
+Next: (1) Globus the 202607 metadata; (2) add a background class before any recount — a
+range filter alone cannot fix a detector that emits foam; (3) do NOT quote species counts
+from this run.

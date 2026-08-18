@@ -943,3 +943,26 @@ discard the real birds. The 08-14 entry's caveat correctly flagged the Feb queue
 upper bounds, but framed it as queue SIZE; precision was the part that did not survive the move.
 Actual misstep: 190 GPU-h committed to 3.45 TB on a February calibration with no spot-check of
 a few hundred July frames at the new cut. Do that before the next re-predict.
+
+## (no job) — 2026-08-17 — the 19 Morus bassanus boxes independently validate the det gate
+Pulled crops for all 19 survey Morus bassanus boxes (the class the original gannet hypothesis
+was about). **Eight are unmistakable birds in flight** — long pointed wings, slender body,
+shadow on the water. Eleven are foam. The eight real ones are EXACTLY the eight with detection
+score >= 0.65 (range 0.664-0.831); all eleven foam crops fall below (0.400-0.573). No exceptions
+either way. This class played no part in deriving the 0.60-0.70 gate from the 37 reviewed boxes,
+so it is independent confirmation on a held-out class.
+The real birds are probably not gannets — H-CAST calls them Sterna hirundo / Thalasseus maximus,
+and terns are what belongs in Gulf water in July. Species label still wrong, but there is a real
+bird underneath, which was never true of the eiders.
+Share of each class clearing detection 0.65 separates real species from foam artifacts cleanly:
+  Thalasseus maximus     218 boxes  median det 0.812   82.1% >= 0.65
+  Morus bassanus          19        median det 0.515   42.1%
+  Pelecanus occidentalis 141        median det 0.479   16.3%
+  Leucophaeus atricilla  464        median det 0.447    4.7%
+  Somateria mollissima 20,979       median det 0.442    0.5%
+  Clangula hyemalis     7,717       median det 0.438    0.4%
+  Fratercula arctica    2,336       median det 0.435    0.1%
+Royal Tern behaves like a real species; the three dominant classes behave like nothing at all.
+This per-class ">= 0.65 share" is a cheap screening statistic worth computing on any future run
+before anyone reads the species table.
+Crop sheet: /blue/ewhite/b.weinstein/BOEM/qc_crops_202607/Morus_bassanus.png

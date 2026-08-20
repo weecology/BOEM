@@ -224,14 +224,41 @@ class Pipeline:
         if unannotated:
             # Only the full-flight cache is valid here. The active-learning pool cache
             # covers a random pool_limit-sized sample, not the flight.
-            if os.path.isfile(full_flight_cache):
+            full_flight_stamp = full_flight_cache + ".classifier"
+            current_stamp = (
+                f"{self.config.classification_model.checkpoint}|"
+                f"{getattr(self.config.classification_model, 'temperature', None)}"
+            )
+            cached_stamp = None
+            if os.path.isfile(full_flight_stamp):
+                with open(full_flight_stamp) as f:
+                    cached_stamp = f.read().strip()
+            # Unlike the pool cache, this one is reused VERBATIM -- its cropmodel_score goes
+            # straight to Label Studio and the flythrough video. A cache written before
+            # temperature scaling holds raw max-softmax, which is a different scale from the
+            # current one, so reusing it across a temperature change mixes the two silently.
+            # An unstamped cache is pre-2026-08-20 and therefore raw.
+            if os.path.isfile(full_flight_cache) and cached_stamp == current_stamp:
                 print(f"Loading cached full-flight predictions from {full_flight_cache}")
                 pool_predictions = pd.read_csv(full_flight_cache)
+            elif os.path.isfile(full_flight_cache):
+                print(
+                    f"Ignoring {full_flight_cache}: written under a different classifier or "
+                    f"temperature ({cached_stamp or 'unstamped/raw'} != {current_stamp}). "
+                    f"Its cropmodel_score is on the wrong scale; re-predicting."
+                )
             else:
                 # No cache — load models and run predictions
-                detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
+                detection_model = detection.load(
+                    checkpoint=self.config.detection_model.checkpoint,
+                    score_thresh=self.config.predict.min_score,
+                )
                 classification_model = CropModel.load_from_checkpoint(
                     self.config.classification_model.checkpoint
+                )
+                classification.apply_temperature(
+                    classification_model,
+                    getattr(self.config.classification_model, "temperature", None),
                 )
                 classification_model.config["cropmodel"]["expand"] = self.config.classification_model.expand
 
@@ -244,6 +271,9 @@ class Pipeline:
                     hcast_model = hierarchical.load_hcast_model(
                         checkpoint_path=hcast_checkpoint,
                         label_csv=hcast_label_csv,
+                        expand_pixels=int(getattr(self.config.hierarchical, "expand", 0) or 0),
+                        square=bool(getattr(self.config.hierarchical, "square", False)),
+                        eval_crop_ratio=getattr(self.config.hierarchical, "eval_crop_ratio", None),
                     )
                 hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
                 hcast_workers = getattr(self.config.hierarchical, "workers", 4)
@@ -267,6 +297,8 @@ class Pipeline:
                 )
                 if pool_predictions is not None and not pool_predictions.empty:
                     pool_predictions.to_csv(full_flight_cache, index=False)
+                    with open(full_flight_stamp, "w") as f:
+                        f.write(current_stamp)
                     print(f"Cached full-flight predictions to {full_flight_cache}")
 
         # Build per-image preannotation dict, starting with human annotations
@@ -365,7 +397,10 @@ class Pipeline:
                 self._comet_experiment_id() + ".ckpt",
             )
         else:
-            trained_detection_model = detection.load(checkpoint=self.config.detection_model.checkpoint)
+            trained_detection_model = detection.load(
+                checkpoint=self.config.detection_model.checkpoint,
+                score_thresh=self.config.predict.min_score,
+            )
             actual_detection_checkpoint = self.config.detection_model.checkpoint
             self.comet_logger.experiment.log_parameter("detection_checkpoint_path", self.config.detection_model.checkpoint)
 
@@ -417,6 +452,15 @@ class Pipeline:
                     metadata_dropout=getattr(self.config.classification_model, "metadata_dropout", 0.5))
             else:
                 trained_classification_model = CropModel.load_from_checkpoint(self.config.classification_model.checkpoint)
+            # Applied after both branches: a freshly trained model needs it as much as a
+            # loaded one, and every downstream cropmodel_score threshold assumes the
+            # calibrated scale. A newly trained checkpoint has NOT had its T re-fit, so this
+            # is the point where a stale temperature would silently misscale the queue --
+            # re-run scripts/classifier_confusion.py after any retrain.
+            classification.apply_temperature(
+                trained_classification_model,
+                getattr(self.config.classification_model, "temperature", None),
+            )
         else:
             raise NotImplementedError("Only deepforest classification backend is currently implemented")
 
@@ -494,6 +538,9 @@ class Pipeline:
             hcast_model = hierarchical.load_hcast_model(
                 checkpoint_path=hcast_checkpoint,
                 label_csv=hcast_label_csv,
+                expand_pixels=int(getattr(self.config.hierarchical, "expand", 0) or 0),
+                square=bool(getattr(self.config.hierarchical, "square", False)),
+                eval_crop_ratio=getattr(self.config.hierarchical, "eval_crop_ratio", None),
             )
         hcast_batch_size = getattr(self.config.hierarchical, "batch_size", 16)
         hcast_workers = getattr(self.config.hierarchical, "workers", 4)
@@ -536,8 +583,31 @@ class Pipeline:
         os.makedirs(cache_dir, exist_ok=True)
         with open(os.path.join(cache_dir, "detection_checkpoint.txt"), "w") as f:
             f.write(actual_detection_checkpoint)
+        # Record the floor that ACTUALLY applied, not the one that was configured. The
+        # model's own score_thresh can be higher than predict.min_score (checkpoints carry
+        # the value they were built with), in which case the cache does NOT contain every
+        # box above the configured value and must not be reused as if it did. Writing the
+        # configured value here is what created caches stamped 0.3 that held nothing below
+        # 0.4 — a later run at 0.35 would have accepted them and silently lost the band.
+        effective_min_score = max(
+            float(self.config.predict.min_score),
+            float(getattr(trained_detection_model.model, "score_thresh", 0.0) or 0.0),
+        )
         with open(os.path.join(cache_dir, "min_score.txt"), "w") as f:
-            f.write(str(self.config.predict.min_score))
+            f.write(str(effective_min_score))
+        # Stamp the SCALE of the cropmodel_score column. The pipeline itself only reads the
+        # detection `score` out of this cache (it re-runs classification on the narrowed
+        # pool, so its own scores are always current), but several scripts read
+        # cropmodel_score straight off pool_predictions.csv -- collect_screened_images.py,
+        # find_tursiops_flythrough_targets.py, upload_mola_sample_to_review.py. Post
+        # temperature scaling those numbers mean something different than they did in every
+        # cache written before 2026-08-20, and nothing in the file said so. An unstamped
+        # cache is raw max-softmax.
+        with open(os.path.join(cache_dir, "classifier.txt"), "w") as f:
+            f.write(
+                f"checkpoint={self.config.classification_model.checkpoint}\n"
+                f"temperature={getattr(self.config.classification_model, 'temperature', None)}\n"
+            )
         flightline_predictions.to_csv(os.path.join(cache_dir, "pool_predictions.csv"), index=False)
 
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id

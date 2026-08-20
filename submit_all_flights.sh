@@ -10,8 +10,21 @@
 #   --b200          run on hpg-b200 instead of the default L4 (see hardware note below)
 #   --max-depth N   limit directory recursion depth
 #   --time HH:MM:SS wall-clock limit (default 48:00:00; increase for --serial runs)
+#   --extra "..."   extra Hydra overrides appended to every run's command line
 #   --dry-run       list matching dirs without submitting
 #   --help
+#
+# CACHE-ONLY RE-PREDICT (new classification checkpoint, unchanged detector):
+# src/pipeline.py reuses <image_dir>/.prediction_cache when detection_checkpoint.txt
+# matches detection_model.checkpoint AND min_score.txt <= predict.min_score, narrowing
+# the pool to images that previously had a detection >= min_score. To refresh species
+# labels without touching Label Studio or rebuilding flythrough videos (which decode
+# every 8th frame of the WHOLE flight and so defeat the point):
+#   ./submit_all_flights.sh --b200 --extra "active_learning.n_images=0 \
+#      active_testing.n_images=0 human_review.n=0 flythrough_video.enabled=False" \
+#      /blue/ewhite/b.weinstein/BOEM/imagery '*JPG_202607*'
+# The three n=0 gates make train/validation/review image lists empty, so annotator.upload()
+# is skipped for all three instances. The run still rewrites pool_predictions.csv.
 #
 # PATH_GLOB is matched against the full path; quote to avoid shell expansion (e.g. '*Gulf*').
 # Only directories with at least one .jpg/.jpeg are submitted.
@@ -34,6 +47,7 @@ SERIAL=false
 TIME_LIMIT="48:00:00"
 START_DIR=""
 PATH_GLOB=""
+EXTRA_OVERRIDES=""
 PARTITION="hpg-turin"
 GPU_SPEC="l4:1"
 # workers=5 plus the main process. B200 nodes are 112 cores / 8 GPUs = 14 per GPU.
@@ -45,6 +59,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)   usage; exit 0 ;;
     --dry-run)   DRY_RUN=true; shift ;;
+    --extra)     EXTRA_OVERRIDES="$2"; shift 2 ;;
     --serial)    SERIAL=true; shift ;;
     --b200)      PARTITION="hpg-b200"; GPU_SPEC="1"; shift ;;
     --max-depth) MAX_DEPTH="$2"; shift 2 ;;
@@ -115,7 +130,7 @@ emit_timed_run() {
 echo "Processing: ${folder}"
 read n_images n_bytes < <(find "${folder}" -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' \) -printf '%s\n' | awk '{n++; b+=\$1} END {print n+0, b+0}')
 t_start=\$SECONDS
-${PYTHON_CMD} image_dir="${folder}"
+${PYTHON_CMD} image_dir="${folder}" ${EXTRA_OVERRIDES}
 rc=\$?
 elapsed=\$(( SECONDS - t_start ))
 awk -v f="\$(basename ${folder})" -v j="\$SLURM_JOB_ID" -v n="\$n_images" -v b="\$n_bytes" -v s="\$elapsed" -v rc="\$rc" \

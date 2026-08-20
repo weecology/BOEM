@@ -1,5 +1,6 @@
 import os
 import glob
+import types
 
 import numpy as np
 import rasterio
@@ -46,6 +47,56 @@ TURTLE_LABELS = frozenset({
 def map_turtle_labels(labels: pd.Series) -> pd.Series:
     """Rewrite every turtle taxon to a single two-word class (see TURTLE_LABELS)."""
     return labels.where(~labels.astype(str).str.strip().isin(TURTLE_LABELS), TURTLE_CLASS)
+
+
+def _temperature_forward(self, x, metadata=None):
+    """CropModel.forward with the logits divided by the model's fitted temperature."""
+    return CropModel.forward(self, x, metadata=metadata) / self._temperature
+
+
+def apply_temperature(model, temperature):
+    """Apply post-hoc temperature scaling to a loaded CropModel, in place.
+
+    Divides the LOGITS by a single fitted scalar before DeepForest's softmax, so that
+    ``cropmodel_score`` is a calibrated probability rather than a raw max-softmax. Fit T by
+    minimising NLL on the checkpoint's own val split -- ``scripts/classifier_confusion.py``
+    prints it and writes the logits needed to re-derive it.
+
+    Two properties worth being precise about, because thresholds depend on them:
+
+    * ``cropmodel_label`` is UNCHANGED. Dividing every logit by a positive scalar cannot
+      move the argmax, so this only ever rewrites the score column.
+    * The RANKING of boxes by score is *nearly* but not exactly preserved. Max-softmax
+      depends on the whole logit vector, so boxes whose runner-up structure differs can
+      swap order. On a3dc30a0 that cost AUROC 0.796 -> 0.770 (see JOB_LEDGER.md 39825931).
+      Calibration buys an interpretable, checkpoint-portable threshold, NOT a better queue.
+
+    T is checkpoint-specific and does not transfer. It must be re-fit whenever
+    ``classification_model.checkpoint`` moves, exactly like ``predict.min_score`` for the
+    detector. Idempotent: re-applying replaces the previous scaling rather than compounding.
+
+    Args:
+        model (CropModel): A loaded CropModel.
+        temperature (float or None): Fitted T. ``None`` or 1.0 leaves the model untouched
+            and the score on the raw max-softmax scale.
+
+    Returns:
+        CropModel: the same object, mutated.
+    """
+    if temperature is None:
+        return model
+    T = float(temperature)
+    if not T > 0:
+        raise ValueError(f"classification_model.temperature must be > 0, got {T}")
+    if T == 1.0:
+        return model
+    model._temperature = T
+    # Bound to the CLASS method, so re-applying cannot stack a second division.
+    model.forward = types.MethodType(_temperature_forward, model)
+    print(f"[classification] temperature scaling active: logits / {T:.4f} "
+          f"(cropmodel_score is now a calibrated probability; labels unchanged)")
+
+    return model
 
 
 def get_latest_checkpoint(checkpoint_dir, num_classes):

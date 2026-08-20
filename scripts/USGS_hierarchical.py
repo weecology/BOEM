@@ -58,6 +58,8 @@ from scripts.USGS_classification import (
     train_test_split_by_image,
 )
 from scripts.taxonomy_hier import load_taxonomy_restricted_to_species
+from src.classification import TURTLE_CLASS
+from src.hierarchical import expand_bbox_to_square as _expand_bbox_to_square
 
 
 class HierarchicalCropDataset(Dataset):
@@ -76,11 +78,13 @@ class HierarchicalCropDataset(Dataset):
         is_train: bool = True,
         image_dir: str | None = None,
         expand_pixels: int = 0,
+        square: bool = True,
     ):
         self.transform = transform
         self.name_to_ids = name_to_ids
         self.image_dir = image_dir
         self.expand_pixels = expand_pixels
+        self.square = square
         self.from_dirs = image_dir is None
         if self.from_dirs:
             crop_dir = csv_or_dirs[0] if is_train else csv_or_dirs[1]
@@ -123,35 +127,18 @@ class HierarchicalCropDataset(Dataset):
             ymin = max(0, ymin - self.expand_pixels)
             xmax = min(w, xmax + self.expand_pixels)
             ymax = min(h, ymax + self.expand_pixels)
-            x0, y0, x1, y1 = _expand_bbox_to_square(xmin, ymin, xmax, ymax, w, h)
-            img = img.crop((x0, y0, x1, y1))
+            if self.square:
+                box = _expand_bbox_to_square(xmin, ymin, xmax, ymax, w, h)
+            else:
+                box = (int(xmin), int(ymin), int(xmax), int(ymax))
+            img = img.crop(box)
         if self.transform is not None:
             img = self.transform(img)
         fid, gid, sid = self.name_to_ids[label]
         return img, sid, gid, fid
 
 
-def _expand_bbox_to_square(
-    xmin: float, ymin: float, xmax: float, ymax: float,
-    width: int, height: int,
-) -> tuple[int, int, int, int]:
-    w = xmax - xmin
-    h = ymax - ymin
-    side = max(w, h)
-    cx = (xmin + xmax) / 2
-    cy = (ymin + ymax) / 2
-    x0, y0 = int(cx - side / 2), int(cy - side / 2)
-    x1, y1 = int(cx + side / 2), int(cy + side / 2)
-    x0, y0 = max(0, min(x0, width - 1)), max(0, min(y0, height - 1))
-    x1, y1 = max(0, min(x1, width)), max(0, min(y1, height))
-    if x1 <= x0:
-        x1 = x0 + 1
-    if y1 <= y0:
-        y1 = y0 + 1
-    return x0, y0, x1, y1
-
-
-def build_transform(is_train: bool, input_size: int = 224):
+def build_transform(is_train: bool, input_size: int = 224, eval_crop_ratio: float | None = 0.875):
     if is_train:
         return create_transform(
             input_size=input_size,
@@ -164,7 +151,16 @@ def build_transform(is_train: bool, input_size: int = 224):
             re_count=1,
         )
     from torchvision import transforms
-    size = int(input_size / 0.875)
+    if not eval_crop_ratio:
+        # Squash the whole crop to input_size. Correct companion to --no-square:
+        # centre-cropping a non-square crop would throw away the long axis, which
+        # is exactly the content that made the box non-square.
+        return transforms.Compose([
+            transforms.Resize((input_size, input_size), interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.ToTensor(),
+            transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD),
+        ])
+    size = int(input_size / eval_crop_ratio)
     return transforms.Compose([
         transforms.Resize(size, interpolation=transforms.InterpolationMode.BICUBIC),
         transforms.CenterCrop(input_size),
@@ -400,6 +396,16 @@ def main():
     nb_classes, name_to_ids = load_taxonomy_restricted_to_species(
         args.taxonomy, unique_labels, include_ancestor_labels=use_ancestor_labels
     )
+    if TURTLE_CLASS in unique_labels and TURTLE_CLASS not in name_to_ids:
+        # Sea turtles are annotated at family/order rank and collapsed by the
+        # CropModel pipeline (src/classification.py) onto one synthetic
+        # two-word class that has no scientificName in taxonomy.json, so the
+        # taxonomy walk above never sees it. Give it its own id at every
+        # level rather than silently dropping every turtle crop.
+        sid, gid, fid = nb_classes[0], nb_classes[1], nb_classes[2]
+        name_to_ids[TURTLE_CLASS] = (fid, gid, sid)
+        nb_classes = [nb_classes[0] + 1, nb_classes[1] + 1, nb_classes[2] + 1]
+        print(f"[hierarchical] added synthetic taxonomy entry for {TURTLE_CLASS!r} (species_id={sid})")
     if not name_to_ids:
         print("No labels found in taxonomy; check taxonomy.json and data")
         return 1

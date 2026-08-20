@@ -1,7 +1,28 @@
 # H-CAST hierarchical taxonomy model (optional)
 # Set checkpoint to null to disable; pipeline skips loading when null
-checkpoint:  /blue/ewhite/b.weinstein/src/BOEM/output/usgs_hvit_c2f_b128/best_checkpoint.pth
-# CSV with columns: species, genus, family (optional "index" = species class index). If null, numeric labels are used.
-label_csv: /blue/ewhite/b.weinstein/src/BOEM/output/species.csv
+#
+# Trained in-repo by submit_USGS_hierarchical.sh (job 39614374, 2026-08-20), 68/49/18 heads,
+# best Species@1 76.72 at epoch 96 on the buffer_30/a3dc30a0 val split.
+# Replaced output/usgs_hvit_c2f_b128/best_checkpoint.pth (Dec 2025), which was trained OUTSIDE
+# this repo (args.data_path=/scratch/user/u.sp270400/USGS_crops) and measured 12.81% species
+# accuracy at the geometry the pipeline was feeding it -- see JOB_LEDGER.md 39811016+39811745.
+checkpoint: /blue/ewhite/b.weinstein/src/BOEM/output/usgs_hier/best_checkpoint.pth
+# CSV with columns: species, genus, family (optional "index" = species class index,
+# optional "genus_index"/"family_index" = genus/family class indices). If null, numeric labels are used.
+# Must match the checkpoint's head ordering -- regenerate with scripts/build_hcast_label_csv.py
+# from the same split CSVs the checkpoint was trained on, never hand-edit.
+label_csv: /blue/ewhite/b.weinstein/src/BOEM/output/usgs_hier/species.csv
 batch_size: 16
 workers: 4
+
+# Crop geometry at inference. These MUST match how the checkpoint was trained --
+# otherwise H-CAST classifies a different crop than it learned on.
+# scripts/USGS_hierarchical.py trains with --expand-pixels (default 30), squares the
+# expanded box, and validates at eval_crop_ratio 0.875. Measured on the val split:
+# this geometry gives 76.72 Species@1 vs 62.66 for the old expand-0/no-square/squash
+# path, i.e. +14.06 points, of which +12.79 is the expand buffer alone.
+# If square is ever set false, eval_crop_ratio MUST be null (squash): centre-cropping a
+# non-square crop discards the long axis and costs ~27 points.
+expand: 30
+square: true
+eval_crop_ratio: 0.875

@@ -996,3 +996,806 @@ batch 96) so the turtle class is the only variable vs the 56e8585 baseline (67 c
 **Next:** expect 68 classes. Check the `[turtles]` line in the log for the relabel count, then read
 turtle precision/recall off the Comet confusion matrix — the class lumps hardshells and leatherbacks
 together, so confusion with Mola mola (similar size/shape from altitude) is the thing to look for.
+
+## 39614374 — 2026-08-18 — submit_USGS_hierarchical.sh — COMPLETED
+Why: user asked to refresh the hierarchical (H-CAST family/genus/species) model, using the same
+new annotations (including the new turtle class) that motivated 39613239's flat CropModel retrain.
+39613239 was still RUNNING (mid-45-epoch) at submit time, but that's fine here: `USGS_classification.py`
+writes `usgs_train_split.csv`/`usgs_val_split.csv` to `checkpoint_dir/buffer_30/<comet_id>/` *before*
+`train()` is called (scripts/USGS_classification.py:347-351), so the split for the turtle-inclusive
+run was already final and on disk (`buffer_30/a3dc30a085f5442393736ecd96b564c5/`, written 09:44,
+54,765 train rows, 1,647 of them `Chelonioidea sp`) — no need to wait for training/checkpoint to finish.
+**Found and fixed a bug before submitting**: `scripts/USGS_hierarchical.py` builds its label vocabulary
+by matching split-CSV labels against `taxonomy.json` species leaves (`taxonomy_hier.py: _walk_species`
+only returns rank=="Species" nodes). `Chelonioidea sp` is a synthetic label invented by
+`src/classification.py`'s turtle fix (real taxonomy has no such scientificName), so it silently failed
+to match and every turtle crop would have been dropped from the hierarchical train/val sets — the exact
+same silent-loss bug 39613239 just fixed for CropModel, reappearing in the parallel pipeline. Fixed in
+`scripts/USGS_hierarchical.py` (uncommitted): after `load_taxonomy_restricted_to_species`, if
+`TURTLE_CLASS` ("Chelonioidea sp") is in the discovered labels but missing from `name_to_ids`, assign it
+a fresh id at every level (species/genus/family) rather than dropping it. Checked the ancestor-extension
+path (`_build_hierarchical_train_with_ancestors`, only active because `--annotations-dir` is passed) too:
+it re-reads raw annotation CSVs and only 20 raw two-word turtle rows exist there (mostly binomials like
+`Caretta caretta`), all far below the >25-per-class filter, so that path was already a non-issue and
+was left alone.
+Submitted with `BOEM_HIER_SPLIT_DIR` pinned explicitly to `buffer_30/a3dc30a085f5442393736ecd96b564c5`
+(rather than relying on the script's auto-discover-newest-split logic) because an unrelated second
+classification job (39613593, `submit_USGS_classification.sh`, submitted 09:43:42 by a separate,
+unexplained invocation) was also queued on hpg-b200 at submit time; pinning avoids the hierarchical
+run silently picking up whatever split that job writes if it finishes first.
+Result: **COMPLETED rc=0 at 2026-08-20 04:01:10, elapsed 1-17:40:41 — ran its full 100-epoch
+budget (`--epochs 100` in submit_USGS_hierarchical.sh:52, not visible in the log itself).
+Best Species@1 76.72 (epoch 96); final epoch 99 Species@1 76.44, Species@5 92.46, Genus@1 82.21,
+Family@1 89.09.** Still improving slowly at the cap — the last 10 epochs move 75.4-76.7, so more
+epochs would buy little but the curve had not flattened. Checkpoint (86.9 MB) written to
+/blue/ewhite/b.weinstein/src/BOEM/output/usgs_hier/best_checkpoint.pth at 02:59, consistent with
+the epoch-96 best. Log /home/b.weinstein/logs/classification_hier_BOEM39614374.out;
+.err is warnings only (the amp FutureWarning, DeiT registry overwrites, a DtypeWarning on the
+annotation-CSV concat) — no errors.
+**Comparable to the flat CropModel it shares a val split with:** a3dc30a0 val accuracy 0.756
+vs Species@1 0.767 here, on the identical 3,621-crop val set. The hierarchy buys ~1 point at
+species and adds usable genus/family heads; it does not change the species-level picture.
+Train set is much larger because of ancestor extension (176,338 rows vs 54,765) — the extra
+121,808 rows carry only family/genus labels.
+**The turtle fix landed as designed** (this was the open verification): the log's first lines are
+`[hierarchical] added synthetic taxonomy entry for 'Chelonioidea sp' (species_id=67)` and
+`Hierarchy sizes: species=68 genus=49 family=18`, i.e. +1 at every level.
+**Turtle species-head accuracy is NOT answerable from this log** — `USGS_hierarchical.py` prints
+only aggregate Species@1/@5, Genus@1, Family@1 per epoch, no per-class breakdown and no confusion
+matrix. Getting it needs a separate eval pass over `best_checkpoint.pth` against
+`buffer_30/a3dc30a085f5442393736ecd96b564c5/usgs_val_split.csv`.
+Earlier snapshot (kept for the trajectory): at 2026-08-19 14:00, 63 epochs done,
+val Species@1 69.21, Species@5 90.42, Genus@1 74.59, Family@1 83.84 — so the last 37 epochs
+added ~7.5 points at species.
+Next: (1) run a per-class eval over `output/usgs_hier/best_checkpoint.pth` to read turtle
+species-head accuracy — family/genus heads are meaningless for this synthetic class since it
+isn't a real taxon, only the species-level "is it a turtle" signal is informative; (2) decide
+whether the hierarchical model is worth adopting at all given it matches the flat CropModel at
+species level — its value would be the genus/family heads for the n<30 large-whale classes that
+39696287 showed cannot support species-level prediction; (3) the pipeline DOES already consume an H-CAST model
+(`src/pipeline.py:494-506` -> `active_learning.generate_pool_predictions` -> `hierarchical.classify_dataframe`),
+but `boem_conf/hierarchical/hierarchical.yaml` still points at the Dec-2025
+`output/usgs_hvit_c2f_b128/best_checkpoint.pth` (37/30/14 heads, epoch 278), NOT this run.
+Swapping in `output/usgs_hier/best_checkpoint.pth` (68/49/18) ALSO requires a new `label_csv`:
+`output/species.csv` has exactly 37 species rows matching the old head, so against a 68-wide head
+every index >= 37 falls through `species_numeric_to_label.get()` to a literal `species_<int>`
+string. Build the CSV from `scripts/taxonomy_hier.py` ordering (sorted-alphabetical 0-based over
+the species present in the split) plus `Chelonioidea sp` appended at species_id=67.
+
+## 39696287 — 2026-08-19 — confusion matrix on the NEAQ-free classifier (a3dc30a0)
+Why: 56e8585 had Megaptera novaeangliae at precision 0.02 (82 predicted, 2 right) acting as
+the sink for Delphinus delphis (recall 0.15). Standing hypothesis was that NEAQ — boat/
+variable-distance imagery mixed into fixed-altitude aerial surveys — gave the classifier crop
+scale as a shortcut for species identity. `scripts/USGS_classification.py` now drops `NEAQ_*`
+crop CSVs (`UBFAI_CROPS_EXCLUDE_NEAQ_PREFIX`, committed in 5080197), so a3dc30a0/39613239 is
+the first NEAQ-free checkpoint and tests it directly. Parameterised
+`scripts/classifier_confusion.py` to take a comet id and added crop-pixel-size, NEAQ-source,
+and cetacean blocks; added `submit_classifier_confusion.sh`.
+
+**The hypothesis is right, and the old number was almost entirely a NEAQ artifact.**
+Re-reading the 56e8585 predictions CSV by source (NEAQ_* basename vs not):
+  - 70 of 3,610 val crops were NEAQ, at **7.1% accuracy** vs 77.3% for BOEM crops.
+  - Delphinus recall splits **0/48 NEAQ vs 9/11 BOEM (0.82)**. The headline 0.15 was one
+    parent image, NEAQ_20220812_00005, contributing 48 of the 59 val crops.
+  - 46 of the 82 Megaptera predictions were NEAQ Delphinus; 55 of 82 were NEAQ crops of
+    some class. Strip NEAQ and the "Megaptera sink" is two-thirds gone by construction.
+
+**Direction of the scale effect is the opposite of how it was stated.** NEAQ dolphins are not
+small boxes read as big whales — they are *large* crops: median 379px (266-584) against 158px
+for BOEM dolphins, sitting squarely inside the BOEM large-whale band (median 540px). Close-range
+imagery makes a dolphin fill a whale-sized box, and the classifier believed the size.
+
+**On a3dc30a0 the whale/dolphin confusion is gone.** Megaptera predictions 82 -> **8**, and not
+one cetacean row lands there except 2 genuine Balaenoptera acutorostrata (whale->whale).
+Delphinus recall 0.15 -> **0.50** (5/10) and its errors are now Tursiops x4 + Fratercula x1 —
+dolphin->dolphin, the confusion you would expect from a working model. Overall val accuracy is
+unchanged (0.759 -> 0.756), so the exclusion cost nothing.
+Crop size still tracks the real size ordering on BOEM-only data (median px): Delphinus 153,
+Halichoerus 176, Phoca 176, Stenella 202, Tursiops 218 | Balaenoptera acutorostrata 383,
+Megaptera 507, B. physalus 543. Size remains a legitimate cue once ground resolution is constant.
+
+**What we traded for it.** NEAQ was carrying the large whales, and they have now collapsed to
+sample sizes that cannot support a class: Megaptera train crops 29 -> 11 and **val recall 0.00**
+(6 crops, top confusion Larus delawarensis x4); B. acutorostrata 0.167, B. physalus 0.200;
+**Eubalaena glacialis dropped out entirely** (70 -> 69 classes, offset by the new Chelonioidea sp,
+so the count reads 70 either way). Tursiops truncatus — still the configured
+`active_learning.target_label` — is 0.296 recall, no better than before. So we removed a false
+Megaptera *sink*, we did not gain whale detection: the model now has essentially no large-whale
+capability rather than a wrong one. That is the better failure mode for survey counts, but any
+right-whale/humpback work needs NEAQ back under scale-aware handling (its own model, or a
+GSD-normalised crop) rather than mixed in raw.
+Unrelated but unchanged from 56e8585: confidence is still not a filter (accuracy 0.756 at
+score>=0, 0.831 at score>=0.99), and the missing background/FalsePositive class is untouched.
+Outputs: /blue/ewhite/b.weinstein/BOEM/classifier_confusion_a3dc30a0_matrix.csv and
+_predictions.csv; log /home/b.weinstein/logs/cls_confusion_39696287.out.
+Next: (1) decide whether to keep declaring large-whale classes at n<30 or fold them into a
+`Cetacea sp` coarse class; (2) if NEAQ returns, normalise crops by ground sample distance before
+pooling; (3) the 202607 survey recount still blocks on the background class, not on this.
+
+## 39700519 + 39700677-39700760 — 2026-08-19 — cache-only re-predict of JPG_202607* on a3dc30a0
+Why: swap the classification checkpoint to the NEAQ-free a3dc30a0 (see 39696287) and refresh
+the 20-flight July survey's species labels without re-running detection over 533,876 frames.
+`src/pipeline.py:436` already supports exactly this: it reuses `<image_dir>/.prediction_cache`
+when `detection_checkpoint.txt` matches `detection_model.checkpoint` **and** `min_score.txt`
+<= `predict.min_score`, then narrows the pool to images that previously had a detection
+>= min_score. All 20 July caches qualify (min_score 0.3, ckpt a09c6933/epoch16), unlike the 8
+untrustworthy `imagery/` caches from 2026-08-04 that lack `min_score.txt`.
+**Work saved: 19,080 of 533,876 images (3.57%)** carry a >=0.30 detection — 41,694 boxes.
+Per-flight spread is wide: JPG_20260712_113200 is 21.1% of frames, JPG_20260712_145900 is 0.48%.
+
+Config: `boem_conf/classification_model/finetune.yaml` checkpoint 56e8585 -> a3dc30a0. Both are
+70 classes so nothing downstream changes shape, but the class LIST differs (Eubalaena out,
+Chelonioidea sp in). `detection_model.checkpoint` deliberately untouched — changing it would
+invalidate every cache and force the full 190 GPU-h pass again.
+Added `--extra "<hydra overrides>"` to `submit_all_flights.sh` plus a CACHE-ONLY RE-PREDICT
+block in its header documenting the invocation. Overrides used:
+`active_learning.n_images=0 active_testing.n_images=0 human_review.n=0 flythrough_video.enabled=False`
+  - The three n=0 gates leave train/validation/review image lists empty, so all three
+    `annotator.upload()` calls are skipped. Without them this run would have pushed ~2,600 new
+    tasks into the shared Label Studio project (100 train + 1 val + 30 review per flight).
+  - flythrough off because `generate_flythrough` globs the WHOLE flight and decodes every 8th
+    frame — a full-flight pass, which is the cost we are avoiding. The 20 existing videos are
+    unchanged; regenerate later from the refreshed cache (the script falls back to reading
+    `.prediction_cache/pool_predictions.csv` when `predictions=None`).
+
+**Backed up all 20 pre-existing caches first** to
+/blue/ewhite/b.weinstein/BOEM/prediction_cache_backup_56e8585_20260819/ (41,694 boxes, 6.2 MB),
+because the run REWRITES `pool_predictions.csv` in place and the survey's published species
+counts came from the 56e8585 version.
+
+Smoke test 39700519 (JPG_20260712_092800, the smallest) COMPLETED in **1m51s**:
+"running detection+classification on 58 images ... instead of 13911", then 58 images / 62 boxes
+out — same box count as the cached run, detection scores identical to 1.5e-3 (GPU nondeterminism),
+and "No images to upload" for all three instances. 16 of 60 matched boxes changed species label;
+3 became the new Chelonioidea sp.
+Then fanned out all 20 flights on hpg-b200.
+**Scheduling note worth reusing:** submitted at `--time 08:00:00` they all sat PENDING behind a
+274-deep queue with start estimates 10-14 h out. These jobs need ~2-30 min, and an 8 h request
+makes them effectively unbackfillable. `scontrol update jobid=<id> TimeLimit=02:00:00` on the
+pending jobs (no cancel needed) pulled the earliest estimate from 23:52 to 15:45. Submit
+cache-only reruns at a realistic wall time.
+Result: **all 21 jobs COMPLETED, rc=0, no errors.** Every flight logged "Using prediction cache"
+and "No images to upload" x3. **6.2 GPU-h against the 189.6 GPU-h the original pass cost** —
+e.g. JPG_20260710_163500 21.81h -> 0.19h. The two big flights (JPG_20260712_100400,
+JPG_20260712_113200) took 1h45m each, so the 2h TimeLimit was closer than it looked; use 3h next
+time. Box totals are stable: 41,694 -> 41,739 (+0.1%), 19,080 -> 19,008 images, drift only from
+GPU nondeterminism at the score boundary.
+
+**The whale fix transfers to real survey data**, independent of the val split:
+  Megaptera novaeangliae  92 -> 8    Balaenoptera acutorostrata  29 -> 5
+  Eubalaena glacialis      5 -> 0    Balaenoptera physalus        4 -> 1
+**But the foam did not go away, it MOVED — and the prediction was wrong about which classes.**
+  Somateria mollissima 20,979 -> 1,820   |   Chelonioidea sp        0 -> 9,699
+  Gavia immer           2,635 -> 8,089   |   Clangula hyemalis  7,717 -> 10,719
+  Tursiops truncatus      323 -> 1,379   |   Fratercula arctica 2,336 -> 1,978
+The new sea turtle class became the single largest foam sink on its first contact with survey
+imagery. "Cold-water share 79.4% -> 39.2%" is therefore a MIRAGE: the foam relabelled onto
+turtles and loons, which are not on the cold-water list. Do not quote that number as progress.
+The det>=0.65 screen is unchanged as expected (611 -> 608 boxes), confirming the swap did not
+touch the detector — but Chelonioidea sp 58 and Tursiops truncatus 43 now appear inside the
+screened set and need eyeballing before either is believed.
+**Tursiops truncatus 4x-ing (323 -> 1,379) matters operationally**: it is
+`active_learning.target_labels`, so it drives image selection. Its val recall is 0.296 and it was
+NOT improved by the NEAQ removal.
+
+**Latent cache trap found:** every July `min_score.txt` records 0.3, but the actual minimum score
+in the CSVs is **0.4000** — `detection.py:load()` still does not override score_thresh from
+`predict.min_score` (open item from the 08-14 entry). The cache-validity check
+(`cached_min_score <= predict.min_score`) would therefore ACCEPT the cache for a future run at
+min_score 0.30-0.40 while silently missing every box in that band. Fix score_thresh, or write the
+observed floor rather than the configured one into min_score.txt.
+Next: (1) pull crops for the Chelonioidea sp and Tursiops boxes that clear det>=0.65 and look at
+them before anything is recounted; (2) the background/FalsePositive class remains THE blocker —
+this swap redistributed the foam without reducing it; (3) fix the score_thresh/min_score.txt
+mismatch before the next cached rerun.
+
+## (no job) — 2026-08-20 — predict.min_score 0.30 -> 0.70, and score_thresh actually enforced
+**Decision:** the pipeline detection gate is 0.70 everywhere. Three config gates moved together
+(`predict.min_score`, `active_learning.min_detection_score`, `human_review.min_detection_score`),
+as their comments have always required.
+
+**The 0.30 gate was never real.** The July caches were stamped `min_score.txt` = 0.3 but their
+actual floor was 0.4000, because `detection.load()` never overrode the `score_thresh` baked into
+the checkpoint at construction (`scripts/USGS_backbone.py:154`, 0.4). So the "all detection
+scores" species table everyone was reading WAS already the >=0.30 table — filtering it at the
+configured gate is a no-op. Fixed two ways:
+  - `detection.load(score_thresh=...)` now sets BOTH `model.score_thresh` (the live torchvision
+    module, which is what predict_tile reads) and `config["score_thresh"]` (the inert dict copy).
+    Setting only the latter — the previous behaviour everywhere but the sweep scripts — changes
+    nothing about what the detector emits.
+  - `min_score.txt` now records `max(predict.min_score, model.score_thresh)`, the floor that
+    ACTUALLY applied, so a cache can never again claim coverage of a band it does not hold.
+
+**Why 0.70 and not 0.30.** The 0.30 value came from the Feb holdout sweep (39385379), where 79.1%
+of boxes already sat above 0.85; the July survey has 1.4% there. On survey imagery, detection
+score is the ONLY signal that separates animals from foam:
+  - 19 Morus bassanus crops: the 8 real birds are exactly the 8 with score >= 0.65 (0.664-0.831),
+    all 11 foam crops fall in 0.400-0.573. No exceptions either way.
+  - Share clearing 0.65 (a3dc30a0, 20 flights): Thalasseus maximus 86.7% (median det 0.811) vs
+    Clangula 0.3%, Chelonioidea 0.6%, Gavia 0.5%, Somateria 2.0%, Fratercula 0.2%.
+  - Classifier confidence cannot substitute: median `cropmodel_score` on the foam sinks is
+    Chelonioidea 0.990, Clangula 0.994, Somateria 0.988, Tursiops 0.983. The classifier is
+    maximally confident ON THE FOAM.
+Pool cost on the 20-flight survey: 41,739 boxes (>=0.40) -> 7,405 (>=0.50) -> 608 (>=0.65) ->
+388 (>=0.70). 98.5% of the old pool was below the only threshold that discriminates.
+
+**The species table at the gate** (det>=0.65, 56e8585 -> a3dc30a0, 611 -> 608 boxes) is a
+different document from the ungated one. Thalasseus maximus 179->170 dominates; Somateria
+102->36; Larus argentatus 29->10. The classifier swap's whale fix holds AT the gate — Megaptera
+10->0 and Phoca vitulina 5->0 confident boxes — but the turtle sink appears there too:
+Chelonioidea 0->58 and Tursiops 25->43 inside the screened set. Those two still need eyeballing.
+
+**Existing caches stay valid, no re-predict needed.** Every July cache holds everything >=0.4,
+a superset of >=0.7, and `cached_min_score (0.3) <= 0.70` passes the validity check. `report.py`
+reads `config.predict.min_score` directly, so the species table regenerates at 0.70 for free.
+
+**Deliberately NOT moved** (asked and confirmed): `submit_seals_array.sh`,
+`submit_seals_missing_metadata.sh` and `submit_neaq.sh` keep `predict.min_score=0.5`. Seal
+detections peak ~0.89 even on obvious animals; NEAQ is retired and its imagery is already a
+0.5-screened subset, so a higher floor there recovers nothing. `scripts/collect_screened_images.py`
+MIN_SCORE stays 0.5. Recorded in the `predict.min_score` comment so it does not read as an
+oversight later.
+Also: `active_testing.min_score` is a DEAD key (nothing reads it); set to 0.70 and labelled.
+`src/active_learning.py` fallback defaults (0.85/0.1/0.3) realigned to 0.70 — config still wins.
+
+Tests: 43 passed, 1 skipped. `tests/test_detection.py::test_detection_preprocess_and_train` fails
+on HEAD too (DeepForest API drift: `deepforest.__init__() got an unexpected keyword 'label_dict'`
+at `src/detection.py:275`) — pre-existing, unrelated, still open.
+
+## (no job) — 2026-08-20 — human_review.review_high 0.6 -> 0.99: the review band was inert
+Why: the classifier is visibly overconfident (predict.min_score notes median cropmodel_score
+0.98-0.99 on foam), so the question was whether `review_high` carries any information at all,
+or whether the review queue is fed by accident. Answered off the existing a3dc30a0 val
+predictions — /blue/ewhite/b.weinstein/BOEM/classifier_confusion_a3dc30a0_predictions.csv,
+n=3,695 — plus the 20 cached July pools. No new GPU time.
+
+**Two questions, opposite answers, and the confusion between them is what broke the band.**
+LEVEL is hopeless: mean confidence 0.965 against 0.756 accuracy, **ECE 0.209**, and 80.9% of
+all val crops score >= 0.99. `cropmodel_score` is not a probability and no threshold should be
+read as one. RESOLUTION is fine: **AUROC(score -> correct) = 0.789**, and accuracy rises
+monotonically straight through the spike — 0.51 in [0.99,0.995), 0.56, 0.66, 0.77, and 0.90 at
+exactly 1.0. So the score ranks honestly; it just does all its ranking inside the top 1%.
+
+**That is why 0.6 was doing nothing.** Below 0.99 accuracy is essentially FLAT: 0.36 at
+0.6-0.7, 0.48 at 0.8-0.9, 0.49 at 0.95-0.99. Every cut in that range was separating
+equally-wrong boxes from each other. The old [0.3, 0.6] band held 2.6% of val crops and
+**7.0% of all errors**; on the 20-flight July survey it held **28 boxes / 27 images** against
+`human_review.n=30`. The queue was not prioritised, it was whatever happened to land there —
+the same failure shape as the always-empty `confident_predictions` bug from 2026-08-12, one
+level up.
+
+**0.99 chosen** as the first cut that lands where the error mass is: 19.1% of val crops,
+**43.9% of all errors**, 56.1% of the reviewed batch actually wrong (**2.30x** the 24.4% base
+rate). Survey pool goes 28 -> **185 boxes / 173 images** reviewed, auto-annotate 357 -> 188
+boxes, and the val accuracy of the auto-annotated set (the errors we silently accept) rises
+**0.767 -> 0.831**. Nothing above 0.99 buys much more: 0.999 gets 59.4% of errors but reviews
+27.4% of the pool at a *lower* 2.17x lift, and would leave only 131 survey images auto-annotated.
+
+**0.99 is a percentile, not a probability** — roughly p80 of this checkpoint's score
+distribution (p10=0.892, p20=0.993, p30=0.9995, p50=1.000). It is as checkpoint-specific as
+`predict.min_score` is detector-specific and must be re-derived when the classifier moves.
+`scripts/classifier_confusion.py` now prints the reliability table, ECE, AUROC and the full
+`review_high` sweep so the re-derivation is one job, not one analysis.
+
+**The band widening also turns the queue sort back on.** `src/pipeline.py:654` orders the band
+by DETECTION score descending, which is right (detection score is the only foam discriminator)
+but was near-inert against a 27-image pool. Against 173 images it selects: queue detection
+scores go 0.700-0.883 -> **0.868-0.935**, and the queue shifts off the mass classes toward
+Thalasseus maximus 6 -> 15 and Morus bassanus 1 -> 5 — the two classes eyeballing has confirmed
+behave like real animals at the gate.
+
+**Caveat, and it is a real one.** The val split is all real annotated animals — there is no foam
+and no background class in it, so every number above is measured on a cleaner distribution than
+the survey. The 173-image figure comes from the actual survey pools and is the one to trust for
+queue sizing; the 43.9% error recall is the val-set optimistic case. The missing background/
+FalsePositive class remains the blocker underneath all of this (see 39696287).
+
+Changed: `boem_conf/boem_config.yaml` human_review.review_high 0.6 -> 0.99 with the derivation
+inline; `src/active_learning.py` `human_review()` default 0.6 -> 0.99 and docstring warning that
+the value is a percentile, not a probability; `scripts/classifier_confusion.py` calibration +
+threshold-sweep block replacing the old 5-line "does high confidence mean correct?" print.
+`review_low` stays 0.3 — it is nearly inert (1 of 3,695 val crops below it, survey pool min
+0.316) and the spurious-detection job it was written for now belongs to `min_detection_score`.
+Next: (1) re-derive on the next classifier checkpoint before trusting the queue; (2) the honest
+fix for the level miscalibration is temperature scaling on the val split, which would make
+`review_high` mean something across checkpoints instead of needing a re-sweep each time.
+
+## (no job) — 2026-08-20 — taxonomic rollup in the report: agreement decides rank
+Why: reporting should inherit the hierarchical classification and roll statistics up the
+taxonomic tree, rather than reporting the flat CropModel species as if it were unopposed.
+**The rollup did NOT previously exist anywhere**, contrary to standing assumption. What existed
+was the *predicate*, in two places, neither of which assigns a label:
+  - `active_learning.crop_hcast_supported_match_or_genus_consistent` (src/active_learning.py:22) —
+    "species match OR genus consistent", used as a VETO on Label Studio image selection under
+    `ensemble_target_mode: match_or_genus_consistent`. Currently inert (mode defaults to `crop_only`).
+  - `PipelineEvaluation._evaluate_hierarchical_metrics` (src/pipeline_evaluation.py:112) — computes
+    `species_agreement` / `genus_agreement` as Comet METRICS. Numbers, not labels.
+`src/report.py` set `predicted_label = cropmodel_label` unconditionally and carried hcast_* as
+inert extra columns. Confirmed never implemented: `git log -S consensus_label / genus_rollup /
+reported_label` all return nothing.
+
+Implemented in `src/hierarchical.py` (`resolve_row_rank`, `resolve_taxonomic_rank`,
+`summarize_taxonomic_rollup`, `load_species_to_ranks`), wired into `src/report.py`, config block
+`report.taxonomic_rollup`, 10 tests in `tests/test_taxonomic_rollup.py` (all pass).
+Ladder: species agree -> species | species differ, genus same -> genus | genus differs, family
+same -> family | no agreement -> `unresolved` (crop label retained for traceability, rank marks it
+uncountable). Missing/null hcast columns pass through at species rank, so `hierarchical.checkpoint:
+null` runs are byte-identical to before. Joint confidence = min(cropmodel_score, hcast_<rank>_score),
+matching `active_learning._row_min_class_confidence`. Optional `min_consensus_score` demotes one
+further rank when joint confidence is below the floor (agreement sets how far up we CAN report,
+confidence how far up we MUST) — default null, agreement alone.
+Outputs: `consensus_label`/`consensus_rank`/`consensus_score` in both observations tables and the
+shapefile (`cons_lbl`/`cons_rank`/`cons_scr`), plus a new `taxonomic_summary.csv` per flight.
+The existing species-composition figures, maps and sample crops still key off `cropmodel_label` —
+deliberately left alone so this change adds a view rather than silently restating published counts.
+
+**The rollup is correct but currently not usable, and the reason is the checkpoint, not the code.**
+Measured on the real JPG_20260712_113200 cache at the live det>=0.70 gate (26 boxes):
+**4 species (15.4%), 5 genus (19.2%), 17 unresolved (65.4%)**. Across all 12,771 cached boxes it is
+worse: 11 species, 20 genus, 95 family, **12,645 unresolved**. Crop-vs-hcast species agreement on
+this flight is 0.09%. That is the wired H-CAST being a Dec-2025 37-class bird model whose
+vocabulary cannot express the CropModel's top classes (no turtle, no Tursiops) — see the
+39614374 entry for the checkpoint/label_csv swap this blocks on. Do NOT publish rollup counts to
+collaborators until the 68-class checkpoint and a matching 68-row label CSV are wired in; until
+then `unresolved` is measuring vocabulary mismatch, not genuine taxonomic uncertainty.
+Next: (1) build the 68-row label CSV and swap `boem_conf/hierarchical/hierarchical.yaml`, then
+re-measure the rank split on the same flight — it is the cleanest single test of whether the new
+hierarchical model is worth adopting; (2) decide whether `unresolved` rows should be dropped from
+abundance counts or reported as an explicit uncertainty bucket; (3) if the rollup is adopted as
+the headline statistic, switch the PDF species-composition figures onto `consensus_label`.
+
+## (no job) — 2026-08-20 — decision: 0.70 is the reporting band, 0.40 is disposable
+Ben's call, explicit: **everything below det 0.70 is garbage detections; he does not want the
+0.40 band preserved.** This retires the cache-overwrite objection raised against re-running the
+July flights — rewriting `.prediction_cache/pool_predictions.csv` at a 0.70 floor is accepted,
+and the 20 caches do NOT need backing up first (unlike the 2026-08-19 run, which backed up the
+56e8585 versions to prediction_cache_backup_56e8585_20260819/).
+What the rerun will actually produce, measured off the current caches:
+  41,739 boxes / 19,008 images (0.40 floor)  ->  **388 boxes / 360 images** at 0.70.
+Per-flight the survivors are thin — JPG_20260713_141400 keeps 2 boxes, JPG_20260711_102100 keeps 3;
+the largest is JPG_20260712_100400 at 94. The taxonomic-agreement measurement will therefore rest
+on 388 boxes survey-wide, which is the live reporting gate but a thin basis for characterising
+model agreement. Noted, not objected to.
+
+### Staged and waiting on the crop-geometry sweep
+Decided to wait for `BOEM_hcast_expand` before touching anything. Two jobs are queued —
+**39811016 (start 14:22:48) and 39811745 (start 14:27:09)**, both hpg-b200, both TimeLimit 4h.
+**CORRECTION — they were NOT duplicates**, as first assumed from the identical job name and
+script. They swept different checkpoints via the `BOEM_HCAST_*` env overrides and wrote to
+different files: 39811016 -> the new usgs_hier model (`output/usgs_hier/expand_sweep.csv`),
+39811745 -> the old usgs_hvit_c2f_b128 (`output/usgs_hvit_c2f_b128/expand_sweep.csv`). No race,
+nothing to cancel. Both COMPLETED rc=0 in 6:08 and 4:17. Neither is mine (a concurrent session
+owns them, along with in-flight edits to `src/hierarchical.py`).
+
+Readiness audit for the rerun — everything except geometry is done:
+  - `output/usgs_hier/best_checkpoint.pth` (68/49/18) loads clean, `nb_classes [68, 49, 18]`.
+  - `output/usgs_hier/species.csv` built 13:21: 68 species / 49 genus / 18 family, index 0-67,
+    with explicit `genus_index`/`family_index` columns — which `load_hcast_model` now honours
+    (src/hierarchical.py:233,249), closing the positional-ordering risk flagged earlier.
+    Verified: species 67 -> `Chelonioidea sp`, genus 48 -> `Chelonioidea`, family 17 -> `Chelonioidea`.
+  - Crop geometry is plumbed config -> inference (`src/pipeline.py:250-252` and `506-508` pass
+    expand/square/eval_crop_ratio into load/classify).
+  - Rollup + `taxonomic_summary.csv` landed, 10/10 tests pass.
+  - **NOT done:** `boem_conf/hierarchical/hierarchical.yaml` still points at the Dec-2025
+    `usgs_hvit_c2f_b128` checkpoint and the old 37-row `output/species.csv`, and still carries the
+    placeholder geometry `expand: 0 / square: false / eval_crop_ratio: null`. The sweep decides
+    what those three become; the yaml's own comment predicts 30/true/0.875 but that is a reading
+    of the training script, not a measurement.
+Next, once the sweep lands: (1) read `output/usgs_hier/expand_sweep.csv` and take the winning
+geometry; (2) swap checkpoint + label_csv + the three geometry keys in hierarchical.yaml;
+(3) resubmit the 20 July flights with the documented cache-only invocation from
+`submit_all_flights.sh`'s header (`--b200 --extra "active_learning.n_images=0
+active_testing.n_images=0 human_review.n=0 flythrough_video.enabled=False"`), at a REALISTIC wall
+time — the 08-19 lesson was that an 8h request makes these unbackfillable; ~360 images total means
+minutes per flight, so 1h is generous; (4) read the rank split out of `taxonomic_summary.csv`.
+
+## 39811016 + 39811745 — 2026-08-20 — H-CAST crop-geometry sweep — both COMPLETED
+Why: H-CAST re-crops from the parent image at inference, and the geometry it uses must match the
+geometry it trained on. `boem_conf/hierarchical/hierarchical.yaml` carried the historical no-op
+(`expand 0 / square false / eval_crop_ratio null`) inherited from the Dec-2025 checkpoint, which
+was trained outside this repo on pre-made crops. `scripts/USGS_hierarchical.py` instead pads by
+--expand-pixels 30, squares, and validates at ratio 0.875. Sweep measures rather than assumes.
+
+**New checkpoint (39811016, output/usgs_hier, 68/49/18, 3,621 val crops) — Species@1:**
+    expand=30 square=true  ratio=0.875 -> **76.72**  (training-matched; best)
+    expand=30 square=false ratio=0.875 ->   76.53
+    expand=15 square=true  ratio=0.875 ->   75.75
+    expand=60 square=true  ratio=0.875 ->   69.21   (over-expansion hurts)
+    expand=0  square=true  ratio=0.875 ->   68.79
+    expand=0  square=false ratio=null  -> **62.66**  (the OLD pipeline default)
+76.72 reproduces 39614374's best-epoch val exactly, which is the proof that the inference path now
+matches the training path. **The geometry alone is worth +14.06 points of species accuracy**, and
+it was being silently thrown away on every pipeline run to date.
+
+**Old checkpoint (39811745, usgs_hvit_c2f_b128, 37/30/14), restricted to its own 37 species
+(3,621 -> 2,717 crops) — Species@1:**
+    expand=60 square=false ratio=0.875 -> 29.96  (its best)
+    expand=30 square=true  ratio=0.875 -> 29.74
+    expand=0  square=false ratio=null  -> **12.81**  <- what the pipeline has actually been running
+**This is the real explanation for the 0.09% crop-vs-hcast agreement on survey data**, not
+vocabulary mismatch alone as previously concluded: the deployed hierarchical model was running at
+12.8% species accuracy on an easier 37-class subset. Its genus head is worse than useless
+(Genus@1 ~12-13% at every geometry, BELOW its own species accuracy — a real ordering anomaly worth
+a look if that checkpoint is ever revived; it is not worth reviving on these numbers).
+Best-vs-best across checkpoints is 76.72 vs 29.96 on different denominators (3,621 vs 2,717 crops,
+68 vs 32 classes present), so not a clean head-to-head — but the direction is not in doubt.
+
+Acted on it: swapped `boem_conf/hierarchical/hierarchical.yaml` to the new checkpoint +
+`output/usgs_hier/species.csv` + expand 30 / square true / eval_crop_ratio 0.875, with the sweep
+table inlined as the justification. Backup of the prior yaml is in the session scratchpad.
+Next: measure the rollup rank split on the real 388-box 0.70 reporting set before submitting the
+20 flights — running now off the cached boxes, no detection needed.
+
+## 39811016 + 39811745 — 2026-08-20 — H-CAST inference crop geometry sweep — both COMPLETED
+Why: user observed that H-CAST sees a different crop than the CropModel (its own square resize, no
+`classification_model.expand` buffer), so it is not a second opinion on identical input, and predicted
+a domain problem because the configured checkpoint was trained without expansion. Confirmed and worse
+than stated: `output/usgs_hvit_c2f_b128/best_checkpoint.pth` (Dec 2025) has
+`args.data_path=/scratch/user/u.sp270400/USGS_crops` — it was NOT trained by this repo at all, but by
+an external H-CAST run on pre-made crop dirs, with no `expand_pixels` in its namespace.
+**Three mismatches, not one.** Training (`HierarchicalCropDataset`) pads by `--expand-pixels`, squares
+the box, then resizes at eval_crop_ratio 0.875. Inference (`InferenceCropDataset`) took the raw box,
+did not square, and squashed straight to 224x224. The squaring and resize gaps were independent of
+expand and applied to both checkpoints.
+**The "train a new model first" step was already done**: job 39614374 (finished 08-20 02:59) trained
+`output/usgs_hier/best_checkpoint.pth` via `submit_USGS_hierarchical.sh` with `--expand-pixels 30`
+(the script's default since 5772341). No new training was needed to run the test.
+
+Code: `src/hierarchical.py` — `expand_bbox_to_square` is now the canonical helper (was duplicated in
+`scripts/USGS_hierarchical.py`, which now imports it so the two paths cannot drift again);
+`InferenceCropDataset` takes `expand_pixels`/`square`; `_default_transform` takes `eval_crop_ratio`;
+`classify_dataframe` plumbs all three. Config `expand`/`square`/`eval_crop_ratio` in
+`boem_conf/hierarchical/hierarchical.yaml` wired at `src/pipeline.py:250,506`.
+**Two prerequisite bugs fixed** (both would have silently corrupted the test): (1) `load_hcast_model`
+assigned genus/family ids by CSV row order, which only accidentally matches a trained head — it now
+honours explicit `genus_index`/`family_index` columns; (2) the new checkpoint had no usable label_csv
+(`output/species.csv` is the 37-species one), so `scripts/build_hcast_label_csv.py` replays the
+training vocabulary construction — produced 68/49/18, matching the checkpoint's stored `nb_classes`.
+
+**Harness validated:** the `expand 30 / square / 0.875` row reproduces 76.72 Species@1, exactly the
+best logged by training job 39614374 on the same 3,621-crop val split.
+
+**Result 1 (39811016, new checkpoint) — expansion is the whole story, squaring is a wash at 30.**
+Square effect, each expand at its own best resize: expand 0 **+6.13** (62.66->68.79), expand 15 +1.63,
+expand 30 **+0.19** (76.53->76.72, ~7 crops = noise), expand 60 **-2.70** (71.91->69.21, squaring HURTS).
+Mechanism is the box aspect distribution: raw boxes are elongated (median long/short 1.46, 45% >1.5),
+but after +30 px per side the median aspect falls to 1.13 and only 2.5% exceed 1.5 — expansion has
+already done the squaring's job, and by 60 the square only adds background.
+Path from the pipeline's current setting to best: (0,noSq,squash) 62.66 -> +expand30 75.45 (**+12.79**)
+-> +square 75.67 (+0.22) -> +0.875 crop 76.72 (+1.05). **+14.06 points from inference geometry alone,
+no retraining.** Worst cell is (0, noSq, 0.875) at 49.07: centre-cropping a NON-square crop discards the
+long axis. If no-square is ever used it must pair with the squash resize, never the centre-crop.
+
+**Result 2 (39811745, the checkpoint the pipeline actually uses), restricted to the 32 of its 37 species
+present in the split (2,717 crops): 12.81% at the current pipeline setting, 29.96% at its own best
+geometry — vs 76.72% for the new model.** Its optimum is at expand **60**, not 30, consistent with the
+user's domain hypothesis: trained on pre-made crops carrying more context than raw detection boxes.
+**Not a label-mapping artifact** (checked, because the claim is strong): a 500-crop confusion dump at
+its best geometry shows Morus bassanus recall 90.9%, Larus argentatus 71.4%, Fulmarus glacialis 63.6%,
+and taxonomically coherent errors (Sterna forsteri<->S. hirundo, Larus argentatus->L. delawarensis,
+Rissa tridactyla->Chroicocephalus philadelphia). A scrambled mapping would sit near chance at every
+geometry and could not produce congener confusions. The model is genuinely weak, not mis-indexed;
+failures are cross-order (Fratercula->Calonectris 14%, Gavia stellata->Morus 20%, Oceanites 12%),
+which is the signature of domain mismatch rather than fine-grained difficulty.
+Caveat: that checkpoint's Genus@1 is pinned near 12% across all 11 configs — the row-order genus
+indexing described above. Only its species column is trustworthy.
+
+`scripts/USGS_hierarchical.py` gained `--square/--no-square` and `--eval-crop-ratio` so the no-square
+variant is trainable, defaults unchanged. On the +0.19 measured at expand 30, that run is NOT worth
+queuing.
+**NOT changed, deliberately:** `boem_conf/hierarchical/hierarchical.yaml` still points at the Dec-2025
+checkpoint with `expand: 0 / square: false`, reproducing today's behaviour exactly.
+Next: decide whether to swap to `output/usgs_hier/best_checkpoint.pth` +
+`output/usgs_hier/species.csv` + `expand: 30 / square: true / eval_crop_ratio: 0.875`. That is a
+~64-point species-accuracy change to a live pipeline stage whose `hcast_species` output feeds the
+`match_or_genus_consistent` and `model-disagreement` strategies in `src/active_learning.py`, so it
+needs an explicit call. Sweep CSVs: `output/usgs_hier/expand_sweep.csv`,
+`output/usgs_hvit_c2f_b128/expand_sweep.csv`. Logs: /home/b.weinstein/logs/hcast_expand_sweep_3981{1016,1745}.out
+
+## (no job) — 2026-08-20 — rollup measured on the real 388-box 0.70 reporting set
+Why: settle whether the new hierarchical model makes the taxonomic rollup usable BEFORE spending
+20 flight jobs. Run read-only off the 20 cached `pool_predictions.csv` at score>=0.70, re-running
+only H-CAST over the existing boxes — no detection, no cache writes. (CPU login node, ~25 min;
+would be ~1 min on a B200 but not worth queueing.)
+
+                          BEFORE (37-class, old geom)      AFTER (68-class, expand30/sq/0.875)
+  species                      17   ( 4.4%)                     **194  (50.0%)**
+  genus                        70   (18.0%)                       17  ( 4.4%)
+  family                       11   ( 2.8%)                       49  (12.6%)
+  unresolved                  290   (74.7%)                      128  (33.0%)
+  crop-vs-hcast species agreement   0.044                        **0.500**
+
+**Resolved to some rank goes 25.3% -> 67.0%.** Both the checkpoint and the crop geometry changed
+together, so this does not attribute the gain between them; the sweep (39811016) says geometry
+alone is worth 14 points of species accuracy, so it is a large share of it.
+Composition of the resolved set is consistent with everything else we know:
+  - `Thalasseus maximus` is 146 of the 194 species-level records — the one class the 08-14
+    threshold work found behaves like a real species (86.7% clearing 0.65, median score 0.811).
+  - `Laridae` 41 at family level: gulls/terns where the two models pick different larids.
+  - **`Tursiops truncatus` is 6 species-level vs 19 unresolved.** The configured
+    `active_learning.target_labels` is still the class the hierarchical model least supports —
+    consistent with its 0.296 val recall on the flat model. Anything driven off Tursiops
+    selection should be read with that in mind.
+  - `Chelonioidea sp` is down to 4 species + 1 family, from the 58 that cleared det>=0.65 in the
+    08-19 run. The turtle foam sink does not survive contact with a second opinion.
+Artifact: scratchpad/rollup_070_new.csv (388 rows, all consensus + hcast columns).
+
+**Open design question, raised and NOT yet answered — do not submit the flights until it is.**
+`final_predictions` (what the report is built from, pipeline.py:666-723) is the 0.70 pool PLUS the
+existing human train/validation/reviewed annotations, concatenated with sentinel `score = 2.0` and
+`cropmodel_score = 2.0`. Those rows carry no hcast columns, so the resolver passes them through at
+species rank with the human label — correct behaviour, a human annotation must not be demoted
+because a model disagrees. But it means `taxonomic_summary.csv` mixes verified records with model
+predictions and averages real confidences against 2.0 sentinels, making `mean_score` meaningless.
+Options put to Ben: (a) give human rows their own rank `verified`, ahead of `species`, so the
+ordering verified > species > genus > family > unresolved is one honest confidence ladder;
+(b) group the summary by the existing `set` column instead; (c) restrict the summary to
+`set == "prediction"`. Recommended (a). The measurement above is unaffected — it ran off
+pool_predictions only, which contains no human rows.
+
+## 39825931 — 2026-08-20 — logits saved + temperature scaling on a3dc30a0
+Why: `review_high=0.99` is a percentile of one checkpoint's score distribution, not a
+probability, so it has to be re-swept on every retrain. Temperature scaling (Guo et al. 2017)
+is the standard post-hoc fix. Question was whether it also improves the review queue.
+`scripts/classifier_confusion.py` now captures raw logits, saves them, fits T, and reports
+calibrated-vs-uncalibrated side by side. 1m33s on one B200.
+
+**Logits are now persisted** — `classifier_confusion_a3dc30a0_logits.npy` (3695x70 float32,
+row-aligned to `_predictions.csv`, columns in `_classes.txt`). `CropModel.predict_step`
+softmaxes before returning, so the script overrides it with a logit-returning version;
+recovering logits from the stored softmax afterwards is impossible because float32 saturates
+(see below). Every future calibration question is answerable from this file with no GPU.
+
+**T = 5.61.** Far outside the usual 1.5-3 for overconfident nets. ECE **0.209 -> 0.070**,
+NLL **3.008 -> 1.147**, accuracy unchanged at 0.7564 (argmax is invariant to T, by
+construction). The 0.99 pile-up dissolves: share >= 0.99 goes **0.809 -> 0.076**, and the
+median confidence goes 1.0000 -> 0.797. The score finally uses its range.
+
+**But it does not buy a better queue — it costs a little.** AUROC(confidence -> correct)
+**0.796 -> 0.770**. Temperature is monotone in the logits but NOT in max-prob (max-prob
+depends on the whole logit vector, so crops with different runner-up structure reorder), and
+here that reordering is mildly harmful. At matched review budget: uncalibrated 0.99 reviews
+19.1% of the pool for **43.9%** of errors at 2.30x lift; T-scaled 0.40 reviews 16.9% for
+**38.2%** at 2.26x, T-scaled 0.50 reviews 24.6% for 51.1% at 2.08x. Interpolated to a common
+19% budget the calibrated scale is ~2-4 points of error recall WORSE. Confirms the prediction
+made when review_high moved to 0.99: temperature fixes LEVEL, not RESOLUTION.
+
+**DECISION: T is NOT deployed to production. `review_high` stays 0.99 on the raw scale.**
+Deploying it means patching the softmax inside the vendored `deepforest/model.py:610` (or
+wrapping CropModel) for a threshold that would be slightly worse at triage. The portability
+argument — a calibrated `review_high` meaning the same thing on the next checkpoint — is real
+but untested: T has been fit on exactly one checkpoint, so there is no evidence yet that it is
+stable enough to skip the sweep. Revisit after 2-3 checkpoints have a T on record. Until then
+**T is a tracked diagnostic**: one number per checkpoint saying how overconfident it is, and
+directly comparable across retrains in a way ECE-at-a-threshold is not.
+
+**Margin and entropy are a dead end.** AUROC: max-prob 0.7962, logit margin (top1-top2)
+0.7953, negative entropy 0.7968. No winner, differences well inside noise on n=3,695. This
+closes the "a different uncertainty score might reorder the queue" idea — on this checkpoint
+there is no more triage signal to extract from the logits, whatever function you apply. The
+remaining lever is the model, not the score: background class, then the n<30 classes.
+
+**Incidental find: float32 softmax saturation.** 43.2% of val crops come back as *exactly*
+1.0 in float32 (float64: 4.5%), collapsing 1,598 crops into one tie group and costing
+AUROC 0.7887 -> 0.7962. NOT an operational problem for `review_high=0.99` — the survey pool
+is a gentler distribution (only 4.7% of all boxes and 10.6% of gated boxes hit exactly 1.0),
+and the tie group is the easy end (accuracy 0.936) whereas review reads the low end. Recorded
+because it makes the raw scale unusable ABOVE ~0.999: `review_high=0.9999` cannot be
+implemented in float32 no matter what a sweep says.
+
+Changed: `scripts/classifier_confusion.py` — `logit_predict_step` override, `_logits.npy` +
+`_classes.txt` outputs, temperature-scaling section (fit, before/after calib table, AUROC
+invariance check, calibrated review_high sweep, alternative-score comparison).
+Next: (1) record T for each new checkpoint and see whether it is stable before considering
+deployment; (2) the level miscalibration itself is a training artifact — label smoothing
+0.05-0.1 or early-stopping on val NLL instead of val accuracy would attack the cause and,
+unlike T, could actually change resolution.
+UNRELATED, found while reading the training config: `fast_dev_run: True` is committed in
+`boem_conf/classification_model/finetune.yaml` and flows to the Trainer via
+`scripts/USGS_classification.py:385`; no `submit_*.sh` overrides it. a3dc30a0 plainly trained
+properly so it was overridden by hand, but as committed the next retrain runs one batch.
+
+## 39831139 — 2026-08-20 — 202607 re-predict on the new H-CAST checkpoint — SUBMITTED
+Why: user confirmed the swap after 39811016/39811745 (see above). `boem_conf/hierarchical/hierarchical.yaml`
+now points at `output/usgs_hier/best_checkpoint.pth` (job 39614374, 68/49/18, Species@1 76.72) with
+`label_csv: output/usgs_hier/species.csv` and the training-matched geometry `expand: 30 / square: true /
+eval_crop_ratio: 0.875`. Replaces the Dec-2025 `usgs_hvit_c2f_b128` checkpoint, which measured 12.81%
+species accuracy at the geometry the pipeline had been feeding it.
+Verified before submitting: hydra resolves all seven keys; `load_hcast_model` returns 68/49/18 with
+**zero** unmapped `species_<int>` slots; the wrapper carries geometry 30/True/0.875.
+**Ensemble alignment improved a lot**: the new label_csv can name 68 of the CropModel's 70 classes,
+vs 32/70 for `output/species.csv`. The 2 it cannot are `Calonectris Puffinus` (222 train rows, a
+genus-pair ambiguity label, not a real binomial) and `Columba livia` (13 rows) — neither is a species
+leaf in taxonomy.json. Crops the CropModel calls those two will read as "H-CAST does not support" in
+`crop_hcast_supported_match_or_genus_consistent` and as disagreement in `model-disagreement`.
+Tests: tests/test_active_learning.py + test_taxonomic_rollup.py + test_classification.py, 23 passed.
+
+Invocation: the documented cache-only re-predict from `submit_all_flights.sh`'s header, `--serial --b200`
+at `--time 06:00:00`. All 20 `JPG_202607*` caches are VALID (`min_score.txt` 0.3 <= `predict.min_score`
+0.7, `detection_checkpoint.txt` == the configured epoch16-val_cls0.0163.ckpt), so this is a genuine
+cache-only pass. **Two different pool numbers, both real — do not confuse them.** The cached
+`pool_predictions.csv` files hold 19,008 images across the 20 flights (those with a prior detection
+>= the cached 0.3). The pipeline then filters at `predict.min_score` 0.7, and THAT pool is tiny: the
+first two flights logged `Pool: 9 images with >=0.7 detections`. So the "~360 images total" in the
+39700519 entry is the post-0.7 count and was correct; an earlier revision of this entry claimed it was
+wrong, which it was not. 6 h was requested off the conservative 19,008-image reading (4.11 img/s ->
+~1.3 h); observed throughput is far faster — 2 flights in ~3 min, so ~30 min for all 20. Future
+cache-only 202607 passes can safely request ~1 h, which backfills much sooner (the 08-19 lesson was
+that 8 h requests sit unscheduled).
+Deliberately NOT included: the 8 non-202607 flights whose caches lack `min_score.txt` AND carry a stale
+detector (`a1c5649615...pl`), which would force a full detection re-run over ~144,600 images and change
+detections, not just species labels. Also excluded: 3 dirs with 0 jpgs. The 4 other valid-cache flights
+(JPG_20241219_120500/131500/150200, min_score 0.5) were offered and not selected.
+Logs: /home/b.weinstein/logs/BOEM_39831139.{out,err}
+
+**Result: COMPLETED rc=0 at 19:02 elapsed.** All 20 flights hit the cache path
+(`Using prediction cache` x20), 388 boxes >= 0.7 total. Verification over all 20 rewritten
+`pool_predictions.csv`: 20/20 fresh, every row carries `hcast_species`, **0 literal `species_<int>`
+placeholders** and **0 labels outside the 68-class vocabulary** — the new label_csv is in force.
+**8 species the old 37-class model could not emit** now appear: Tursiops truncatus (n=22),
+Pelecanus occidentalis (8), Chelonioidea sp (4), Aythya affinis (3), Anas rubripes, Ardea alba,
+Branta canadensis, Puffinus griseus (1 each). Tursiops matters for
+`scripts/find_tursiops_flythrough_targets.py` / `list_flights_without_tursiops.py`; Chelonioidea sp
+is the turtle class from 5080197 reaching production for the first time.
+Top predictions: Thalasseus maximus 189, Larus argentatus 37, Somateria mollissima 22,
+Tursiops truncatus 22, Gavia immer 20, Clangula hyemalis 19, Morus bassanus 17.
+
+**CAUTION — the cache is now narrowed.** `src/pipeline.py:563` rewrites `pool_predictions.csv` with
+only the current run's rows and `:561` writes `min_score.txt` at the run's threshold. These caches went
+from holding every box >= 0.3 (19,008 images) to only the >= 0.7 survivors (388 boxes), stamped 0.7.
+This is self-protecting — a future run with a LOWER `predict.min_score` fails the
+`cached_min_score <= predict.min_score` test and forces a full re-predict — but the cheap
+"re-predict at 0.7" path is now built on a much smaller pool, and the pre-0.7 detections for these
+20 flights exist only in Comet/report artifacts, not on disk.
+
+Two pre-existing issues seen in the log, NOT introduced here and NOT fixed: (1) the report step cannot
+find geospatial metadata, e.g. `/blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs/20260710_163500_captures.csv`
+(non-fatal, geospatial columns end up empty); (2) counting flights by grepping the log for
+`>=0.7 detections` DOUBLE-COUNTS, because that substring also appears in the
+`Using prediction cache (previously had >=0.7 detections)` line — use `^Pool: [0-9]+ images with` instead.
+
+## 39831142-39831330 (19 jobs) + 39831139 — 2026-08-20 17:15 — submit_all_flights.sh — SUBMITTED
+Why: refresh the 20 July flights on the NEAQ-free 68-class hierarchical model with measured crop
+geometry, so `taxonomic_summary.csv` and the consensus columns land in the per-flight reports.
+Config as submitted: detection a09c6933/epoch16 (UNCHANGED — changing it invalidates every cache),
+classification a3dc30a0, hierarchical `output/usgs_hier/best_checkpoint.pth` +
+`output/usgs_hier/species.csv` + expand 30 / square true / eval_crop_ratio 0.875, predict.min_score
+0.70. Invocation is the documented cache-only one from submit_all_flights.sh's header, `--b200`,
+`--extra "active_learning.n_images=0 active_testing.n_images=0 human_review.n=0
+flythrough_video.enabled=False"`, **`--time 01:00:00`** (the 08-19 lesson: 8h requests were
+unbackfillable behind a 274-deep queue; ~360 images total means minutes per flight).
+Cache validity confirmed live by 39831139's log: "Using prediction cache (same detection
+checkpoint): running detection+classification on 9 images (previously had >=0.7 detections)
+instead of 5587" — matches the 9 boxes/9 images predicted for JPG_20260710_155800.
+
+**Human annotations are never rolled up.** Ben's call: a verified label is kept regardless of any
+model prediction. Implemented as a `verified` rank ahead of species in the ladder
+(`hierarchical._is_human_row`, keyed on the `set` column in {train,validation,reviewed} with the
+score==2.0 sentinel as fallback), with `consensus_score` NaN so the 2.0 sentinel cannot poison
+`mean_score`, and exempt from `min_consensus_score` demotion. 18/18 tests pass.
+
+**39831139 was a `--serial` run of the ENTIRE batch, not a single flight.** First read of it was
+wrong: seeing it "RUNNING JPG_20260710_155800" I took it for a one-flight duplicate and cancelled
+only my matching 39831141. It is in fact the concurrent session's serial job (TimeLimit 06:00:00,
+submitted 17:15:16, one job, `--serial`), and it processed all 20 flights sequentially, COMPLETED
+rc=0 in **19m02s**. So my whole 20-job fan-out was redundant from the moment it was submitted, and
+the other 19 were cancelled unrun. Lesson: check `grep -c 'Processing:' <log>` before concluding a
+foreign BOEM job's scope — the job name is identical for serial and parallel modes.
+Verified 39831139 did the real work before cancelling mine: all 20 caches rewritten (min_score.txt
+now 0.7, actual floor 0.711 on the flight checked), hcast columns refreshed with the 68-class
+model, and crop-vs-hcast agreement on JPG_20260712_113200 is **0.0009 -> 0.615**. It also logged
+"No images to upload" x3, so nothing reached Label Studio.
+Zero net GPU cost from my side; the whole survey refresh cost 19 minutes on one B200.
+Result: **ALL 19 OF MINE CANCELLED, unrun and unneeded — 39831139 had already done the whole job.**
+Monitor armed on all 20 job ids.
+Next: on completion (1) confirm every flight logged "Using prediction cache" and a non-empty
+`taxonomic_summary.csv` under <image_dir>/../reports/<flight>/; (2) aggregate the 20 summaries into
+one survey-level rank split and compare against the 388-box local prediction
+(species 194 / genus 17 / family 49 / unresolved 128) — they should agree closely, since the local
+run used the same model, geometry and boxes; a large divergence means the pipeline path differs
+from the direct path and must be explained before anything is published; (3) THEN decide whether
+the PDF species-composition figures move onto consensus_label.
+
+## 39832676 — 2026-08-20 17:5x — submit_all_flights.sh --serial — SUBMITTED
+Why: **the 2026-08-20 survey refresh produced ZERO reports**, and the cause was not the model.
+Every July flight in 39831139 logged `Report: could not load geospatial metadata: [Errno 2] ...
+/blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs/20260710_155800_captures.csv`, so
+`generate_report()` returned None at its first step (src/report.py:648-655) and no
+observations table, shapefile, PDF or `taxonomic_summary.csv` was written for any flight.
+**Root cause: a nested duplicate metadata directory.** `report.metadata_dir` pointed at
+`/blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs`, which holds 230 `*_captures.csv` and
+**zero** for 202607. The July files are one level deeper, in
+`metadata_aflight_csvs/metadata_aflight_csvs/` (254 captures files, range 20201221-20260713).
+The inner dir is a near-superset of the outer — the only file it lacks is
+`20211201_125800_captures.csv`. Repointed `report.metadata_dir` at the inner dir (reversible,
+touches no data) rather than reorganising the user's files. **These two dirs should be
+consolidated properly**, and the 20211201 file carried across, before this bites again.
+**One flight can never report: JPG_20260711_131000 has no capture CSV anywhere on disk**
+(`find` over all of BOEM returns nothing for 20260711_131000). Its 18 boxes/18 images will be
+absent from the survey rollup. Expect 19/20 reports, not 20/20 — that is not a failure.
+Verified the whole report path locally before resubmitting, on JPG_20260712_113200 off its
+refreshed cache: metadata loads (14,573 captures, 6464x4852), **26 of 26 boxes georeference**,
+and the rollup gives species 16 / genus 2 / family 4 / unresolved 4 — 84.6% resolved, with
+Thalasseus maximus 12 and Laridae 4 at family, as expected.
+Submitted `--serial` this time (one job, all 20 flights) rather than a 20-way fan-out: 39831139
+proved serial does the whole survey in **19m02s** off warm caches, so the fan-out only bought
+queue churn. `--time 02:00:00`.
+Result: PENDING. Monitor armed.
+Next: (1) confirm 19/20 `taxonomic_summary.csv` and zero metadata failures other than
+20260711_131000; (2) aggregate the 19 into a survey-level rank split and check it against the
+local 388-box prediction (species 194 / genus 17 / family 49 / unresolved 128) — the local run
+used the same model, geometry and boxes, so a large divergence means the pipeline path differs
+from the direct path and must be explained before publishing; (3) decide on moving the PDF
+species-composition figures onto consensus_label.
+
+## (no job) — 2026-08-20 — temperature scaling DEPLOYED; every cropmodel_score threshold rescaled
+Why: decided to take the interpretable/portable scale despite the measured triage cost
+recorded in 39825931 (AUROC 0.796 -> 0.770). `cropmodel_score` is now a calibrated
+probability everywhere in the pipeline, so `review_high` means "review anything the
+classifier is worse than even odds on" instead of naming a percentile of one checkpoint.
+
+**Where it happens.** `src/classification.apply_temperature()` binds a `forward` that divides
+the logits by T before DeepForest's softmax (`deepforest/model.py:610`). Called at BOTH
+CropModel load sites in `src/pipeline.py` — the `upload_full_flight` path and the main
+train-or-load path, the latter placed after both branches of the if/else so a freshly TRAINED
+model is scaled too. Bound to the class method rather than wrapping the previous `forward`, so
+re-applying replaces rather than compounds. `temperature: null` restores raw behaviour.
+Verified on a3dc30a0 (64 val crops, CPU): logits exactly divided, argmax identical on every
+crop, mean score 0.943 -> 0.663, share >=0.99 0.812 -> 0.031, idempotent, rejects T<=0.
+
+**T = 5.6136** lives in `boem_conf/classification_model/finetune.yaml` next to the checkpoint
+it belongs to, on the `predict.min_score` model: paired with one checkpoint, re-derived on
+every change, never inherited.
+
+**THE DANGEROUS PART — five thresholds read cropmodel_score, and all five moved.** Changing
+the scale without moving all of them is the same silent-filter failure this ledger already
+records twice (the always-empty `confident_predictions`, the stale 0.85 review gate).
+Mapped by val-set quantile equivalence, which is the honest method available:
+| key | raw | calibrated |
+| `human_review.review_low` | 0.3 | 0.05 |
+| `human_review.review_high` | 0.99 | 0.50 |
+| `active_learning.min_classification_score` | 0.3 | 0.07 |
+| `pipeline_evaluation.classification_threshold` | 0.5 | 0.12 |
+| `report.rare_species_min_score` | 0.7 | 0.21 |
+`review_high` is the one exception to strict quantile-matching: the equivalent of raw 0.99 was
+0.4293, and 0.50 was taken instead because it is semantically defensible and the queue is
+capped by `human_review.n` anyway, so a wider pool only improves selection. At 0.50 on val:
+24.6% reviewed, 51.1% of all errors caught, 2.08x lift, auto-annotated remainder at 0.842
+accuracy. The list of all five is written into the `human_review` block so the coupling is
+discoverable from the config rather than from this file.
+
+**Caches are now scale-stamped.** `.prediction_cache/classifier.txt` records checkpoint +
+temperature. The pipeline itself was never at risk there — it reads only the detection `score`
+out of that cache and re-runs classification on the narrowed pool — but
+`collect_screened_images.py`, `find_tursiops_flythrough_targets.py` and
+`upload_mola_sample_to_review.py` read `cropmodel_score` straight off `pool_predictions.csv`,
+and nothing distinguished a raw-scale file from a calibrated one. `.full_flight_predictions.csv`
+was the genuine hazard: reused VERBATIM with no validity check of any kind, feeding Label
+Studio and the flythrough video. It now carries a `.classifier` stamp and is ignored (with a
+printed reason) when the checkpoint or temperature differs. **An unstamped cache is raw-scale**
+— every cache on disk today predates this and will be bypassed on next run.
+
+**Not done, and it is a real gap.** Queue sizes on the July survey CANNOT be predicted from the
+existing caches. `raw -> calibrated` is not a function (max-softmax depends on the whole logit
+vector), so a monotone fit over the val pairs carries a median absolute error of 0.088 and its
+survey estimates are worthless — it put 12 images in the queue where the val quantile mapping
+says ~170. Getting the real number needs crop logits for survey boxes, i.e. a classifier-only
+re-predict over the cached detections (the 39700519 path). Until that runs, the calibrated
+queue size on survey imagery is unmeasured.
+
+**Also unhandled: `hierarchical._joint()` / `active_learning._row_min_class_confidence()` take
+min(cropmodel_score, hcast_species_score).** H-CAST is NOT temperature-scaled, so calibrated
+crop scores — systematically lower — will now win that min nearly always, quietly reducing the
+joint confidence to the crop score alone. Inert while `hierarchical.checkpoint` is unset, which
+it is, but it breaks the moment the ensemble is switched on. Either fit a T for H-CAST or
+compare the two on quantiles instead of raw values.
+
+Tests: 67 passed, 1 skipped. Added 5 tests in `tests/test_active_learning.py` covering the
+divide, argmax preservation, idempotence, T<=0 rejection, null/1.0 no-ops, and a
+`human_review` band test that pins the calibrated defaults. `test_detection.py::
+test_detection_preprocess_and_train` still fails on HEAD for the unrelated pre-existing
+DeepForest drift (`main.deepforest(label_dict=...)`).
+Next: (1) classifier-only re-predict of JPG_202607* to measure the real calibrated queue;
+(2) record T for each future checkpoint and check whether it is stable enough that the
+thresholds stop needing to move; (3) H-CAST joint-confidence scale mismatch before any
+ensemble run; (4) `fast_dev_run: True` still committed in finetune.yaml.

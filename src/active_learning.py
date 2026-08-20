@@ -128,7 +128,7 @@ def get_leaf_labels_for_taxonomy_aliases(
     return result
 
 
-def human_review(predictions, min_detection_score=0.85, review_low=0.3, review_high=0.6):
+def human_review(predictions, min_detection_score=0.70, review_low=0.05, review_high=0.50):
     """
     Split trusted detections into confident and uncertain by classifier confidence.
 
@@ -146,9 +146,22 @@ def human_review(predictions, min_detection_score=0.85, review_low=0.3, review_h
 
     Args:
         predictions (pd.DataFrame): Predictions with score / cropmodel_score / image_path.
-        min_detection_score (float): Detection score floor. Defaults to 0.85.
-        review_low (float): Lower edge of the ambiguous band. Defaults to 0.3.
-        review_high (float): Upper edge of the ambiguous band. Defaults to 0.6.
+        min_detection_score (float): Detection score floor. Defaults to 0.70, matching
+            predict.min_score. The pipeline always passes the configured value; this
+            default exists only so a direct caller does not get a different gate.
+        review_low (float): Lower edge of the ambiguous band. Defaults to 0.05. Nearly
+            inert (0 of 388 gated survey boxes fell below its raw-scale predecessor); the
+            "spurious detection" job it was meant to do is now done by min_detection_score.
+        review_high (float): Upper edge of the ambiguous band. Defaults to 0.50, matching
+            human_review.review_high.
+
+            BOTH ARE ON THE TEMPERATURE-SCALED SCALE and assume
+            classification_model.temperature is applied to the CropModel at load
+            (src/classification.apply_temperature). On the raw max-softmax scale they are
+            badly wrong -- raw scores pile up at 0.99, so a 0.50 cut there reviews ~1% of
+            boxes instead of ~25%. If temperature is ever set to null, every
+            cropmodel_score threshold has to go back to the raw scale together; see
+            boem_conf/boem_config.yaml:human_review for the list and the derivation.
 
     Returns:
         tuple: (confident_predictions, uncertain_predictions)
@@ -175,7 +188,7 @@ def generate_pool_predictions(
     pool,
     patch_size=512,
     patch_overlap=0.1,
-    min_score=0.1,
+    min_score=0.70,
     model=None,
     batch_size=16,
     pool_limit=1000,
@@ -194,7 +207,8 @@ def generate_pool_predictions(
         pool (str): List of image paths to predict on.
         patch_size (int, optional): The size of the image patches to predict on. Defaults to 512.
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
-        min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.1.
+        min_score (float, optional): The minimum score for a prediction to be included.
+            Defaults to 0.70, matching predict.min_score.
         model (main.deepforest, optional): A trained deepforest model. Defaults to None.
         batch_size (int, optional): The batch size for prediction. Defaults to 16.
         crop_model (CropModel, optional): A deepforest.model.CropModel object. Defaults to None.
@@ -267,7 +281,7 @@ def select_images(
     strategy,
     n=10,
     target_labels=None,
-    min_score=0.3,
+    min_score=0.70,
     drop_n_most_common=1,
     rarest_confidence_selection="lowest",
     min_classification_score=None,

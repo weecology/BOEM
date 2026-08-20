@@ -36,21 +36,32 @@ predict:
   # CALIBRATED FOR a09c69331af8496380cbf99e3859d656/epoch16 — this value is meaningless
   # without that pairing, which is precisely how it went wrong before. Re-derive with
   # scripts/threshold_sweep.py whenever detection_model.checkpoint changes.
-  # Job 39385379 (2026-08-13), 648 human-reviewed holdout frames / 1,229 objects from the
-  # pinned zero-shot pair (JPG_20260202_141900 + JPG_20260201_134000), greedy IoU 0.4:
-  #   thresh  img recall  box recall  prec    queue img/1k
-  #     0.15      99.8%       66.1%   70.7%      112.0
-  #     0.20      99.0%       65.0%   74.7%       51.0
-  #     0.30      97.8%       63.0%   78.4%       15.5   <- chosen
-  #     0.50      94.1%       57.9%   84.4%        1.0
-  #     0.85      29.9%       15.9%   98.0%        1.0   <- the old value
-  # 0.85 was inherited from the differently-calibrated a1c5649 and discarded ~70% of
-  # occupied frames. Image-level recall is the metric that matters: an annotator labels
-  # every object in a frame they are handed, so a box missed inside a QUEUED frame is
-  # recovered for free — only a frame that never gets queued is truly lost.
+  #
+  # 0.70 chosen 2026-08-20, on SURVEY imagery. This supersedes the 0.30 set on 2026-08-13
+  # from the Feb holdout sweep (job 39385379: img recall 97.8%, box recall 63.0%, prec
+  # 78.4% at 0.30). That sweep measured the pinned zero-shot Feb pair, where 79.1% of
+  # boxes already sat above 0.85; the July survey has 1.4% there. The threshold did not
+  # transfer, and the 0.30 pool turned out to be 98.5% foam.
+  # What DOES separate real animals from foam on July imagery is detection score alone:
+  #   - 19 Morus bassanus crops, eyeballed: the 8 real birds are exactly the 8 with
+  #     score >= 0.65 (0.664-0.831); all 11 foam crops fall in 0.400-0.573. No exceptions.
+  #   - Per-class share clearing 0.65 on the 20-flight survey: Thalasseus maximus 86.7%
+  #     (median 0.811) vs Clangula 0.3%, Chelonioidea 0.6%, Gavia 0.5%, Somateria 2.0%.
+  #     One class behaves like a species; the mass classes behave like nothing.
+  # Classifier confidence CANNOT substitute: median cropmodel_score on the foam sinks is
+  # 0.98-0.99. The classifier is maximally confident on foam. Detection score is the only
+  # signal that discriminates, which is why this gate carries the whole burden.
+  # Cost: the 20-flight survey pool goes 41,739 boxes (>=0.40) -> 388 (>=0.70).
   # Box recall ceilings at 67.8% even at thresh 0.05, so a third of objects are invisible
   # to this detector at ANY threshold. That is a detector problem, not a threshold one.
-  min_score: 0.30
+  # NOTE: as of 2026-08-20 this value is also pushed into the live model's score_thresh by
+  # detection.load(), so the detector genuinely stops emitting below it. Before that fix
+  # the model's baked-in 0.4 floor silently overrode any lower setting here.
+  # 0.70 is the gate for THIS pipeline. The per-survey overrides are deliberately left at
+  # 0.5 and are not oversights: submit_seals_array.sh, submit_seals_missing_metadata.sh
+  # (seal detections peak ~0.89 even on obvious animals) and submit_neaq.sh (retired; its
+  # imagery is already a 0.5-screened subset, so a higher floor recovers nothing).
+  min_score: 0.70
   # This counts IMAGES, not patches: predict_tile(dataloader_strategy="batch") batches
   # whole images and flattens their crops, so one forward pass sees
   # batch_size * 35 patches for this ~6464x4852 camera. batch_size=1 therefore already
@@ -105,21 +116,28 @@ detection_model:
 pipeline_evaluation:
   # This is an average mAP threshold for now, but we may want to add a per-iou threshold in the future
   detection_true_positive_threshold: 0.8
-  classification_threshold: 0.5
+  # CALIBRATED SCALE (classification_model.temperature). 0.5 raw -> 0.12 by val quantile.
+  # Splits confident/uncertain for evaluation only; see human_review.review_high.
+  classification_threshold: 0.12
 
 active_learning:
   strategy: taxonomy
   n_images: 100
   patch_size: 1000
   patch_overlap: 0
-  min_classification_score: 0.3
+  # CALIBRATED SCALE (classification_model.temperature). 0.3 raw -> 0.07; the val quantile
+  # equivalent is 0.066. A floor in select_images/report, not the review band -- see
+  # human_review.review_high for the full list of thresholds that must move together.
+  min_classification_score: 0.07
   # THIRD detection gate, independent of predict.min_score and human_review.
-  # min_detection_score. Lowered 0.8 -> 0.30 on 2026-08-14 alongside the other two: the
-  # whole 20-flight JPG_202607* survey produced only 91 boxes >= 0.85 across 533,876
-  # images, so a 0.8 floor here left the active-learning training queue selecting from
-  # almost nothing regardless of what predict.min_score was set to.
-  # All three gates are calibrated together for a09c6933/epoch16 — see predict.min_score.
-  min_detection_score: 0.30
+  # min_detection_score. 0.8 -> 0.30 on 2026-08-14, -> 0.70 on 2026-08-20.
+  # All three gates are calibrated together for a09c6933/epoch16 and MUST move together —
+  # see predict.min_score for the derivation of 0.70. Keep this >= predict.min_score: the
+  # pool is already cut there, so anything lower is a no-op.
+  # The 2026-08-14 move to 0.30 was made because only 91 survey boxes cleared 0.85 across
+  # 533,876 images, which starved this queue. 0.70 keeps the queue fed (388 boxes on the
+  # 20-flight survey) without selecting images off foam.
+  min_detection_score: 0.70
   model_checkpoint:
   target_labels:
     - "Tursiops truncatus"
@@ -153,7 +171,10 @@ active_testing:
   m: 
   patch_size: 1000
   patch_overlap: 0
-  min_score: 0
+  # DEAD KEY as of 2026-08-20: nothing reads active_testing.min_score. Test images are
+  # drawn from the pool, which predict.min_score has already cut. Kept at 0.70 so it does
+  # not contradict the real gates if something ever starts reading it.
+  min_score: 0.70
 
 human_review:
   n: 30
@@ -164,19 +185,87 @@ human_review:
   # Keep min_detection_score >= predict.min_score — the pool is already cut at that value,
   # so anything lower is a no-op.
   # MUST MOVE WITH predict.min_score. active_learning.py:161 applies this as an
-  # independent hard cut, so leaving it at 0.85 while predict.min_score drops to 0.30
-  # would re-predict the whole survey and then filter every new box back out before it
-  # ever reached a human.
-  min_detection_score: 0.30
-  review_low: 0.3
-  review_high: 0.6
+  # independent hard cut, so a stale value here silently filters out every box the pool
+  # just produced. 0.85 -> 0.30 on 2026-08-14, -> 0.70 on 2026-08-20.
+  min_detection_score: 0.70
+  # ALL cropmodel_score thresholds below are on the TEMPERATURE-SCALED scale
+  # (classification_model.temperature = 5.6136). They are meaningless on the raw scale and
+  # must ALL move together if that key changes or is set to null. The full list:
+  #   human_review.review_low / review_high      (this block)
+  #   active_learning.min_classification_score
+  #   pipeline_evaluation.classification_threshold
+  #   report.rare_species_min_score
+  #
+  # History: 0.6 -> 0.99 (raw) on 2026-08-20, then -> 0.50 (calibrated) the same day.
+  #
+  # Why the raw scale had to go. On the a3dc30a0 val split the classifier was grossly
+  # miscalibrated in LEVEL -- mean confidence 0.965 against 0.756 accuracy, ECE 0.209, with
+  # 80.9% of all crops piled into [0.99, 1.0]. Every threshold below 0.99 sat in a near-empty
+  # region: the original [0.3, 0.6] band held 2.6% of val crops and 7.0% of all errors, and on
+  # the 20-flight July survey it held 28 boxes / 27 images against human_review.n=30. It was
+  # not prioritising anything. 0.99 fixed the emptiness but was pure percentile -- it had to be
+  # re-swept on every retrain, and float32 softmax saturation (43.2% of val crops return
+  # EXACTLY 1.0) makes anything above ~0.999 unimplementable on the raw scale anyway.
+  #
+  # After temperature scaling: ECE 0.209 -> 0.070, share >= 0.99 goes 0.809 -> 0.076, median
+  # confidence 1.0000 -> 0.797. The score uses its range and 0.50 means what it says --
+  # review anything the classifier is worse than even odds on.
+  # At 0.50 on the val split: 24.6% of crops reviewed, 51.1% of all errors caught, 50.6% of
+  # the reviewed batch actually wrong (2.08x the 24.4% base rate), and the auto-annotated
+  # remainder runs at 0.842 accuracy. The quantile-preserving equivalent of the old raw 0.99
+  # was 0.4293; 0.50 was chosen over it because it is semantically defensible and portable,
+  # and the queue is capped by human_review.n anyway so a wider pool only improves selection.
+  #
+  # KNOWN COST, accepted deliberately: calibration slightly HURT ranking, AUROC 0.796 -> 0.770
+  # (temperature is monotone in the logits but not in max-softmax, so boxes with different
+  # runner-up structure reorder). This threshold buys interpretability and portability, not a
+  # better queue. See JOB_LEDGER.md 39825931.
+  #
+  # Ordering inside the band is by DETECTION score (pipeline.py), not classifier score, and
+  # that is deliberate: detection score is the only foam discriminator (see predict.min_score).
+  #
+  # review_low is the calibrated equivalent of the old 0.3 (val quantile maps it to 0.066) and
+  # remains nearly inert -- 0 of 388 gated survey boxes fell below the old value. It is a guard
+  # against a degenerate classifier, not a working filter.
+  review_low: 0.05
+  review_high: 0.50
 
 report:
   enabled: true
-  metadata_dir: /blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs
+  # NOTE 2026-08-20: the July 2026 survey's capture CSVs live one level DEEPER, in a
+  # nested duplicate `metadata_aflight_csvs/metadata_aflight_csvs/`. The outer dir has
+  # 230 captures files and none for 202607; the inner has 254 and covers 19 of the 20
+  # July flights. Pointing at the outer dir made generate_report() bail at
+  # "could not load geospatial metadata" for every July flight, so the 2026-08-20 survey
+  # refresh produced no reports at all. The two dirs should be consolidated (the inner is
+  # a near-superset — the only file it lacks is 20211201_125800_captures.csv); until then
+  # this points at the inner one.
+  metadata_dir: /blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs/metadata_aflight_csvs
   n_sample_crops: 5
   n_rare_species: 2
-  rare_species_min_score: 0.7
+  # CALIBRATED SCALE (classification_model.temperature). 0.7 raw -> 0.21 by val quantile.
+  # Picks high-confidence rare-species crops for the report; see human_review.review_high.
+  rare_species_min_score: 0.21
+
+  # Taxonomic rollup: report the FINEST rank at which the flat CropModel and
+  # H-CAST agree, instead of trusting the CropModel species alone.
+  #   species agree            -> species
+  #   species differ, genus same  -> genus
+  #   genus differs, family same  -> family
+  #   no agreement                -> unresolved (counted separately, not as a species)
+  # Neither model overrides the other; disagreement costs resolution, not a coin flip.
+  # Writes consensus_label/consensus_rank/consensus_score into the observations
+  # tables and shapefile, plus taxonomic_summary.csv.
+  taxonomic_rollup:
+    enabled: true
+    # Optional confidence floor. When set, a row whose joint confidence
+    # (min of the two contributing scores) falls below it is demoted one further
+    # rank. null = agreement alone decides the rank.
+    min_consensus_score: null
+    # Broad species -> genus/family source, used for crop-model classes that are
+    # absent from hierarchical.label_csv (the CropModel has 70 classes, the wired
+    # H-CAST has 37). Falls back to the first token of the binomial on a miss.
+    taxonomy_path: /blue/ewhite/b.weinstein/src/BOEM/taxonomy.json
 
 # Flythrough video: generate from cached predictions and log to Comet at end of run.
 flythrough_video:

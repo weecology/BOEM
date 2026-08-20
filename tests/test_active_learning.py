@@ -250,3 +250,89 @@ def test_format_ensemble_suggestion_line():
     assert "genus A" in format_ensemble_suggestion_line(row_genus, sg)
     row_amb = pd.Series({"cropmodel_label": "A b", "hcast_species": "X y", "hcast_genus": "X"})
     assert "ambiguous" in format_ensemble_suggestion_line(row_amb, sg)
+
+
+class _StubCropModel:
+    """Stands in for CropModel: apply_temperature only needs a forward and an instance dict.
+
+    Patching the real class lets us assert the wrapper divides logits without loading a
+    130 MB checkpoint. The end-to-end check against a3dc30a0 lives in JOB_LEDGER.md 39825931.
+    """
+
+    def forward(self, x, metadata=None):
+        return x * 1.0
+
+
+def test_apply_temperature_divides_logits_and_preserves_argmax(monkeypatch):
+    import torch
+    from src import classification
+
+    monkeypatch.setattr(classification, "CropModel", _StubCropModel)
+    logits = torch.tensor([[4.0, 1.0, 0.5], [0.2, 3.0, 2.9]])
+
+    m = _StubCropModel()
+    raw = m.forward(logits)
+    classification.apply_temperature(m, 4.0)
+    cal = m.forward(logits)
+
+    assert torch.allclose(cal, raw / 4.0)
+    # The whole scheme rests on this: scaling must never rewrite a species label.
+    assert torch.equal(raw.argmax(1), cal.argmax(1))
+    # ...and it must soften, not sharpen, for T > 1.
+    assert cal.softmax(1).max(1).values.max() < raw.softmax(1).max(1).values.max()
+
+
+def test_apply_temperature_is_idempotent(monkeypatch):
+    """Re-applying must replace the scaling, not compound it — the pipeline calls this on a
+    model that may already have been scaled by an earlier stage."""
+    import torch
+    from src import classification
+
+    monkeypatch.setattr(classification, "CropModel", _StubCropModel)
+    logits = torch.tensor([[4.0, 1.0, 0.5]])
+    m = _StubCropModel()
+    classification.apply_temperature(m, 4.0)
+    once = m.forward(logits)
+    classification.apply_temperature(m, 4.0)
+    assert torch.allclose(m.forward(logits), once)
+
+
+@pytest.mark.parametrize("value", [0, -1.0])
+def test_apply_temperature_rejects_nonpositive(value, monkeypatch):
+    from src import classification
+
+    monkeypatch.setattr(classification, "CropModel", _StubCropModel)
+    with pytest.raises(ValueError):
+        classification.apply_temperature(_StubCropModel(), value)
+
+
+def test_apply_temperature_none_and_one_are_noops(monkeypatch):
+    import torch
+    from src import classification
+
+    monkeypatch.setattr(classification, "CropModel", _StubCropModel)
+    logits = torch.tensor([[4.0, 1.0, 0.5]])
+    for value in (None, 1.0):
+        m = _StubCropModel()
+        classification.apply_temperature(m, value)
+        assert torch.allclose(m.forward(logits), logits)
+
+
+def test_human_review_defaults_are_on_the_calibrated_scale():
+    """Guards the scale coupling. These defaults assume classification_model.temperature is
+    applied at load; on the raw max-softmax scale a 0.50 cut reviews almost nothing, which is
+    exactly the silent failure this pairing is meant to prevent."""
+    from src.active_learning import human_review
+
+    predictions = pd.DataFrame({
+        "image_path": ["a.jpg", "b.jpg", "c.jpg", "d.jpg"],
+        "score": [0.9, 0.9, 0.9, 0.5],          # last box fails the detection gate
+        "cropmodel_score": [0.02, 0.35, 0.95, 0.35],
+    })
+    confident, uncertain = human_review(predictions)
+
+    assert list(uncertain.image_path) == ["b.jpg"]      # inside [0.05, 0.50]
+    assert list(confident.image_path) == ["c.jpg"]      # above review_high
+    # a.jpg is below review_low; d.jpg never cleared min_detection_score.
+    assert "a.jpg" not in set(uncertain.image_path) | set(confident.image_path)
+    assert "d.jpg" not in set(uncertain.image_path) | set(confident.image_path)

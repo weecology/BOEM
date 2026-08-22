@@ -7,7 +7,15 @@ train/validation/review CSVs (and USGS train/test crops), and uploads the
 remaining images plus preannotations to the
 "Bureau of Ocean Energy Management - Review" Label Studio project.
 
-Does NOT run any models -- if a flight has no cache, it is skipped.
+Every box is gated on its own score at --min-score (default predict.min_score), and an
+image with nothing left above the gate is not uploaded. This matters because the caches
+are built by keeping whole IMAGES: a frame with one good detection carries its
+sub-threshold neighbours too, and uploading those puts foam in front of an annotator
+under cover of a real box.
+
+Does NOT run any models -- if a flight has no cache, it is skipped. A cache written by an
+older checkpoint is therefore uploaded as-is, so pass --flights to restrict the run to
+flights whose .prediction_cache provenance files match the current config.
 
 Usage:
     uv run python scripts/upload_cached_predictions_to_review.py
@@ -72,6 +80,13 @@ def _parse_args() -> argparse.Namespace:
         "--include-gulls",
         action="store_true",
         help="Keep gull detections in the upload (default: drop gull detections, drop images with only gulls).",
+    )
+    p.add_argument(
+        "--min-score",
+        type=float,
+        default=None,
+        help="Drop every box scoring below this, per box (default: predict.min_score from the config). "
+             "An image whose boxes all fall below it is not uploaded at all. Pass 0 to disable the gate.",
     )
     p.add_argument(
         "--dry-run",
@@ -157,6 +172,9 @@ def main() -> None:
     ls_cfg = cfg.annotation.label_studio
     review_project_name = ls_cfg.instances.review.project_name
 
+    min_score = args.min_score if args.min_score is not None else float(cfg.predict.min_score)
+    print(f"Box score gate: {min_score} ({'--min-score' if args.min_score is not None else 'predict.min_score'})")
+
     flights = _list_flights(args.imagery_base, args.flights, args.exclude_flights)
     if not flights:
         print(f"No flight directories found under {args.imagery_base}")
@@ -186,6 +204,21 @@ def main() -> None:
             continue
 
         predictions["image_path"] = predictions["image_path"].map(lambda p: os.path.basename(str(p)))
+        n_cached_boxes = len(predictions)
+
+        # Gate every box on its own score, BEFORE any image is selected. A cache can hold
+        # sub-threshold boxes for an image that also has a good one (the pool is built by
+        # keeping whole images, not whole boxes), and uploading those drags foam into the
+        # queue attached to a real detection. Dropping them here also drops any image left
+        # with nothing above the gate, which is the point: one good box justifies that box,
+        # not its neighbours.
+        if min_score > 0 and "score" in predictions.columns:
+            predictions = predictions[predictions["score"] >= min_score].copy()
+        n_below_score = n_cached_boxes - len(predictions)
+        if predictions.empty:
+            print(f"[{flight_name}] all {n_cached_boxes} cached boxes scored < {min_score} -- skipping")
+            continue
+
         n_predicted_images = predictions["image_path"].nunique()
         annotated = _annotated_basenames(flight_dir, cfg)
         unannotated_predictions = predictions[~predictions["image_path"].isin(annotated)].copy()
@@ -231,10 +264,11 @@ def main() -> None:
 
         print(
             f"[{flight_name}] cache={os.path.relpath(cache_path, flight_dir)} "
+            f"cached_boxes={n_cached_boxes} dropped_below_{min_score}={n_below_score} "
             f"predicted_imgs={n_predicted_images} "
             f"already_annotated={len(annotated & set(predictions['image_path']))} "
             f"dropped_gull_dets={n_gull_rows} "
-            f"to_upload={len(image_paths)}"
+            f"to_upload={len(image_paths)} boxes={len(unannotated_predictions)}"
         )
 
         if args.dry_run:

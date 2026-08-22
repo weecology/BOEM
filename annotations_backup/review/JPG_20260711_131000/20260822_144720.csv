@@ -1,0 +1,4 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+4932.0,4675.0,4950.0,4710.0,FalsePositive,C1_L3_F2691_T20260711_134912_253.jpg," benweinstein2010@gmail.com, 2",JPG_20260711_131000
+5210.0,757.0000000000001,5233.0,803.0,FalsePositive,C1_L3_F2691_T20260711_134912_253.jpg," benweinstein2010@gmail.com, 2",JPG_20260711_131000
+1344.0000000000002,679.0,1359.0,706.9999999999999,FalsePositive,C1_L3_F2691_T20260711_134912_253.jpg," benweinstein2010@gmail.com, 2",JPG_20260711_131000

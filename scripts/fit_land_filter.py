@@ -43,6 +43,13 @@ FEATURES = ["struct", "fine_edge", "chroma", "bg_frac"]
 # threshold selection in main() for why zero is not a usable target.
 WATER_LOSS_BUDGET = 0.03
 
+# Annotations rejected on inspection. Kept here rather than fixed in Label Studio so
+# that a re-pull cannot silently reintroduce them; drop an entry once the task itself
+# is corrected. This one is labelled Land but is plainly brown chop with foam specks,
+# and being an `anchor`-band frame the fit weighted it heavily: excluding it moved
+# CV AUC 0.929 -> 0.971.
+EXCLUDE = {"C5_L1_F1034_T20260202_124404_130.jpg"}
+
 
 def fetch_labels(project):
     """One row per annotated task: basename + chosen class."""
@@ -74,6 +81,10 @@ def main():
     # Mixed frames contain land and so still generate false positives, but they also
     # contain water worth searching. Keep them out of the fit and decide separately.
     d = d[d.label.isin(["Land", "Water"])]
+    dropped = d.image.isin(EXCLUDE).sum()
+    if dropped:
+        print(f"excluding {dropped} rejected annotation(s): {sorted(EXCLUDE & set(d.image))}")
+        d = d[~d.image.isin(EXCLUDE)]
     X, y = d[FEATURES].values, (d.label == "Land").astype(int).values
     print(f"fitting on {len(d)} frames ({y.sum()} land, {len(y) - y.sum()} water)")
 

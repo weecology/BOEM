@@ -260,7 +260,18 @@ report:
     enabled: true
     # Optional confidence floor. When set, a row whose joint confidence
     # (min of the two contributing scores) falls below it is demoted one further
-    # rank. null = agreement alone decides the rank.
+    # rank. null = agreement alone decides the rank, which is the current setting:
+    # the rollup ladder is pure LABEL comparison and no score is consulted.
+    #
+    # IF YOU SET THIS, it is a sixth cropmodel_score threshold and belongs on the
+    # calibrated scale — see human_review.review_high for the other five. Two reasons:
+    #   1. A row with no H-CAST score resolves to _joint(crop_score), i.e. the crop score
+    #      alone (hierarchical.py:587), so this is a crop-scale floor even without H-CAST.
+    #   2. With H-CAST it is min(cropmodel_score, hcast_*_score), and H-CAST is NOT
+    #      temperature-scaled. On raw scores the crop score wins that min on 17% of gated
+    #      survey boxes (median crop 0.981 vs H-CAST 0.629); calibrated crop scores land in
+    #      H-CAST's range, so the min starts selecting a different model's number. Comparing
+    #      the two on quantiles, or fitting a T for H-CAST, is the fix if this is enabled.
     min_consensus_score: null
     # Broad species -> genus/family source, used for crop-model classes that are
     # absent from hierarchical.label_csv (the CropModel has 70 classes, the wired

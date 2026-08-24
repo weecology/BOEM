@@ -1720,7 +1720,38 @@ Thalasseus maximus 12 and Laridae 4 at family, as expected.
 Submitted `--serial` this time (one job, all 20 flights) rather than a 20-way fan-out: 39831139
 proved serial does the whole survey in **19m02s** off warm caches, so the fan-out only bought
 queue churn. `--time 02:00:00`.
-Result: PENDING. Monitor armed.
+**Result: COMPLETED rc=0 at 18:21, elapsed 35m56s.** All three "Next" items are now answered.
+(1) **19/20 reports, exactly as predicted.** 20/20 flights logged `Using prediction cache`, 388 boxes
+>= 0.7 (identical to 39831139), and the repointed `report.metadata_dir` worked: the ONLY geospatial
+failure in the whole log is the known-unfixable `20260711_131000_captures.csv`. 19 complete report sets
+on disk (19 x PDF + HTML + shp/shx/dbf/prj/cpg + `taxonomic_summary.csv`, 57 csv, 127 png), all
+uploaded to Comet. Zero tracebacks in the .err; its only content is per-flight Lightning GPU banners.
+(2) **The pipeline rollup reconciles EXACTLY with the local 388-box prediction — no divergence to
+explain.** Aggregating the 19 summaries: species 189 / unresolved 121 / family 46 / genus 14 /
+**verified 3** = 373 observations. Local was species 194 / genus 17 / family 49 / unresolved 128 = 388.
+The two gaps are both accounted for and neither is a discrepancy: JPG_20260711_131000 (18 boxes, no
+capture CSV) is absent, and the per-rank deltas sum to precisely those 18 (5+3+3+7); the 3 `verified`
+rows are human annotations the local box-only run never saw. 388 - 18 + 3 = 373. The pipeline path and
+the direct path agree, so the rollup is safe to publish.
+Survey composition is dominated by one species: Thalasseus maximus 141 of 192 species+verified
+observations, then Larus (genus) 8, Gavia immer 6, Tursiops truncatus 6, Somateria mollissima 5,
+Chelonioidea sp 4 (the turtle class, in a report for the first time).
+(3) Decision on moving the PDF species-composition figures onto `consensus_label` is still open, but
+now has the evidence it needed.
+
+**BONUS — this run silently closed the "calibrated queue size is unmeasured" gap.** Temperature
+scaling was already live when it launched (commit beb7001 landed 17:52, job started 17:45 off the
+working tree), and the log confirms it on every flight: `[classification] temperature scaling active:
+logits / 5.6136`. The 20 caches are stamped `temperature=5.6136`, and the rewritten
+`pool_predictions.csv` carry calibrated scores — median `cropmodel_score` **0.398**, and only **2 of
+388** boxes >= 0.99 (raw-scale share was ~81%).
+**The measured calibrated review queue on survey imagery is 252 of 388 boxes / 236 of 360 images —
+about 65%, not the ~24.6% / ~170 the val quantile mapping predicted.** So the val-set estimate
+understates the real queue by ~2.5x: survey boxes are far less confidently classified than in-domain
+val crops. `human_review.review_high: 0.50` is therefore a much wider gate in production than the val
+numbers implied; the queue is still capped by `human_review.n`, and nothing was actually uploaded
+("No images to upload for instance review" x20), so this is a free measurement with no side effects.
+Worth revisiting whether 0.50 is the right band now that the survey-side number is known.
 Next: (1) confirm 19/20 `taxonomic_summary.csv` and zero metadata failures other than
 20260711_131000; (2) aggregate the 19 into a survey-level rank split and check it against the
 local 388-box prediction (species 194 / genus 17 / family 49 / unresolved 128) — the local run
@@ -1783,19 +1814,97 @@ says ~170. Getting the real number needs crop logits for survey boxes, i.e. a cl
 re-predict over the cached detections (the 39700519 path). Until that runs, the calibrated
 queue size on survey imagery is unmeasured.
 
-**Also unhandled: `hierarchical._joint()` / `active_learning._row_min_class_confidence()` take
-min(cropmodel_score, hcast_species_score).** H-CAST is NOT temperature-scaled, so calibrated
-crop scores — systematically lower — will now win that min nearly always, quietly reducing the
-joint confidence to the crop score alone. Inert while `hierarchical.checkpoint` is unset, which
-it is, but it breaks the moment the ensemble is switched on. Either fit a T for H-CAST or
-compare the two on quantiles instead of raw values.
+**CORRECTION to the H-CAST warning first written here.** The original entry claimed the
+crop/H-CAST scale mixing was a live hazard held back only by `hierarchical.checkpoint` being
+unset. Both halves were wrong. `hierarchical.checkpoint` IS set
+(`output/usgs_hier/best_checkpoint.pth`) and H-CAST runs on every flight. But the ensemble does
+not compare confidences at all — `resolve_row_rank`'s ladder is pure LABEL comparison
+(species match -> species, else genus match -> genus, else family), as are
+`format_ensemble_suggestion_line` and `ensemble_target_mode: match_or_genus_consistent`.
+Confidence enters in exactly two places and both are currently inactive:
+  - `report.taxonomic_rollup.min_consensus_score` demotion (hierarchical.py:638-645), the only
+    place joint confidence rewrites an output LABEL — set to `null`, so agreement alone decides.
+  - `mean_joint_conf` (active_learning.py:408), a SECONDARY sort key after `disagreement_count`
+    and only under `strategy: model-disagreement`; the active strategy is `taxonomy`.
+So there is no live impact, and the scale change did not break the ensemble.
+
+**What that review did surface is a SIXTH cropmodel_score threshold, missed in the table
+above: `report.taxonomic_rollup.min_consensus_score`.** It is null today so nothing is
+mis-scaled, but it is a crop-scale floor whenever it is set, for two independent reasons: a row
+with no H-CAST score resolves to `_joint(crop_score)` — the crop score alone
+(hierarchical.py:587) — and with H-CAST it is min(crop, hcast) where H-CAST is not
+temperature-scaled. On raw scores the crop score wins that min on 17.0% of the 388 gated survey
+boxes (median crop 0.981 vs H-CAST 0.629); calibrated crop scores fall into H-CAST's range, so
+the min would start returning a different model's number. Exact post-calibration share is
+unmeasured for the same reason the queue size is — no calibrated scores exist for survey boxes
+yet. Documented inline at the key. Fix if enabled: fit a T for H-CAST, or compare on quantiles.
 
 Tests: 67 passed, 1 skipped. Added 5 tests in `tests/test_active_learning.py` covering the
 divide, argmax preservation, idempotence, T<=0 rejection, null/1.0 no-ops, and a
 `human_review` band test that pins the calibrated defaults. `test_detection.py::
 test_detection_preprocess_and_train` still fails on HEAD for the unrelated pre-existing
 DeepForest drift (`main.deepforest(label_dict=...)`).
-Next: (1) classifier-only re-predict of JPG_202607* to measure the real calibrated queue;
+Next: (1) ~~classifier-only re-predict of JPG_202607* to measure the real calibrated queue~~ **DONE —
+39832676 already ran calibrated. Measured: 252/388 boxes, 236/360 images, ~65% of the gated set, vs the
+~24.6%/~170 the val quantile mapping predicted. The val estimate understates production by ~2.5x;
+reconsider whether `review_high: 0.50` is the right band.**;
 (2) record T for each future checkpoint and check whether it is stable enough that the
-thresholds stop needing to move; (3) H-CAST joint-confidence scale mismatch before any
-ensemble run; (4) `fast_dev_run: True` still committed in finetune.yaml.
+thresholds stop needing to move; (3) fit a T for H-CAST (or switch to quantile comparison) BEFORE
+setting min_consensus_score or strategy: model-disagreement — not before an ensemble run, which
+is already happening harmlessly; (4) `fast_dev_run: True` still committed in finetune.yaml.
+
+## (no job) — 2026-08-24 — land filter trained on the first 62 Label Studio labels
+
+Pulled the Land Screen annotations and fitted the logistic regression. **62 of the 250 uploaded
+frames are annotated so far** (37 Water, 25 Land, zero Mixed, zero Unusable), so this is an early
+read, not the final fit.
+
+**The model works: cross-validated ROC-AUC 0.929, stable across 10 CV seeds (0.916-0.942).** At the
+chosen operating point it dominates the hand-tuned conjunction currently in `src/land_filter.py`
+on *both* axes — same 84.0% land recall, but 1/37 water frames lost instead of 7/37 (2.7% vs 18.9%).
+Standardised coefficients: fine_edge -2.129, bg_frac -1.957, chroma -0.366, struct +0.091. The
+struct term the hand rule leads with is doing almost nothing; the fit is carried by low fine-scale
+edge energy and the absence of a single dominant background colour.
+
+**Fixed a real defect in `scripts/fit_land_filter.py`: its headline operating point was
+meaningless.** It selected the highest-recall threshold losing *zero* water frames, which is a
+`max()` over the water set and therefore set by one frame. That frame pinned it at 0.930, where
+**land recall is 12%** — i.e. the script recommended a threshold at which the filter does nothing,
+and printed it as the answer. Replaced with a threshold chosen at a stated water-loss budget
+(`WATER_LOSS_BUDGET = 0.03`), which picks **0.625: 84.0% land recall, 1/37 water lost**. The script
+now also prints CV AUC, the full recall/loss curve, and the hand-tuned rule as a baseline, and
+stamps `cv_auc` / `cv_land_recall` / `water_loss_budget` into `land_model.json`.
+
+**The frame that pinned the old threshold is not a label error — it is a hard negative class the
+features do not cover.** Inspected it: `C1_L3_F378_T20260710_162752_835.jpg` is turbid green
+shallows with dark seagrass patches and a boat wake. Correctly labelled Water; it looks like land
+to these features (many "materials", coarse structure, low fine edge). Shallow-water bottom
+structure is a genuine gap, and no threshold choice fixes it — it needs a feature or more labels.
+
+**One label IS wrong, and it costs a lot.** `C5_L1_F1034_T20260202_124404_130.jpg`
+(JPG_20260202_122400) is labelled **Land** but is plainly brown chop with foam specks — water.
+It is an `anchor`-band frame, so the fit weights it heavily. Correcting it:
+**AUC 0.929 -> 0.971**, and zero-water-loss recall 12% -> 42%. Not corrected in the fit — the
+annotation should be fixed in Label Studio rather than patched in code.
+
+**Biggest caveat: the label set is nearly single-flight.** 23 of the 25 Land frames come from
+JPG_20260710_155800 (the coastal line), and 17 of 37 Water from JPG_20260711_141200. The Dec-2024
+whitecap flights — the hard negative that motivated the whole learned-filter exercise — contribute
+**4 frames total**. Cross-flight generalisation is therefore unproven, and the 0.929 AUC should be
+read as "separates land from water *on one coastal flight*". Spot-checked the land labels visually
+(buildings, parking lots, mown grass — unambiguous).
+
+**The filter is still not wired into the pipeline.** `src/land_filter.py` has no caller anywhere
+outside its own four scripts, so no land frame is being dropped in production today. Added a
+learned-inference path (`load_model`, `land_probability`, `is_land_learned`) so `land_model.json`
+has a consumer at all — it previously had none — verified to match sklearn's `predict_proba` to
+2.2e-16 and to recompute features from JPEG exactly. Wiring it into the detector is a separate
+decision.
+
+Tests: 67 passed, 1 skipped, unchanged. Added `tests/test_land_filter.py` (5 tests) covering the
+hand-computed logistic, bounds/monotonicity, feature-order independence, scaler application, and
+the per-path cache; they use a synthetic model file so they do not depend on the /blue artifact.
+`test_detection.py` still fails on HEAD for the unrelated pre-existing DeepForest drift.
+Next: (1) fix the JPG_20260202_122400 label in Label Studio and refit; (2) annotate the remaining
+188 frames, prioritising non-coastal flights — Land is currently one flight; (3) decide whether
+shallow-seagrass water needs its own feature; (4) decide where in the pipeline the filter runs.

@@ -29,6 +29,8 @@ CAVEAT: whitecaps in the Dec-2024 flight are the hard negative that sets these
 thresholds; they cost ~20% of land recall. Re-check flag rates on any flight with a
 markedly different sea state, and see `scripts/screen_land.py --report`.
 """
+import json
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -84,3 +86,37 @@ def filter_water(paths, workers=8):
     water = [p for p, land in zip(paths, flags) if not land]
     land = [p for p, land in zip(paths, flags) if land]
     return water, land
+
+
+# --- learned filter -------------------------------------------------------
+# The four thresholds above are hand-tuned and were fitted by eye. The logistic
+# regression below is fitted to Label Studio annotations by
+# `scripts/fit_land_filter.py`, which writes MODEL_PATH; on the 2026-08-24 labels
+# it dominates the rule on both axes (see the JOB_LEDGER entry). The rule is kept
+# because `scripts/mine_land_examples.py` mines against its decision boundary.
+
+MODEL_PATH = Path("/blue/ewhite/b.weinstein/BOEM/annotations/land_screen/land_model.json")
+
+
+@lru_cache(maxsize=4)
+def load_model(path=MODEL_PATH):
+    """Load the fitted coefficients. Cached: this is called per frame."""
+    m = json.loads(Path(path).read_text())
+    return {**m,
+            "coef": np.asarray(m["coef"], np.float64),
+            "mean": np.asarray(m["scaler_mean"], np.float64),
+            "scale": np.asarray(m["scaler_scale"], np.float64)}
+
+
+def land_probability(features, model=None):
+    """P(land) for one `land_features` dict, on the fitted model's scale."""
+    m = model or load_model()
+    x = np.array([features[k] for k in m["features"]], np.float64)
+    z = float(np.dot((x - m["mean"]) / m["scale"], m["coef"]) + m["intercept"])
+    return float(1.0 / (1.0 + np.exp(-z)))
+
+
+def is_land_learned(path, model=None):
+    """True when the fitted model calls the frame land at its stored threshold."""
+    m = model or load_model()
+    return land_probability(land_features(path), m) > m["threshold"]

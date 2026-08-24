@@ -40,8 +40,13 @@ from src import label_studio as ls_mod
 from src.label_studio import get_api_key
 from src.land_filter import load_model
 
-SCORES = Path("/blue/ewhite/b.weinstein/BOEM/annotations/land_screen/new_flight_scores.csv")
-OUT_DIR = SCORES.parent
+OUT_DIR = Path("/blue/ewhite/b.weinstein/BOEM/annotations/land_screen")
+# The broad 5000-per-flight pass, plus the full-depth pass over the flights that pass
+# turned out to be land-poor. Six of the eight yielded under 15 predicted-land frames
+# at 5000 samples, which is not enough to tell a per-flight failure from noise -- and
+# validating on the two land-rich flights alone would just repeat the single-flight
+# weakness the training set already has.
+SCORES = [OUT_DIR / "new_flight_scores.csv", OUT_DIR / "new_flight_scores_deep.csv"]
 IMAGERY = Path("/blue/ewhite/b.weinstein/BOEM/imagery")
 PROJECT_NAME = "Bureau of Ocean Energy Management - Land Screen Validation"
 
@@ -53,11 +58,17 @@ PROJECT_NAME = "Bureau of Ocean Energy Management - Land Screen Validation"
 # least trustworthy. It is wrong for the two outer bands -- drawing them boundary-first
 # just refills the middle, and a `water_anchor` made entirely of p~=0.30 frames is not a
 # confident-water tripwire at all. Those use "spread": a random draw across the band.
+# Sizes are set against measured supply (317,763 scored frames): after thinning there
+# are 215 confident-land, 350 marginal-land and 1,529 boundary frames available, so the
+# two land bands take a little over half of what exists and the outer bands are
+# supply-rich. 65% of the budget goes to the land side because that is where the
+# safety-critical error lives -- a predicted-land frame that is really water is a frame
+# the filter would have discarded.
 BANDS = [
-    ("land_confident", 0.85, 1.01, 90, "spread"),      # is confident land really land?
-    ("land_marginal", "thresh", 0.85, 110, "boundary"),  # what precision turns on
-    ("boundary_below", 0.30, "thresh", 110, "boundary"),  # land we would keep (missed)
-    ("water_anchor", 0.0, 0.30, 50, "spread"),         # tripwire, not a recall estimate
+    ("land_confident", 0.85, 1.01, 120, "spread"),      # is confident land really land?
+    ("land_marginal", "thresh", 0.85, 140, "boundary"),  # what precision turns on
+    ("boundary_below", 0.30, "thresh", 90, "boundary"),  # land we would keep (missed)
+    ("water_anchor", 0.0, 0.30, 50, "spread"),          # tripwire, not a recall estimate
 ]
 
 LABEL_CONFIG = """<View>
@@ -119,11 +130,20 @@ def build_tasks(sel, model_version):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--scores", default=None,
+                    help="comma-separated score CSVs (default: both passes)")
     args = ap.parse_args()
 
     model = load_model()
     thresh = model["threshold"]
-    df = pd.read_csv(SCORES)
+    paths = [Path(p) for p in args.scores.split(",")] if args.scores else SCORES
+    present = [p for p in paths if p.exists()]
+    if not present:
+        raise FileNotFoundError(f"no score files found: {[str(p) for p in paths]}")
+    for p in paths:
+        print(f"{'  ' if p in present else 'MISSING '}{p}")
+    # The deep pass re-scores frames the broad pass already covered; keep one row each.
+    df = pd.concat([pd.read_csv(p) for p in present]).drop_duplicates("image")
     sel = select(df, thresh)
     sel.to_csv(OUT_DIR / "validation_manifest.csv", index=False)
 

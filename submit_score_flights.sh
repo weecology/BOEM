@@ -8,9 +8,11 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=64GB
-#SBATCH --time=08:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=/home/b.weinstein/logs/score_land_%j.out
 #SBATCH --error=/home/b.weinstein/logs/score_land_%j.err
 
+# Args pass straight through, e.g.
+#   sbatch submit_score_flights.sh --n 999999 --flights A,B --out /path/deep.csv
 cd "${SLURM_SUBMIT_DIR}"
-uv run python scripts/score_flights.py --n 5000
+uv run python scripts/score_flights.py "${@:---n 5000}"

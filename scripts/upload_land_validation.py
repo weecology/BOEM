@@ -48,7 +48,10 @@ OUT_DIR = Path("/blue/ewhite/b.weinstein/BOEM/annotations/land_screen")
 # weakness the training set already has.
 SCORES = [OUT_DIR / "new_flight_scores.csv", OUT_DIR / "new_flight_scores_deep.csv"]
 IMAGERY = Path("/blue/ewhite/b.weinstein/BOEM/imagery")
-PROJECT_NAME = "Bureau of Ocean Energy Management - Land Screen Validation"
+# Label Studio caps project titles at 50 characters and rejects a longer one with a
+# bare "400 Bad Request", so keep this short and check it below.
+PROJECT_NAME = "BOEM - Land Screen Validation"
+LS_MAX_TITLE = 50
 
 # (name, lo, hi, n, order) over predicted probability; `thresh` is substituted at
 # runtime. Weighted hard toward the land side -- see the sampling note above.
@@ -128,6 +131,10 @@ def build_tasks(sel, model_version):
 
 
 def main():
+    if len(PROJECT_NAME) > LS_MAX_TITLE:
+        raise ValueError(
+            f"PROJECT_NAME is {len(PROJECT_NAME)} chars; Label Studio allows "
+            f"{LS_MAX_TITLE} and answers with an opaque 400 if you exceed it.")
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--scores", default=None,

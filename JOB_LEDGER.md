@@ -1908,3 +1908,65 @@ the per-path cache; they use a synthetic model file so they do not depend on the
 Next: (1) fix the JPG_20260202_122400 label in Label Studio and refit; (2) annotate the remaining
 188 frames, prioritising non-coastal flights — Land is currently one flight; (3) decide whether
 shallow-seagrass water needs its own feature; (4) decide where in the pipeline the filter runs.
+
+## (no job) + 40092220 + 40098526 — 2026-08-24 — land filter: refit, and a held-out validation set
+
+Follow-on to the entry above. Three things: the rejected annotation is out, the filter was run
+over flights it has never seen, and a 400-frame correction pass is queued in Label Studio.
+
+**Refit without the mislabelled anchor frame: CV ROC-AUC 0.929 -> 0.968**, operating point 0.610
+(land recall 87.5%, 1/37 water lost; the hand-tuned rule is 87.5% at 7/37). The exclusion lives in
+`scripts/fit_land_filter.py:EXCLUDE`, not in Label Studio, so a re-pull cannot silently reintroduce
+it. **No new annotations have appeared since 2026-08-22 — still exactly 62 of 250 uploaded frames.**
+
+**Infrastructure trap worth remembering: an interactive shell on this cluster gets ONE cpu.**
+`nproc` = 1 and `len(os.sched_getaffinity(0))` = 1, so every `ProcessPoolExecutor(16)` in the
+land-filter scripts was inert. Measured throughput was identical at 16, 32 and 64 workers
+(2.3 frames/s) because it was serial the whole time. Scoring is CPU-bound at ~440 ms/frame; on 64
+real cores it runs at ~118 frames/s, a 50x difference. Anything frame-parallel belongs in sbatch.
+Also: job 40091435 hung with `couldn't chdir ... transport endpoint shutdown` — node c0705a-s5 had
+a dead /blue mount. It sat in RUNNING producing nothing. Cancelled and resubmitted with
+`--exclude=c0705a-s5`.
+
+**Land is much rarer than the mining exercise implied: 239 of 40,000 sampled frames, 0.60%.**
+And 89.7% of ALL frames sit in a tight p=0.10-0.30 band — the model is decisive about open water,
+and the entire interesting region is under 2% of the data. The first pass (5000/flight, 8 flights,
+job 40092220, 5m49s) was badly unbalanced: 78% of the predicted land came from two July-13 flights
+(JPG_20260713_101500 at 2.30%, JPG_20260713_160300 at 1.42%), while six flights gave 4-16 frames
+each. Validating on that would have reproduced the exact single-flight weakness this exercise is
+meant to test. A full-depth pass over those six (job 40098526, **307,763 frames in 43m18s**) found
+681 more, bringing every flight to at least 16 thinned land frames. Merged pool: 317,763 frames,
+867 predicted land (0.27%), 565 after 5-frame overlap thinning.
+
+**Uploaded 400 frames to the new `BOEM - Land Screen Validation` project (id 214) as a CORRECTION pass** —
+each task pre-filled with the model's guess and p(land), inverting the no-anchoring rule of
+`upload_land_project.py` on purpose so we only pay for the frames the model got wrong. Bands
+(sized against measured supply, ~2/3 on the land side): land_confident p>0.85 n=120,
+land_marginal 0.610-0.85 n=140, boundary_below 0.30-0.610 n=90, water_anchor <=0.30 n=50. All 8
+flights represented, 29-67 each. **Precision on the two land bands is the number to read**: every
+predicted-land frame that is really water is a frame the filter would have discarded, and those are
+the errors that can cost an animal. The land/water ratio in this set is NOT a prevalence estimate.
+
+**Open concern the annotation pass exists to settle: the new predicted-land frames do not look like
+the training land frames.** Median struct 0.029 vs 0.041 and chroma 0.037 vs 0.049 — less
+structured, less colourful — and only 25% fall inside the 5-95% envelope of the 24 labelled land
+frames on all four features jointly. Either these flights hold a different KIND of land (marsh,
+dune, mudflat rather than the buildings and parking lots that dominate the coastal training flight),
+or a real share of them are false positives. The fit is extrapolating off its training distribution
+either way.
+
+**Also fixed:** Label Studio caps project titles at 50 characters and rejects a longer one with a
+bare `400 Bad Request` and no message — the first upload attempt died there, before transferring
+anything. Title shortened and a length guard added that fails with an explanation.
+
+Verified after upload: 400 tasks, all 400 carrying a pre-filled prediction (260 Land / 140 Water),
+bands and all 8 flights as intended, 0 annotations yet.
+
+Tests: 77 passed, 1 skipped. `tests/test_land_filter.py` now has 10 tests; 5 cover band selection,
+including a regression test for a bug found here — drawing the outer bands nearest-threshold-first
+made `water_anchor` entirely p~=0.30 frames, i.e. not a confident-water tripwire at all. Outer bands
+now draw a random spread (anchor mean p is 0.07).
+Next: (1) annotate the 400 and read precision per band and per flight; (2) if precision on
+`land_confident` is high but `land_marginal` is poor, the threshold moves rather than the model;
+(3) the two July-13 flights were only sampled at 5000 — deep-score them if more land is wanted;
+(4) still nothing in the pipeline calls the land filter.

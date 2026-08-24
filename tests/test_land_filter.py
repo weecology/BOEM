@@ -100,9 +100,18 @@ def test_water_anchor_is_confident_water_not_threshold_hugging(scored_pool):
 
 
 def test_selection_is_spread_across_flights(scored_pool):
+    """Every flight is represented and none dominates.
+
+    Deliberately not an equal-counts assertion: land supply genuinely differs by an
+    order of magnitude between flights, so round_robin lets flights with stock absorb
+    the shortfall of flights without. The real 400-frame draw spans 29-67 per flight.
+    What would be a bug is one flight carrying the set, which is what this pins.
+    """
     from scripts.upload_land_validation import select
-    counts = select(scored_pool, 0.610).flight.value_counts()
-    assert counts.max() - counts.min() <= 5, counts.to_dict()
+    sel = select(scored_pool, 0.610)
+    counts = sel.flight.value_counts()
+    assert len(counts) == scored_pool.flight.nunique(), "a flight dropped out entirely"
+    assert counts.max() / len(sel) <= 0.25, counts.to_dict()
 
 
 def test_overlapping_frames_are_thinned(scored_pool):

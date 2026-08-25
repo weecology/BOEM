@@ -58,7 +58,12 @@ from scripts.USGS_classification import (
     train_test_split_by_image,
 )
 from scripts.taxonomy_hier import load_taxonomy_restricted_to_species
-from src.classification import TURTLE_CLASS
+from src.classification import (
+    TURTLE_CLASS,
+    map_ambiguous_slash_labels,
+    map_dolphin_family_labels,
+    map_turtle_labels,
+)
 from src.hierarchical import expand_bbox_to_square as _expand_bbox_to_square
 
 
@@ -238,9 +243,20 @@ def evaluate(data_loader, model, device):
 
 
 def _load_annotation_pool_preprocessed(annotations_dir: str) -> pd.DataFrame:
-    """Load and preprocess annotation CSVs to match USGS_classification (before balance/split)."""
+    """Load and preprocess annotation CSVs to match USGS_classification (before balance/split).
+
+    This function exists to harvest higher-taxon rows (family/genus) that the species-level
+    CropModel split cannot use. Those labels are a SINGLE token, so the two-word filter used
+    downstream would discard every one of them -- which made the whole ancestor path a no-op.
+    Map them onto two-word indeterminate classes first (Delphinidae -> "Delphinidae sp",
+    "Larus delawarensis/argentatus" -> "Larus sp"), exactly as USGS_classification does, so
+    the pool and the CropModel split speak the same label vocabulary.
+    """
     crop_annotations = glob.glob(os.path.join(annotations_dir, "*.csv"))
     df = pd.concat([pd.read_csv(x) for x in crop_annotations])
+    df["label"] = map_turtle_labels(df["label"])
+    df["label"] = map_dolphin_family_labels(df["label"])
+    df["label"] = map_ambiguous_slash_labels(df["label"])
     df = df.groupby("label").filter(lambda x: len(x) > 25)
     df = df[df["label"].str.contains(" ", na=False)]
     df = df[~df["label"].isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
@@ -306,6 +322,9 @@ def _build_datasets(args, nb_classes, name_to_ids):
     else:
         crop_annotations = glob.glob(os.path.join(args.annotations_dir, "*.csv"))
         df = pd.concat([pd.read_csv(x) for x in crop_annotations])
+        df["label"] = map_turtle_labels(df["label"])
+        df["label"] = map_dolphin_family_labels(df["label"])
+        df["label"] = map_ambiguous_slash_labels(df["label"])
         df = df[df["label"].str.contains(" ", na=False)]
         df = df[~df["label"].isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
         df["label"] = df["label"].apply(normalize_label)

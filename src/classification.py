@@ -49,6 +49,47 @@ def map_turtle_labels(labels: pd.Series) -> pd.Series:
     return labels.where(~labels.astype(str).str.strip().isin(TURTLE_LABELS), TURTLE_CLASS)
 
 
+# An "A/B" label is an annotator saying "I cannot separate these two species", not a
+# determination of A. The old normalize_label() dropped the slash and kept the first two
+# words, which silently turned 5,529 "Larus delawarensis/argentatus" boxes into confident
+# "Larus delawarensis" -- 87% of that class -- and made it a low-precision attractor that
+# swallowed dolphins and whales. Resolve to the rank the annotator actually reached: the
+# genus. "Genus sp" (not bare "Genus") because the pipeline's two-word filter drops
+# single-token labels, same reason TURTLE_CLASS is "Chelonioidea sp".
+INDETERMINATE_SUFFIX = "sp"
+
+# Slash labels that are not "GenusA speciesA/speciesB" ambiguity and must stay dropped.
+SLASH_NOT_A_TAXON = frozenset({"Unknown/Other", "Unknown/other", "unknown/other"})
+
+
+def _slash_label_to_genus(label: str) -> str:
+    """"Larus delawarensis/argentatus" -> "Larus sp"; "Calonectris/Puffinus x/y" -> "Calonectris sp"."""
+    first = str(label).strip().split()[0]
+    return f"{first.split('/')[0]} {INDETERMINATE_SUFFIX}"
+
+
+def map_ambiguous_slash_labels(labels: pd.Series) -> pd.Series:
+    """Rewrite ambiguous "A/B" species labels to their genus, as "Genus sp"."""
+    s = labels.astype(str).str.strip()
+    is_ambiguous = s.str.contains("/", na=False) & ~s.isin(SLASH_NOT_A_TAXON)
+    return labels.where(~is_ambiguous, s.map(_slash_label_to_genus))
+
+
+# Family-rank cetacean annotations ("Delphinidae", 3,318 boxes with real geometry) are a
+# single token, so the two-word filter discarded every one of them while the species-rank
+# dolphin classes kept only ~430 crops between them. That is the same failure map_turtle_labels
+# was written to fix. Keep them as their own indeterminate class rather than guessing a species.
+DOLPHIN_FAMILY_LABELS = frozenset({"Delphinidae", "Delphinid", "Dolphin", "Dolphin sp"})
+DOLPHIN_FAMILY_CLASS = f"Delphinidae {INDETERMINATE_SUFFIX}"
+
+
+def map_dolphin_family_labels(labels: pd.Series) -> pd.Series:
+    """Rewrite family-rank dolphin taxa to one two-word class (see DOLPHIN_FAMILY_LABELS)."""
+    return labels.where(
+        ~labels.astype(str).str.strip().isin(DOLPHIN_FAMILY_LABELS), DOLPHIN_FAMILY_CLASS
+    )
+
+
 def _temperature_forward(self, x, metadata=None):
     """CropModel.forward with the logits divided by the model's fitted temperature."""
     return CropModel.forward(self, x, metadata=metadata) / self._temperature

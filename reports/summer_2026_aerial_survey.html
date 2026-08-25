@@ -246,8 +246,8 @@
       </div>
       <div class="tile">
         <p class="k">Species represented</p>
-        <p class="v num">35</p>
-        <p class="s">Birds and marine mammals</p>
+        <p class="v num">16</p>
+        <p class="s">Identified to species; 34 proposed in all</p>
       </div>
     </div>
   </section>
@@ -297,9 +297,9 @@
     </p>
 
     <div class="hero">
-      <p class="big num">391</p>
+      <p class="big num">388</p>
       <p class="cap">
-        high-confidence detections, across <strong class="num">362</strong> frames and all
+        high-confidence detections, across <strong class="num">360</strong> frames and all
         <strong>20</strong> flights.
       </p>
     </div>
@@ -339,7 +339,7 @@
       The frames below are twelve detections from a single image on 12 July, each proposed as a
       sea duck. At this scale a distant bird and a sunlit wave crest are genuinely hard to tell
       apart, and similar specks nearby went unmarked. Detections like these are why the
-      confidence filter exists: none of them appears in the 391 counted above, and all of them
+      confidence filter exists: none of them appears in the 388 counted above, and all of them
       go to a reviewer instead.
     </p>
     <div class="wideshot">
@@ -350,65 +350,96 @@
   <section>
     <h2>What was seen most</h2>
     <p class="dek">
-      Large, conspicuous birds dominate the high-confidence set &mdash; which is a statement
-      about visibility as much as about abundance.
+      Every detection is put to two independent models &mdash; one that names the species
+      directly, one that works down the taxonomic tree. Where they agree, the identification is
+      reported at species level. Where they disagree, it is reported at the rank they still
+      share, or held back entirely.
     </p>
 
     <figure>
-      <p class="figtitle">Most frequent species among high-confidence detections</p>
-      <p class="figsub">391 detections across all 20 flights.</p>
-      <div class="hbars"><div class="hrow" title="Royal Tern — Thalasseus maximus — 170 high-confidence detections"><span class="hlab">Royal Tern</span><span class="htrack"><span class="hfill" style="width:100.00%"></span></span><span class="hval">170</span></div>
-<div class="hrow" title="Common Eider — Somateria mollissima — 33 high-confidence detections"><span class="hlab">Common Eider</span><span class="htrack"><span class="hfill" style="width:19.41%"></span></span><span class="hval">33</span></div>
-<div class="hrow" title="Ring-billed Gull — Larus delawarensis — 27 high-confidence detections"><span class="hlab">Ring-billed Gull</span><span class="htrack"><span class="hfill" style="width:15.88%"></span></span><span class="hval">27</span></div>
-<div class="hrow" title="Herring Gull — Larus argentatus — 24 high-confidence detections"><span class="hlab">Herring Gull</span><span class="htrack"><span class="hfill" style="width:14.12%"></span></span><span class="hval">24</span></div>
-<div class="hrow" title="Brown Pelican — Pelecanus occidentalis — 15 high-confidence detections"><span class="hlab">Brown Pelican</span><span class="htrack"><span class="hfill" style="width:8.82%"></span></span><span class="hval">15</span></div>
-<div class="hrow" title="Laughing Gull — Leucophaeus atricilla — 14 high-confidence detections"><span class="hlab">Laughing Gull</span><span class="htrack"><span class="hfill" style="width:8.24%"></span></span><span class="hval">14</span></div>
-<div class="hrow" title="Bottlenose Dolphin — Tursiops truncatus — 13 high-confidence detections"><span class="hlab">Bottlenose Dolphin</span><span class="htrack"><span class="hfill" style="width:7.65%"></span></span><span class="hval">13</span></div>
-<div class="hrow" title="Black Scoter — Melanitta nigra — 10 high-confidence detections"><span class="hlab">Black Scoter</span><span class="htrack"><span class="hfill" style="width:5.88%"></span></span><span class="hval">10</span></div></div>
+      <p class="figtitle">How far each detection could be identified</p>
+      <p class="figsub">370 observations from 19 flights, ranked by how far the two models could agree. One flight&rsquo;s position records are missing, so its 18 detections are not yet in this rollup.</p>
+      <div class="hbars"><div class="hrow" title="Identified to species — 189 observations where both models agree"><span class="hlab">Species</span><span class="htrack"><span class="hfill" style="width:100.00%"></span></span><span class="hval">189</span></div>
+<div class="hrow" title="Genus only — 14 observations"><span class="hlab">Genus</span><span class="htrack"><span class="hfill" style="width:7.29%"></span></span><span class="hval">14</span></div>
+<div class="hrow" title="Family only — 46 observations"><span class="hlab">Family</span><span class="htrack"><span class="hfill" style="width:23.96%"></span></span><span class="hval">46</span></div>
+<div class="hrow" title="The two models proposed different species — 121 observations, held for review"><span class="hlab">Models disagree</span><span class="htrack"><span class="hfill" style="width:63.02%"></span></span><span class="hval">121</span></div></div>
       <figcaption>
-        A further 27 species appear in ones and twos, together accounting for
-        <span class="num">85</span> detections. Royal Tern leads this list largely because
-        terns are big, pale and fly clear of the water &mdash; the easiest thing in the survey
-        to be sure about.
+        About <span class="num">half</span> carry a species name and
+        <span class="num">two-thirds</span> are identified to some rank. The
+        <span class="num">121</span> where the models disagree are not failures &mdash; they are
+        cases flagged as genuinely uncertain rather than given a confident label the evidence
+        does not support. Nearly all are gulls, terns and sea ducks, the groups hardest to
+        separate from directly overhead. A further <span class="num">3</span> observations sit
+        outside this chart because a reviewer has already labelled them by hand, at
+        <i>Sterninae</i> and <i>Laridae</i> rather than at species.
+      </figcaption>
+    </figure>
+
+    <figure>
+      <p class="figtitle">Species identified, by number of observations</p>
+      <p class="figsub">Only detections both models agree on. 189 observations across 16 species.</p>
+      <div class="hbars"><div class="hrow" title="Royal Tern — Thalasseus maximus — 141 observations identified to species"><span class="hlab">Royal Tern</span><span class="htrack"><span class="hfill" style="width:100.00%"></span></span><span class="hval">141</span></div>
+<div class="hrow" title="Common Loon — Gavia immer — 6 observations identified to species"><span class="hlab">Common Loon</span><span class="htrack"><span class="hfill" style="width:4.26%"></span></span><span class="hval">6</span></div>
+<div class="hrow" title="Bottlenose Dolphin — Tursiops truncatus — 6 observations identified to species"><span class="hlab">Bottlenose Dolphin</span><span class="htrack"><span class="hfill" style="width:4.26%"></span></span><span class="hval">6</span></div>
+<div class="hrow" title="Common Eider — Somateria mollissima — 5 observations identified to species"><span class="hlab">Common Eider</span><span class="htrack"><span class="hfill" style="width:3.55%"></span></span><span class="hval">5</span></div>
+<div class="hrow" title="Laughing Gull — Leucophaeus atricilla — 4 observations identified to species"><span class="hlab">Laughing Gull</span><span class="htrack"><span class="hfill" style="width:2.84%"></span></span><span class="hval">4</span></div>
+<div class="hrow" title="Sea Turtle — Chelonioidea sp — 4 observations identified to species"><span class="hlab">Sea Turtle</span><span class="htrack"><span class="hfill" style="width:2.84%"></span></span><span class="hval">4</span></div>
+<div class="hrow" title="Ring-billed Gull — Larus delawarensis — 4 observations identified to species"><span class="hlab">Ring-billed Gull</span><span class="htrack"><span class="hfill" style="width:2.84%"></span></span><span class="hval">4</span></div>
+<div class="hrow" title="Brown Pelican — Pelecanus occidentalis — 4 observations identified to species"><span class="hlab">Brown Pelican</span><span class="htrack"><span class="hfill" style="width:2.84%"></span></span><span class="hval">4</span></div>
+<div class="hrow" title="Bufflehead — Bucephala albeola — 3 observations identified to species"><span class="hlab">Bufflehead</span><span class="htrack"><span class="hfill" style="width:2.13%"></span></span><span class="hval">3</span></div>
+<div class="hrow" title="Double-crested Cormorant — Phalacrocorax auritus — 3 observations identified to species"><span class="hlab">Double-crested Cormorant</span><span class="htrack"><span class="hfill" style="width:2.13%"></span></span><span class="hval">3</span></div></div>
+      <figcaption>
+        Royal Tern is <span class="num">141</span> of
+        <span class="num">189</span> &mdash; partly because terns are big,
+        pale and fly clear of the water, the easiest thing in the survey to be sure about, and
+        partly because it is the one species the two models agree on almost every time. Also
+        identified: Long-tailed Duck (3), Herring Gull (2), Great Black-backed Gull (1), Great Egret (1), Northern Gannet (1), Black Scoter (1).
       </figcaption>
     </figure>
   </section>
 
   <section>
-    <h2>Marine mammals</h2>
+    <h2>Marine mammals and turtles</h2>
     <p class="dek">
-      Twenty-five high-confidence detections. Every one is being prioritised for expert
-      verification.
+      Fewer than in the previous issue of this brief, and that is the intended direction &mdash;
+      see the note below.
     </p>
 
     <figure>
-      <p class="figtitle">Marine mammal high-confidence detections</p>
-      <p class="figsub">6% of the high-confidence total.</p>
+      <p class="figtitle">Non-bird detections</p>
+      <p class="figsub">Species column counts detections both models agree on; proposed counts every detection the species classifier labelled this way.</p>
       <div class="tscroll">
         <table>
-          <thead><tr><th>Species</th><th>Detections</th></tr></thead>
+          <thead><tr><th>Animal</th><th>Identified to species</th><th>Proposed</th></tr></thead>
           <tbody>
-            <tr><td>Bottlenose Dolphin <i>Tursiops truncatus</i></td><td class="n">13</td></tr>
-            <tr><td>Humpback Whale <i>Megaptera novaeangliae</i></td><td class="n">8</td></tr>
-            <tr><td>Harbour Seal <i>Phoca vitulina</i></td><td class="n">2</td></tr>
-            <tr><td>Grey Seal <i>Halichoerus grypus</i></td><td class="n">2</td></tr>
+            <tr><td>Bottlenose Dolphin <i>Tursiops truncatus</i></td><td class="n">6</td><td class="n">25</td></tr>
+            <tr><td>Sea Turtle <i>Chelonioidea sp</i></td><td class="n">4</td><td class="n">19</td></tr>
+            <tr><td>Grey Seal <i>Halichoerus grypus</i></td><td class="n">0</td><td class="n">3</td></tr>
+            <tr><td>Ocean Sunfish <i>Mola mola</i></td><td class="n">0</td><td class="n">1</td></tr>
           </tbody>
         </table>
       </div>
       <figcaption>
-        No right whale, fin whale, minke whale or common dolphin detection reaches the
-        confidence bar, so none is reported here.
+        Sea turtles appear here for the first time. They had no class of their own in earlier
+        runs and were forced into whichever bird looked nearest; they are now recognised
+        directly. Every one of these detections is still prioritised for expert verification.
       </figcaption>
     </figure>
 
     <div class="status">
-      <p class="t">Whale detections &mdash; still unverified</p>
+      <p class="t">The whale detections did not survive the model refresh</p>
       <p>
-        The eight humpback rows above have <b>not yet been confirmed by a reviewer</b>, and
-        whales at survey altitude are among the harder calls to make from a single frame &mdash;
-        a submerged animal can read as little more than a shadow. They are listed to direct
-        verification effort. <b>Please do not cite them as sightings until a specialist has
-        examined each image.</b>
+        The previous issue listed <b>eight humpback whales</b>, flagged as unverified. On the
+        refreshed model <b>no whale detection remains anywhere in the survey</b>. The earlier
+        rows came from a classifier trained partly on close-range imagery, which taught it to
+        read size in the frame as a species cue and so to see distant dolphins and wave
+        structure as large whales. That training source has been removed.
+      </p>
+      <p>
+        The honest reading is that the earlier whale counts were an artefact and are withdrawn,
+        <b>not that whales were present and have now been missed</b>. This model has too few
+        large-whale training images to identify one reliably either way, so absence here is not
+        evidence of absence at sea.
       </p>
     </div>
   </section>
@@ -417,24 +448,25 @@
     <h2>Activity across the survey</h2>
     <p class="dek">
       12 July accounts for roughly half of the high-confidence detections, on a little under a
-      third of the flying.
+      third of the flying. Detection counts are essentially unchanged from the previous issue;
+      it is the identifications that have moved.
     </p>
 
     <figure>
       <p class="figtitle">High-confidence detections by survey day</p>
       <p class="figsub">Hover a bar for the number of flights and frames behind it.</p>
-      <div class="hbars"><div class="hrow" title="10 July — 2 flights, 67,516 frames, 25 detections in 20 frames"><span class="hlab">10 July</span><span class="htrack"><span class="hfill" style="width:12.95%"></span></span><span class="hval">25</span></div>
-<div class="hrow" title="11 July — 6 flights, 139,235 frames, 96 detections in 92 frames"><span class="hlab">11 July</span><span class="htrack"><span class="hfill" style="width:49.74%"></span></span><span class="hval">96</span></div>
+      <div class="hbars"><div class="hrow" title="10 July — 2 flights, 67,516 frames, 22 detections in 18 frames"><span class="hlab">10 July</span><span class="htrack"><span class="hfill" style="width:11.40%"></span></span><span class="hval">22</span></div>
+<div class="hrow" title="11 July — 6 flights, 139,235 frames, 95 detections in 91 frames"><span class="hlab">11 July</span><span class="htrack"><span class="hfill" style="width:49.22%"></span></span><span class="hval">95</span></div>
 <div class="hrow" title="12 July — 8 flights, 175,847 frames, 193 detections in 188 frames"><span class="hlab">12 July</span><span class="htrack"><span class="hfill" style="width:100.00%"></span></span><span class="hval">193</span></div>
-<div class="hrow" title="13 July — 4 flights, 151,278 frames, 77 detections in 62 frames"><span class="hlab">13 July</span><span class="htrack"><span class="hfill" style="width:39.90%"></span></span><span class="hval">77</span></div></div>
+<div class="hrow" title="13 July — 4 flights, 151,278 frames, 78 detections in 63 frames"><span class="hlab">13 July</span><span class="htrack"><span class="hfill" style="width:40.41%"></span></span><span class="hval">78</span></div></div>
       <details>
         <summary>View flight-by-flight detail</summary>
         <div class="tscroll">
           <table>
             <thead><tr><th>Flight</th><th>Frames</th><th>Detections</th><th>Frames with detections</th></tr></thead>
             <tbody><tr><td>12 Jul, 10:04</td><td>43,084</td><td>94</td><td>93</td></tr>
-<tr><td>13 Jul, 10:15</td><td>48,556</td><td>41</td><td>28</td></tr>
-<tr><td>11 Jul, 09:08</td><td>28,293</td><td>39</td><td>38</td></tr>
+<tr><td>13 Jul, 10:15</td><td>48,556</td><td>42</td><td>29</td></tr>
+<tr><td>11 Jul, 09:08</td><td>28,293</td><td>38</td><td>37</td></tr>
 <tr><td>13 Jul, 16:03</td><td>28,458</td><td>27</td><td>25</td></tr>
 <tr><td>12 Jul, 11:32</td><td>14,573</td><td>26</td><td>26</td></tr>
 <tr><td>11 Jul, 14:12</td><td>28,579</td><td>22</td><td>20</td></tr>
@@ -443,8 +475,8 @@
 <tr><td>11 Jul, 13:10</td><td>30,846</td><td>18</td><td>18</td></tr>
 <tr><td>12 Jul, 12:59</td><td>13,662</td><td>15</td><td>14</td></tr>
 <tr><td>10 Jul, 16:35</td><td>61,900</td><td>13</td><td>9</td></tr>
-<tr><td>10 Jul, 15:58</td><td>5,616</td><td>12</td><td>11</td></tr>
 <tr><td>12 Jul, 14:27</td><td>14,406</td><td>12</td><td>12</td></tr>
+<tr><td>10 Jul, 15:58</td><td>5,616</td><td>9</td><td>9</td></tr>
 <tr><td>11 Jul, 10:50</td><td>22,532</td><td>8</td><td>8</td></tr>
 <tr><td>13 Jul, 12:15</td><td>29,687</td><td>7</td><td>7</td></tr>
 <tr><td>12 Jul, 14:59</td><td>28,958</td><td>6</td><td>5</td></tr>
@@ -539,7 +571,7 @@
             </tr>
             <tr>
               <td>Number of species</td><td class="n">70</td>
-              <td class="d">The classifier's full vocabulary; 35 appear in this survey</td>
+              <td class="d">The classifier&rsquo;s full vocabulary; 34 proposed here, 16 agreed</td>
             </tr>
             <tr>
               <td>Rank-10 abundance accuracy</td><td class="n">79.9%</td>
@@ -614,6 +646,56 @@
   </section>
 
   <section>
+    <h2>What reviewers have confirmed so far</h2>
+    <p class="dek">
+      Expert review is under way. It is the only source of truth in this brief that does not
+      come from a model.
+    </p>
+
+    <div class="tiles">
+      <div class="tile">
+        <p class="k">Frames reviewed</p>
+        <p class="v num">78</p>
+        <p class="s">Of 336 queued so far</p>
+      </div>
+      <div class="tile">
+        <p class="k">Marks confirmed real</p>
+        <p class="v num">92</p>
+        <p class="s">A reviewer agreed an animal is there</p>
+      </div>
+      <div class="tile">
+        <p class="k">Rejected as false</p>
+        <p class="v num">7</p>
+        <p class="s">Wave foam, glare or sun glint</p>
+      </div>
+      <div class="tile">
+        <p class="k">Confirmed share</p>
+        <p class="v num">93%</p>
+        <p class="s">Against 90% precision predicted from held-out data</p>
+      </div>
+    </div>
+
+    <div class="status">
+      <p class="t">Why this is the most important number in the brief</p>
+      <p>
+        Earlier in the summer the system was set to flag far more generously. The first batch of
+        reviewed frames from that setting came back <b>34 rejected against 3 confirmed</b>
+        &mdash; reviewers were spending almost all their effort on wave crests. After the
+        confidence threshold was re-derived on this survey's own imagery, the same review queue
+        now returns <b>92 confirmed against 7 rejected</b>. The measured precision from held-out
+        imagery predicted 90%; reviewers are finding 93%, so the two agree closely.
+      </p>
+      <p>
+        One limit worth stating plainly: reviewers are confirming <b>that an animal is
+        present</b>, not which species it is. Species-level verification has not started, so
+        every species figure in this brief remains machine output. The
+        <span class="num">3</span> observations already carried at reviewer-confirmed rank are
+        the exception.
+      </p>
+    </div>
+  </section>
+
+  <section>
     <h2>What happens next</h2>
     <p class="dek">
       This brief will be reissued as each stage completes.
@@ -624,8 +706,9 @@
         <div>
           <p class="h">Expert verification</p>
           <p class="d">
-            Reviewers work through the flagged images, confirming or rejecting each detection
-            and correcting species. Marine mammals go first. This is the step that turns
+Reviewers work through the flagged images, confirming or rejecting each detection
+            and correcting species. <b>78 of 336 queued frames are done.</b> Marine mammals and
+            turtles go first. This is the step that turns
             detections into reportable numbers &mdash; and that will let us count the many
             genuine animals currently sitting below the confidence bar.
           </p>
@@ -662,8 +745,9 @@
 
   <p class="foot">
     Prepared 17 August 2026 from the automated processing run of 14&ndash;15 August 2026,
-    covering all twenty flights of 10&ndash;13 July 2026; accuracy and timing figures added
-    25 August 2026. Counts include only detections above
+    covering all twenty flights of 10&ndash;13 July 2026. Identifications, counts and review
+    status refreshed 25 August 2026 from the 20 August processing run, which re-identified every
+    detection with a new taxonomic model; detections themselves are unchanged. Counts include only detections above
     the system's high-confidence threshold; all figures are preliminary machine output pending
     expert verification and will be revised. Questions and corrections are welcome &mdash; this
     is a working draft, not a final report.

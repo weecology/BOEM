@@ -2015,3 +2015,59 @@ Next: (1) `Pelecanus occidentalis` at 0.240 is the highest-value classifier fix 
 margin; (2) re-run for the Refined column with `python scripts/survey_metrics.py <comet_id>`;
 (3) if a survey-abundance basis is ever wanted instead of corpus abundance, it needs a
 human-labelled sample of the survey itself, which does not exist yet.
+
+## 40240876 — 2026-08-25 19:12 — submit_USGS_classification.sh — SUBMITTED
+Why: First flat-classifier retrain after commit 9d2d68c fixed the two label bugs.
+  "A/B" ambiguity labels now resolve to "Genus sp" instead of to the first species
+  (Larus delawarensis 6,070 -> 771 crops, new Larus sp 5,301), and family-rank
+  "Delphinidae" is kept as "Delphinidae sp" instead of dropped by the single-token
+  filter. Cetacean training crops 342 -> 2,281. Pool 76 -> 79 classes, 73 kept
+  after the parent-image split. Testing whether this closes the dolphin ->
+  Larus delawarensis confusion, where a3dc30a0 scored P(Delphinidae)=0.0000 on
+  11 dolphin crops it called ring-billed gull.
+Result: pending
+Next: on completion, re-fit temperature (scripts/classifier_confusion.py prints it;
+  T is checkpoint-specific and does NOT transfer from a3dc30a0's 5.6136), then
+  rerun the flat-vs-H-CAST comparison. Do not reuse a3dc30a0's min_score/temperature.
+
+## 40241441 — 2026-08-25 19:16 — submit_compare_flat_hcast.sh — SUBMITTED
+Why: User asked whether to drop the flat CropModel for H-CAST. Need one fair
+  head-to-head: both models scored on the SAME a3dc30a0 val crop PNGs (flat side
+  read from the saved classifier_confusion_a3dc30a0 logits, so neither model gets
+  its own crop geometry), reporting species/genus/family accuracy, three ensembles,
+  the disagreement head-to-head, and the Delphinidae-vs-Laridae confusion.
+  Note this scores the PRE-fix a3dc30a0 checkpoint; 40240876 retrains the flat model
+  with the label fixes and this should be rerun against it.
+Result: FAILED (exit 1), script bug not a model result -- see 40242362.
+Next: sanity check is H-CAST Species@1 ~= 76.7 (what 39614374 logged on this split).
+  If it is far off, the crop geometry is wrong and the rest of the output is void.
+
+## 40242362 — 2026-08-25 19:25 — submit_compare_flat_hcast.sh — SUBMITTED
+Why: Rerun of 40241441, which FAILED (exit 1) reporting H-CAST 0.00% at every rank.
+  Not a model problem: HCastWrapper.species_numeric_to_label stores names prefixed
+  ("species_Alca torda") and classify_dataframe strips that in a nested helper the
+  comparison script did not reuse, so zero species names matched the taxonomy and the
+  shared vocabulary was empty. Script now strips the prefix and hard-fails on zero
+  overlap rather than printing a 0.00% that looks like a result.
+Result: COMPLETED. Sanity check passed: H-CAST 76.39 on the matched subset vs 76.72 logged
+  by 39614374, so the crop geometry is right. Species@1 flat 75.64 / H-CAST 74.86;
+  Family@1 flat rollup 88.71 / H-CAST native 86.63. Ensembles beat both: product
+  (log-average) 78.76 species, 91.88 family. Head to head on the 899 disagreements:
+  flat right 301, H-CAST right 272, both wrong 326 -- near a coin flip, neither dominates.
+Next: superseded by 40242586, which adds error concentration and ensemble cetacean numbers.
+
+## 40242586 — 2026-08-25 19:27 — submit_compare_flat_hcast.sh — SUBMITTED
+Why: 40242362 COMPLETED and gave the head-to-head (flat 75.64 / H-CAST 74.86 Species@1,
+  product ensemble 78.76; cetaceans 32/63 vs 39/63 right). Two numbers were missing for the
+  "should we switch to hierarchical" decision: how much of the flat model's error is
+  concentrated in the disagreement bucket (i.e. is disagreement worth routing to review),
+  and what the ensemble does on the Delphinidae/Laridae confusion specifically.
+Result: COMPLETED. Disagreement is a strong review trigger: flat is 89.2% accurate where the
+  models agree and 33.5% where they disagree, so 66% of all flat errors (598/900) sit in the
+  24% of crops that disagree. On cetaceans the ensemble does NOT inherit H-CAST's advantage:
+  of 63 cetacean crops, right/->Laridae is flat 32/16, H-CAST 39/3, product ensemble 35/15.
+  The flat model's overconfidence (P(Delphinidae)=0.0000 on the crops it calls ring-billed
+  gull) dominates the product, so ensembling raises the global number but does not fix the
+  dolphin/gull error. H-CAST's family head is the only thing that does.
+Next: this closes the comparison against the PRE-fix a3dc30a0. Rerun once 40240876's
+  2b27e044 checkpoint lands to see how much the label fixes close the gap on their own.

@@ -1970,3 +1970,48 @@ Next: (1) annotate the 400 and read precision per band and per flight; (2) if pr
 `land_confident` is high but `land_marginal` is poor, the threshold moves rather than the model;
 (3) the two July-13 flights were only sampled at 5000 — deep-score them if more land is wanted;
 (4) still nothing in the pipeline calls the land filter.
+
+## (no job) — 2026-08-25 — rank-10 and 90% abundance accuracy, first measurement
+Why: the boss-facing report table had two empty rows with no pipeline stage behind them.
+Both are now computed by `scripts/survey_metrics.py` off the existing
+`classifier_confusion_a3dc30a0_predictions.csv` (3,695 val crops, a3dc30a0, overall 0.7564).
+No GPU, no retrain, ~4 min of CSV reading.
+
+**Neither split carries abundance.** `train_test_split_by_image` caps val at 100 crops/class
+and `gentle_class_balance` caps train at 4x median (1896), so 27 classes sit at exactly 100 in
+val — ranking anything by split counts is meaningless. Abundance had to be recovered by
+re-reading the 72,329 per-image annotation CSVs under `training/crops/` with the same filters
+`USGS_classification.py` applies before splitting: **241,787 crops, 78 classes**, cached to
+`output/corpus_abundance.csv`. 10 of those 78 are slash-classes or rarities the split drops
+(`Larus delawarensis/argentatus` at 9,372 is the big one); 68 of the model's 70 classes match.
+`Aythya affinis` and `Calonectris Puffinus` have no verbatim corpus row and are excluded —
+both negligible on either metric.
+
+**Rank 10 abundance = 0.799** abundance-weighted (0.791 unweighted — the two nearly coincide
+because every top-10 class is capped at exactly 100 val crops). The top 10 are 76.1% of all
+231,000 labelled individuals.
+
+**90% abundance = 0.795** abundance-weighted (0.784 macro, 0.801 pooled-crop). **22 species**
+reach 90% of individuals — the cut lands at 90.5% on Branta canadensis. 2,127 val crops, so
+unlike most things in this ledger it is not sample-size limited.
+
+Both beat the 0.7564 all-class average, and the reason is the whole point of the metric:
+**the other 46 species are 9.5% of individuals and average 0.499 accuracy.** The long tail is
+half the class list and a tenth of the animals. Reporting a flat 70-class average understates
+what the pipeline does on the animals it actually encounters and overstates what it does on
+rarities.
+
+**Weak spot inside the abundant set: `Pelecanus occidentalis` at 0.240 on 6,724 individuals** —
+the largest single accuracy liability in the abundance-weighted picture, and a bigger lever
+than any rare class. `Tursiops truncatus` at 0.296 is second (1,940 individuals, and only 27
+val crops); it is also the configured `active_learning.target_labels`, consistent with the
+0.296 val recall recorded throughout this ledger. Everything else in the 22 runs 0.63-0.99.
+
+Caveat shared by both: accuracy is measured on the USGS val split, abundance on the labelled
+corpus. Corpus abundance reflects annotation effort, not true at-sea density — the July 2026
+survey itself resolved only 16 species-level taxa, 141 of 192 of them Thalasseus maximus, far
+too thin to rank a top 10 from.
+Next: (1) `Pelecanus occidentalis` at 0.240 is the highest-value classifier fix by a wide
+margin; (2) re-run for the Refined column with `python scripts/survey_metrics.py <comet_id>`;
+(3) if a survey-abundance basis is ever wanted instead of corpus abundance, it needs a
+human-labelled sample of the survey itself, which does not exist yet.

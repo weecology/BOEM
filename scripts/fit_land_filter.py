@@ -39,9 +39,14 @@ OUT_DIR = Path("/blue/ewhite/b.weinstein/BOEM/annotations/land_screen")
 PROJECT_NAME = "Bureau of Ocean Energy Management - Land Screen"
 FEATURES = ["struct", "fine_edge", "chroma", "bg_frac"]
 
-# Share of water frames we are willing to drop. Non-zero on purpose -- see the
-# threshold selection in main() for why zero is not a usable target.
-WATER_LOSS_BUDGET = 0.03
+# Share of water frames we are willing to drop. 2026-08-26: collaborators asked for
+# maximum gentleness -- only the most extreme, unambiguous land frames should be
+# screened, nothing that could plausibly hold water or a shoreline bird. Set to 0.0
+# rather than the old 0.03: on the 61-frame set this lands at t=0.92 (0/37 water lost,
+# land recall 37.5%, vs 1/37 lost at 0.875 recall for the old budget). Revisit once the
+# Label Studio "Land Screen Validation" project (2/400 done as of 2026-08-26) and any
+# Mixed-labelled frames accumulate -- see the mixed-frame check in main() below.
+WATER_LOSS_BUDGET = 0.0
 
 # Annotations rejected on inspection. Kept here rather than fixed in Label Studio so
 # that a re-pull cannot silently reintroduce them; drop an entry once the task itself
@@ -119,6 +124,21 @@ def main():
           f"water lost {rule[y == 0].mean():.1%} ({rule[y == 0].sum()}/{(y == 0).sum()})")
 
     model.fit(X, y)
+
+    # Sanity check for the thing collaborators actually care about: a frame they called
+    # Mixed (land and water both present, e.g. a shoreline) should not get screened as
+    # land. There is no reliable ground truth for Mixed one way or the other -- it is
+    # not in the fit -- so this is a report, not a gate; it becomes meaningful once
+    # Label Studio has more than a handful of Mixed annotations.
+    d_mixed = feats.merge(labels[labels.label == "Mixed"], on="image")
+    if len(d_mixed):
+        p_mixed = model.predict_proba(d_mixed[FEATURES].values)[:, 1]
+        flagged = (p_mixed > thresh).sum()
+        print(f"\nMixed frames: {flagged}/{len(d_mixed)} would be screened as land "
+              f"at threshold {thresh:.3f}")
+    else:
+        print("\nMixed frames: none labelled yet -- cannot check flag rate")
+
     lr = model.named_steps["logisticregression"]
     coefs = dict(zip(FEATURES, lr.coef_[0].round(3)))
     out = {"features": FEATURES, "coef": lr.coef_[0].tolist(),

@@ -2178,3 +2178,34 @@ Next: on completion (expect Species@1 ~76 and hierarchy sizes 72/50/18):
      --hcast-checkpoint/--hcast-label-csv at this run's output, to decide whether the product
      ensemble still buys ~3 points now that the flat model's cetacean failure is fixed.
   Leave expand=30/square=true/eval_crop_ratio=0.875 pinned; that geometry is worth +14 points.
+
+## (no job) — 2026-08-26 — land filter: dialled to zero measured water loss on collaborator request
+
+Collaborators want the land screen maximally gentle: only unambiguous land (houses, trees,
+suburban) should be dropped, nothing with water, a lagoon, or a beach that could hold birds.
+
+**Checked Label Studio before touching anything, since the ask referenced "new annotations".**
+There aren't any yet: `Bureau of Ocean Energy Management - Land Screen` is still 62/250 tasks
+annotated (25 Land / 37 Water, unchanged since 2026-08-24), zero of them Mixed or Unusable, and
+`BOEM - Land Screen Validation` (the 400-frame correction pass from the entry above) has only 2/400
+done. So today's change is fit on the same 61 frames as the 0.610 operating point, not on new data.
+
+**`scripts/fit_land_filter.py:WATER_LOSS_BUDGET` 0.03 -> 0.0.** Refit operating point: 0.610 ->
+**0.920**, land recall 87.5% -> **33.3%**, measured water loss 1/37 -> **0/37**. This is the
+"most extreme frames only" end of the curve the fit script already exposes — going further
+(t>0.97) zeroes out land recall entirely, i.e. the filter stops doing anything. cv_auc unchanged at
+0.968 (only the threshold moved, not the model). Note the zero-loss point is a max() over 37 water
+frames, same instability the earlier 0.03 budget was chosen to avoid — one additional hard-negative
+water frame could move it again.
+
+**Added a Mixed-frame check to `fit_land_filter.py:main()`**: after fitting, it scores every frame
+labelled Mixed and reports how many the chosen threshold would flag as land. Currently prints "none
+labelled yet" since there are zero Mixed annotations to check against — this is a report, not a
+gate, and becomes the real test of "nothing mixed gets caught" once collaborators produce some.
+
+Tests: `tests/test_land_filter.py` unchanged, 10 passed (uses a synthetic model file, not the
+refitted artifact).
+Next: (1) once `BOEM - Land Screen Validation` and/or Mixed labels accumulate, rerun
+`scripts/fit_land_filter.py` and read the new Mixed-frame line; (2) if Mixed frames still get
+flagged at 0.920, the fix is a higher threshold or a Mixed-aware fitting objective, not more Land/
+Water data; (3) still nothing in the pipeline calls the land filter.

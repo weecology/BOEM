@@ -2113,3 +2113,26 @@ Result: pending
 Next: expect the hierarchy sizes line to show more species than 68 (the new split has 73
   classes incl. Delphinidae sp / Larus sp / Sterna sp / Aythya sp / Calonectris sp).
   Then rerun scripts/compare_flat_vs_hcast.py --comet-id 2b27e0442e51469c9cce3fa51927d741.
+
+## 40263761 — 2026-08-26 — submit_USGS_hierarchical.sh — FAILED
+Why: retrain H-CAST on the 2b27e044 split (see entry above).
+Result: FAILED (exit 1:0) after 3h32m, mid-epoch 7, with NO traceback in either log and
+  MaxRSS 15.9G against 60G requested -- not memory, no diagnostic, cause unknown. Training
+  itself was healthy: the learning curve tracks 39614374 almost exactly (epoch 6 Species@1
+  24.14 here vs 22.95 there), so this is not a regression from the 9d2d68c label changes.
+  Two things did confirm: the fixed ancestor path added 121,255 higher-taxon rows, and the
+  hierarchy is now species=72 genus=50 family=18 (was 68/49/18) -- the indeterminate classes
+  got their own ids as designed.
+  Also surfaced a latent problem: at ~28 min/epoch, 100 epochs needs ~47h against the 48h
+  wall this script asked for. 39614374 fit in 41h42m only because its train set was smaller.
+Next: see 40272359.
+
+## 40272359 — 2026-08-26 05:00 — submit_USGS_hierarchical.sh — SUBMITTED
+Why: rerun of 40263761. Raised --time 48h -> 96h; the partition allows 14 days and the
+  script has no --resume, so a wall-clock kill throws away the entire run. No code change,
+  since 40263761's crash left no diagnostic and its learning curve was healthy -- if this
+  dies at a similar point that is evidence of something systematic rather than transient.
+Result: pending
+Next: then rerun scripts/compare_flat_vs_hcast.py --comet-id 2b27e0442e51469c9cce3fa51927d741
+  --hcast-checkpoint/--hcast-label-csv pointing at this run's output, to decide whether the
+  product ensemble still buys ~3 points now that the flat model's cetacean failure is fixed.

@@ -6,7 +6,10 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=60GB
-#SBATCH --time=48:00:00
+# 100 epochs at ~28 min/epoch is ~47h, which 48h did not safely cover: 39614374 needed
+# 41h42m and the current train set is larger (179,569 rows vs 176,338). The partition
+# allows 14 days and there is no --resume, so a wall-clock kill costs the whole run.
+#SBATCH --time=96:00:00
 #SBATCH --output=/home/b.weinstein/logs/classification_hier_BOEM%j.out
 #SBATCH --error=/home/b.weinstein/logs/classification_hier_BOEM%j.err
 #SBATCH --ntasks-per-node=1

@@ -1,0 +1,6 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+8844.0,3361.999999999995,9068.397792097318,3490.0077862393223,Morus bassanus,NEAQ_20220523_00165.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale Camera Edited
+4018.419979216731,2670.534799223601,5172.946884108436,3771.4361374946534,Cetacea,NEAQ_20220523_00165.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale Camera Edited
+6940.9844275213545,1428.52887847468,7220.99999999999,1680.0000000000007,Larus marinus,NEAQ_20220523_00222.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale Camera Edited
+6009.0,1370.0,6052.0,1407.0,FalsePositive,NEAQ_20220523_00222.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale Camera Edited
+8195.0,1244.9999999999998,8317.0,1352.0,FalsePositive,NEAQ_20220523_00222.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Whale Camera Edited

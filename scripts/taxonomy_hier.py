@@ -100,6 +100,14 @@ def load_taxonomy_restricted_to_species(
     family/genus in the restricted set (for use as training targets when the
     annotation is labeled only at family or genus level).
 
+    Indeterminate "X sp" labels (e.g. "Larus sp", "Delphinidae sp") are always given
+    their own ids, whatever include_ancestor_labels says. They carry the REAL ancestor
+    ids for the ranks the annotator actually reached and a synthetic id for each finer
+    rank, so a "Delphinidae sp" crop trains the family head alongside Tursiops truncatus
+    without pretending to be any particular species. Prefer these over the representative
+    mapping above: a representative target teaches the species head a species the
+    annotator explicitly declined to call.
+
     Returns:
         nb_classes: [n_species, n_genera, n_families] for the restricted set.
         name_to_ids: dict from species (and optionally ancestor) name to (family_id, genus_id, species_id).
@@ -109,12 +117,39 @@ def load_taxonomy_restricted_to_species(
     restricted = [(f, g, s) for (f, g, s) in triples if s in want]
     if not restricted:
         return [0, 0, 0], {}
-    families = sorted({t[0] for t in restricted})
-    genera = sorted({t[1] for t in restricted})
+
+    # "Larus sp" -> genus Larus; "Delphinidae sp" -> family Delphinidae. Anything whose stem
+    # is neither a genus nor a family in the taxonomy is left for the caller (e.g. the
+    # TURTLE_CLASS block in USGS_hierarchical.py, whose stem is absent from taxonomy.json).
+    all_genus_family = {g: f for (f, g, _) in triples}
+    all_families = {f for (f, _, _) in triples}
+    indeterminate_genus: dict[str, str] = {}
+    indeterminate_family: dict[str, str] = {}
+    for name in sorted(want):
+        stem, _, suffix = str(name).rpartition(" ")
+        if suffix != "sp" or not stem:
+            continue
+        if stem in all_genus_family:
+            indeterminate_genus[name] = stem
+        elif stem in all_families:
+            indeterminate_family[name] = stem
+
+    families = sorted(
+        {t[0] for t in restricted}
+        | {all_genus_family[g] for g in indeterminate_genus.values()}
+        | set(indeterminate_family.values())
+    )
+    genera = sorted({t[1] for t in restricted} | set(indeterminate_genus.values()))
     species_list = sorted({t[2] for t in restricted})
     family_to_id = {f: i for i, f in enumerate(families)}
     genus_to_id = {g: i for i, g in enumerate(genera)}
     species_to_id = {s: i for i, s in enumerate(species_list)}
+
+    # Synthetic ids for the ranks an indeterminate label does not determine, appended after
+    # the real ids so existing species/genus ids keep their meaning.
+    next_species_id = len(species_list)
+    next_genus_id = len(genera)
+
     name_to_ids: dict[str, tuple[int, int, int]] = {}
     for family, genus, species in restricted:
         fid = family_to_id[family]
@@ -128,5 +163,14 @@ def load_taxonomy_restricted_to_species(
                 name_to_ids[family] = (fid, gid, sid)
             if genus not in name_to_ids:
                 name_to_ids[genus] = (fid, gid, sid)
-    nb_classes = [len(species_list), len(genera), len(families)]
+
+    for name, genus in indeterminate_genus.items():
+        name_to_ids[name] = (family_to_id[all_genus_family[genus]], genus_to_id[genus], next_species_id)
+        next_species_id += 1
+    for name, family in indeterminate_family.items():
+        name_to_ids[name] = (family_to_id[family], next_genus_id, next_species_id)
+        next_genus_id += 1
+        next_species_id += 1
+
+    nb_classes = [next_species_id, next_genus_id, len(families)]
     return nb_classes, name_to_ids

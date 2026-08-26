@@ -19,6 +19,8 @@ import cv2
 import rasterio
 from PIL import Image
 
+from src import hierarchical
+
 
 def _flight_datetime_key(flight_name):
     """Strip JPG_ prefix to get datetime key for metadata CSV lookup."""
@@ -136,6 +138,12 @@ def generate_observations_table(gdf, output_path):
         "image_name": image_name.values,
     })
 
+    # Consensus first: this is the label to report. predicted_label above is the
+    # flat crop model alone, kept for traceability, not for counting.
+    for col in ("consensus_label", "consensus_rank", "consensus_score"):
+        if col in gdf.columns:
+            table[col] = gdf[col].values
+
     if "hcast_species" in gdf.columns:
         table["hcast_species"] = gdf["hcast_species"].values
     if "hcast_genus" in gdf.columns:
@@ -162,6 +170,12 @@ def generate_observations_table_with_empty_frames(gdf, captures, output_path):
         "lon": lon.values,
         "image_name": image_name.values,
     })
+
+    # Consensus first: this is the label to report. predicted_label above is the
+    # flat crop model alone, kept for traceability, not for counting.
+    for col in ("consensus_label", "consensus_rank", "consensus_score"):
+        if col in gdf.columns:
+            table[col] = gdf[col].values
 
     if "hcast_species" in gdf.columns:
         table["hcast_species"] = gdf["hcast_species"].values
@@ -208,6 +222,30 @@ def generate_observations_table_with_empty_frames(gdf, captures, output_path):
     return output_path
 
 
+def generate_taxonomic_summary(gdf, output_path):
+    """Write per-rank abundance: how many observations resolve to species, genus, family.
+
+    This is the headline statistic once rollup is on. A record counted at genus
+    means both models saw the same genus and disagreed on the species within it;
+    an "unresolved" record means they agreed at no rank and should not be counted
+    as a detection of anything in particular.
+    """
+    summary = hierarchical.summarize_taxonomic_rollup(gdf)
+    summary.to_csv(output_path, index=False)
+
+    if not summary.empty:
+        totals = summary.groupby("consensus_rank")["n_observations"].sum()
+        n = int(totals.sum())
+        parts = [
+            "{} {} ({:.1f}%)".format(int(totals.get(rank, 0)), rank,
+                                     100.0 * totals.get(rank, 0) / n if n else 0.0)
+            for rank in hierarchical.CONSENSUS_RANKS if totals.get(rank, 0) > 0
+        ]
+        print("Taxonomic rollup: " + ", ".join(parts))
+    print("Taxonomic summary written to " + output_path)
+    return output_path
+
+
 def generate_shapefile(gdf, output_path):
     """Save GeoDataFrame as ESRI Shapefile with short column names."""
     rename_map = {
@@ -220,6 +258,9 @@ def generate_shapefile(gdf, output_path):
         "hcast_genus": "genus",
         "hcast_species": "hcast_sp",
         "hcast_family": "hcast_fam",
+        "consensus_label": "cons_lbl",
+        "consensus_rank": "cons_rank",
+        "consensus_score": "cons_scr",
     }
     export = gdf.copy()
     for old, new in rename_map.items():
@@ -227,6 +268,7 @@ def generate_shapefile(gdf, output_path):
             export.rename(columns={old: new}, inplace=True)
 
     keep = [
+        "cons_lbl", "cons_rank", "cons_scr",
         "species", "det_score", "cls_score", "genus", "hcast_sp",
         "hcast_fam", "image", "flight", "flt_line", "geometry",
     ]
@@ -679,6 +721,21 @@ def generate_report(predictions, config, comet_logger, image_dir):
     ]
     gdf = gpd.GeoDataFrame(georeffed, geometry=geometry, crs="EPSG:4326")
 
+    # Resolve each box to the finest rank the crop model and H-CAST agree on.
+    # Runs on the georeferenced frame so every report artefact sees the same labels.
+    rollup_cfg = getattr(config.report, "taxonomic_rollup", None)
+    if getattr(rollup_cfg, "enabled", True):
+        species_to_genus, species_to_family = hierarchical.load_species_to_ranks(
+            label_csv=getattr(config.hierarchical, "label_csv", None),
+            taxonomy_path=getattr(rollup_cfg, "taxonomy_path", None),
+        )
+        gdf = hierarchical.resolve_taxonomic_rank(
+            gdf,
+            species_to_genus=species_to_genus,
+            species_to_family=species_to_family,
+            min_consensus_score=getattr(rollup_cfg, "min_consensus_score", None),
+        )
+
     generate_observations_table(gdf, os.path.join(report_dir, "observations_table.csv"))
     generate_observations_table_with_empty_frames(
         gdf,
@@ -686,6 +743,9 @@ def generate_report(predictions, config, comet_logger, image_dir):
         os.path.join(report_dir, "observations_table_with_empty_frames.csv"),
     )
     generate_shapefile(gdf, os.path.join(report_dir, "predictions.shp"))
+    generate_taxonomic_summary(
+        gdf, os.path.join(report_dir, "taxonomic_summary.csv"),
+    )
 
     generate_interactive_map(
         gdf, captures, os.path.join(report_dir, "transect_map.html"),

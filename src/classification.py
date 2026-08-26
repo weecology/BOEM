@@ -1,5 +1,6 @@
 import os
 import glob
+import types
 
 import numpy as np
 import rasterio
@@ -10,6 +11,134 @@ import datetime
 import pandas as pd
 
 from src.spatiotemporal_metadata import build_crop_metadata_rows
+
+# Sea turtles are annotated at family/order rank ("Cheloniidae", "Testudines"),
+# never as a binomial, so the two-word label filter below silently discarded every
+# turtle crop. Collapse the turtle taxa onto one two-word class so they survive it.
+# "Reptilia"/"Reptile" is deliberately absent: it is a class-rank catch-all, not a
+# turtle identification, and stays in the coarse-label drop list.
+TURTLE_CLASS = "Chelonioidea sp"
+TURTLE_LABELS = frozenset({
+    "Turtle",
+    "Turtle-species unknown",
+    "Testudines",
+    "Chelonioidea",
+    "Cheloniidae",
+    "Cheloniinae",
+    "Chelonia",
+    "Chelonia mydas",
+    "Green Turtle",
+    "Caretta",
+    "Caretta caretta",
+    "Loggerhead Turtle",
+    "Lepidochelys",
+    "Lepidochelys kempii",
+    "Kemp's Ridley Turtle",
+    "Loggerhead/Kemp's Turtle",
+    "Eretmochelys",
+    "Eretmochelys imbricata",
+    "Dermochelyidae",
+    "Dermochelys",
+    "Dermochelys coriacea",
+    "Leatherback Turtle",
+})
+
+
+def map_turtle_labels(labels: pd.Series) -> pd.Series:
+    """Rewrite every turtle taxon to a single two-word class (see TURTLE_LABELS)."""
+    return labels.where(~labels.astype(str).str.strip().isin(TURTLE_LABELS), TURTLE_CLASS)
+
+
+# An "A/B" label is an annotator saying "I cannot separate these two species", not a
+# determination of A. The old normalize_label() dropped the slash and kept the first two
+# words, which silently turned 5,529 "Larus delawarensis/argentatus" boxes into confident
+# "Larus delawarensis" -- 87% of that class -- and made it a low-precision attractor that
+# swallowed dolphins and whales. Resolve to the rank the annotator actually reached: the
+# genus. "Genus sp" (not bare "Genus") because the pipeline's two-word filter drops
+# single-token labels, same reason TURTLE_CLASS is "Chelonioidea sp".
+INDETERMINATE_SUFFIX = "sp"
+
+# Slash labels that are not "GenusA speciesA/speciesB" ambiguity and must stay dropped.
+SLASH_NOT_A_TAXON = frozenset({"Unknown/Other", "Unknown/other", "unknown/other"})
+
+
+def _slash_label_to_genus(label: str) -> str:
+    """"Larus delawarensis/argentatus" -> "Larus sp"; "Calonectris/Puffinus x/y" -> "Calonectris sp"."""
+    first = str(label).strip().split()[0]
+    return f"{first.split('/')[0]} {INDETERMINATE_SUFFIX}"
+
+
+def map_ambiguous_slash_labels(labels: pd.Series) -> pd.Series:
+    """Rewrite ambiguous "A/B" species labels to their genus, as "Genus sp"."""
+    s = labels.astype(str).str.strip()
+    is_ambiguous = s.str.contains("/", na=False) & ~s.isin(SLASH_NOT_A_TAXON)
+    return labels.where(~is_ambiguous, s.map(_slash_label_to_genus))
+
+
+# Family-rank cetacean annotations ("Delphinidae", 3,318 boxes with real geometry) are a
+# single token, so the two-word filter discarded every one of them while the species-rank
+# dolphin classes kept only ~430 crops between them. That is the same failure map_turtle_labels
+# was written to fix. Keep them as their own indeterminate class rather than guessing a species.
+DOLPHIN_FAMILY_LABELS = frozenset({"Delphinidae", "Delphinid", "Dolphin", "Dolphin sp"})
+DOLPHIN_FAMILY_CLASS = f"Delphinidae {INDETERMINATE_SUFFIX}"
+
+
+def map_dolphin_family_labels(labels: pd.Series) -> pd.Series:
+    """Rewrite family-rank dolphin taxa to one two-word class (see DOLPHIN_FAMILY_LABELS)."""
+    return labels.where(
+        ~labels.astype(str).str.strip().isin(DOLPHIN_FAMILY_LABELS), DOLPHIN_FAMILY_CLASS
+    )
+
+
+def _temperature_forward(self, x, metadata=None):
+    """CropModel.forward with the logits divided by the model's fitted temperature."""
+    return CropModel.forward(self, x, metadata=metadata) / self._temperature
+
+
+def apply_temperature(model, temperature):
+    """Apply post-hoc temperature scaling to a loaded CropModel, in place.
+
+    Divides the LOGITS by a single fitted scalar before DeepForest's softmax, so that
+    ``cropmodel_score`` is a calibrated probability rather than a raw max-softmax. Fit T by
+    minimising NLL on the checkpoint's own val split -- ``scripts/classifier_confusion.py``
+    prints it and writes the logits needed to re-derive it.
+
+    Two properties worth being precise about, because thresholds depend on them:
+
+    * ``cropmodel_label`` is UNCHANGED. Dividing every logit by a positive scalar cannot
+      move the argmax, so this only ever rewrites the score column.
+    * The RANKING of boxes by score is *nearly* but not exactly preserved. Max-softmax
+      depends on the whole logit vector, so boxes whose runner-up structure differs can
+      swap order. On a3dc30a0 that cost AUROC 0.796 -> 0.770 (see JOB_LEDGER.md 39825931).
+      Calibration buys an interpretable, checkpoint-portable threshold, NOT a better queue.
+
+    T is checkpoint-specific and does not transfer. It must be re-fit whenever
+    ``classification_model.checkpoint`` moves, exactly like ``predict.min_score`` for the
+    detector. Idempotent: re-applying replaces the previous scaling rather than compounding.
+
+    Args:
+        model (CropModel): A loaded CropModel.
+        temperature (float or None): Fitted T. ``None`` or 1.0 leaves the model untouched
+            and the score on the raw max-softmax scale.
+
+    Returns:
+        CropModel: the same object, mutated.
+    """
+    if temperature is None:
+        return model
+    T = float(temperature)
+    if not T > 0:
+        raise ValueError(f"classification_model.temperature must be > 0, got {T}")
+    if T == 1.0:
+        return model
+    model._temperature = T
+    # Bound to the CLASS method, so re-applying cannot stack a second division.
+    model.forward = types.MethodType(_temperature_forward, model)
+    print(f"[classification] temperature scaling active: logits / {T:.4f} "
+          f"(cropmodel_score is now a calibrated probability; labels unchanged)")
+
+    return model
+
 
 def get_latest_checkpoint(checkpoint_dir, num_classes):
     #Get model with latest checkpoint dir, if none exist make a new model
@@ -51,6 +180,9 @@ def train(model, comet_logger=None, fast_dev_run=False, max_epochs=10, batch_siz
     return model
 
 def filter_annotations(crop_annotations):
+    crop_annotations = crop_annotations.copy()
+    crop_annotations["label"] = map_turtle_labels(crop_annotations["label"])
+
     # Only keep two word labels
     crop_annotations = crop_annotations[crop_annotations["label"].str.contains(" ")]
     crop_annotations = crop_annotations[~crop_annotations.label.isin([0,"0","FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal","Artificial"])]

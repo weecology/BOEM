@@ -1,0 +1,21 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+6736.0,188.0,6796.0,244.00000000000003,FalsePositive,NEAQ_20220421_B_2083.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+6734.0,874.0,6767.000000000001,905.0,FalsePositive,NEAQ_20220421_B_2111.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+1886.0,4435.0,1951.9999999999998,4503.0,FalsePositive,NEAQ_20220421_B_2116.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+7943.0,2022.0,7999.0,2051.0,FalsePositive,NEAQ_20220421_B_2117.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+8368.0,587.0,8417.0,620.0,FalsePositive,NEAQ_20220421_B_2164.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+2164.0,3285.9999999999995,2203.0,3327.0,FalsePositive,NEAQ_20220421_B_2180.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+7408.0,1051.0,7451.0,1083.0,FalsePositive,NEAQ_20220421_B_2229.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+1695.0,4170.000000000001,1724.0,4202.000000000001,FalsePositive,NEAQ_20220421_B_2243.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+4414.0,2673.0,4481.0,2719.0,FalsePositive,NEAQ_20220421_B_2273.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+6844.999999999999,1000.9999999999998,6888.999999999999,1030.9999999999998,FalsePositive,NEAQ_20220421_B_2335.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+6325.0,79.0,6371.0,126.0,FalsePositive,NEAQ_20220421_B_2365.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+7355.0,1150.0,7393.0,1173.0,FalsePositive,NEAQ_20220421_B_2422.JPG," sanacleto@ufl.edu, 24",Belly camera edited
+4649.0,3480.0000000000005,4669.0,3519.0,FalsePositive,NEAQ_20220424_B_0007.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited
+5842.000000000001,572.0,5883.000000000001,616.0,FalsePositive,NEAQ_20220424_B_0021.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited
+6688.0,698.0,6713.0,741.0,FalsePositive,NEAQ_20220424_B_0079.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited
+7181.0,1489.9999999999998,7219.000000000001,1521.9999999999998,FalsePositive,NEAQ_20220424_B_0101.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited
+1367.9999999999998,4853.0,1416.9999999999998,4885.0,FalsePositive,NEAQ_20220424_B_0289.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited
+7682.0,5618.000000000001,7716.999999999999,5647.000000000001,FalsePositive,NEAQ_20220424_B_0546.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited
+5856.000000000001,1517.0,5881.000000000001,1566.0,FalsePositive,NEAQ_20220424_B_0603.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited
+7567.0,3542.0000000000005,7608.0,3578.0000000000005,FalsePositive,NEAQ_20220424_B_0837.JPG,"Brier Klossing b.klossing@ufl.edu, 20",Belly camera edited

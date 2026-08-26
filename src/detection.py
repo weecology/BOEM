@@ -36,12 +36,20 @@ def evaluate(model, test_csv, image_root_dir):
 
     return results
 
-def load(checkpoint, annotations = None):
+def load(checkpoint, annotations = None, score_thresh = None):
     """Load a trained model from disk.
-    
+
     Args:
         checkpoint (str): The path to a model checkpoint.
-    
+        annotations (pd.DataFrame, optional): Used to decide whether the backbone must be
+            re-extracted for a different label set.
+        score_thresh (float, optional): Detection score floor for the live model. The
+            checkpoint carries whatever score_thresh it was BUILT with (0.4 for the
+            a09c6933 family, see scripts/USGS_backbone.py), and that floor silently wins
+            over any lower predict.min_score if it is not overridden here — the bug that
+            produced caches labelled min_score 0.3 but containing nothing below 0.4.
+            Pass config.predict.min_score.
+
     Returns:
         main.deepforest: A trained deepforest model.
     """
@@ -62,7 +70,15 @@ def load(checkpoint, annotations = None):
     
     snapshot.label_dict  = {'Object': 0}
     snapshot.numeric_to_label_dict = {0: 'Object'}
-    
+
+    if score_thresh is not None:
+        # Both assignments are required and they are not equivalent. predict_tile reads
+        # the LIVE torchvision module (snapshot.model.score_thresh); snapshot.config is
+        # only the serialized copy. Setting config alone updates the dict and changes
+        # nothing about what the detector emits.
+        snapshot.model.score_thresh = score_thresh
+        snapshot.config["score_thresh"] = score_thresh
+
     return snapshot
 
 def extract_backbone(snapshot, annotations):

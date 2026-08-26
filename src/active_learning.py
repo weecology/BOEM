@@ -3,6 +3,7 @@ import os
 import random
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src import detection
@@ -128,28 +129,104 @@ def get_leaf_labels_for_taxonomy_aliases(
     return result
 
 
-def human_review(predictions, min_detection_score=0.6, min_classification_score=0.5, confident_threshold=0.5):
+def crop_hcast_species_disagree(predictions: pd.DataFrame) -> pd.Series:
+    """Boolean mask: the CropModel and H-CAST name a different species for this box.
+
+    Rows missing either prediction are False -- absence of an opinion is not disagreement.
     """
-    Predict on images and divide into confident and uncertain predictions.
+    if "hcast_species" not in predictions.columns or "cropmodel_label" not in predictions.columns:
+        return pd.Series(False, index=predictions.index)
+    crop = predictions["cropmodel_label"]
+    hcast = predictions["hcast_species"]
+    both = crop.notna() & hcast.notna()
+    return both & (crop.astype(str) != hcast.astype(str))
+
+
+def human_review(
+    predictions,
+    min_detection_score=0.70,
+    review_low=0.05,
+    review_high=0.50,
+    review_on_disagreement=True,
+):
+    """
+    Split trusted detections into confident and uncertain by classifier confidence.
+
+    Only boxes the detector is sure about (score >= min_detection_score) are considered;
+    among those, the classifier score partitions them into three bands:
+
+        cropmodel_score <  review_low   -> ignored (classifier had nothing to say; the
+                                           detection is most likely spurious)
+        review_low <= s <= review_high  -> uncertain, send to human review
+        cropmodel_score >  review_high  -> confident, safe to auto-annotate
+
+    A box where the CropModel and H-CAST name different species is ALSO uncertain, whatever
+    its confidence. That trigger is strictly the better of the two: measured on the a3dc30a0
+    val split at matched review budget, the confidence band reviews 24.6% of crops and catches
+    51.1% of the classifier's errors at 50.6% precision, while disagreement reviews 24.3% and
+    catches 66.4% at 66.5%. The band cannot see a confident error, and confident errors are
+    exactly the failure mode that matters here -- the crops the flat model called
+    Larus delawarensis at 1.000 confidence were dolphins.
+
+    Uncertainty is box-level but review is image-level: any image holding at least one
+    uncertain box goes to review, and is withheld from the confident set even if its
+    other boxes scored above review_high.
+
     Args:
-        confident_threshold (float): The threshold for confident predictions.
-        min_classification_score (float, optional): The minimum class score for a prediction to be included. Defaults to 0.1.
-        min_detection_score (float, optional): The minimum detection score for a prediction to be included. Defaults to 0.1.
-        predictions (pd.DataFrame, optional): A DataFrame of existing predictions. Defaults to None.
-        Returns:
-        tuple: A tuple of confident and uncertain predictions.
+        predictions (pd.DataFrame): Predictions with score / cropmodel_score / image_path.
+        min_detection_score (float): Detection score floor. Defaults to 0.70, matching
+            predict.min_score. The pipeline always passes the configured value; this
+            default exists only so a direct caller does not get a different gate.
+        review_low (float): Lower edge of the ambiguous band. Defaults to 0.05. Nearly
+            inert (0 of 388 gated survey boxes fell below its raw-scale predecessor); the
+            "spurious detection" job it was meant to do is now done by min_detection_score.
+        review_high (float): Upper edge of the ambiguous band. Defaults to 0.50, matching
+            human_review.review_high.
+
+            BOTH ARE ON THE TEMPERATURE-SCALED SCALE and assume
+            classification_model.temperature is applied to the CropModel at load
+            (src/classification.apply_temperature). On the raw max-softmax scale they are
+            badly wrong -- raw scores pile up at 0.99, so a 0.50 cut there reviews ~1% of
+            boxes instead of ~25%. If temperature is ever set to null, every
+            cropmodel_score threshold has to go back to the raw scale together; see
+            boem_conf/boem_config.yaml:human_review for the list and the derivation.
+        review_on_disagreement (bool): Also send a box to review when the CropModel and
+            H-CAST disagree on species. No-op when the hcast_* columns are absent
+            (hierarchical.checkpoint: null), so this is safe with H-CAST disabled.
+
+    Returns:
+        tuple: (confident_predictions, uncertain_predictions). uncertain_predictions carries
+        a ``review_reason`` column ("disagreement", "low_confidence", or "both") so the queue
+        can be ordered and the two triggers can be told apart downstream.
     """
-    filtered_predictions = predictions[
-        (predictions["score"] >= min_detection_score) &
-        (predictions["cropmodel_score"] < min_classification_score)
-    ]
+    if review_low > review_high:
+        raise ValueError(
+            f"review_low ({review_low}) must be <= review_high ({review_high})"
+        )
 
-    uncertain_predictions = filtered_predictions[
-        filtered_predictions["cropmodel_score"] <= confident_threshold]
+    detected = predictions[predictions["score"] >= min_detection_score].copy()
 
-    confident_predictions = filtered_predictions[
-        ~filtered_predictions["image_path"].isin(
-            uncertain_predictions["image_path"])]
+    in_band = (
+        (detected["cropmodel_score"] >= review_low) &
+        (detected["cropmodel_score"] <= review_high)
+    )
+    disagrees = (
+        crop_hcast_species_disagree(detected)
+        if review_on_disagreement
+        else pd.Series(False, index=detected.index)
+    )
+
+    detected["review_reason"] = np.select(
+        [in_band & disagrees, disagrees, in_band],
+        ["both", "disagreement", "low_confidence"],
+        default="",
+    )
+    uncertain_predictions = detected[in_band | disagrees]
+
+    confident_predictions = detected[
+        (detected["cropmodel_score"] > review_high) &
+        ~disagrees &
+        ~detected["image_path"].isin(uncertain_predictions["image_path"])]
 
     return confident_predictions, uncertain_predictions
 
@@ -158,7 +235,7 @@ def generate_pool_predictions(
     pool,
     patch_size=512,
     patch_overlap=0.1,
-    min_score=0.1,
+    min_score=0.70,
     model=None,
     batch_size=16,
     pool_limit=1000,
@@ -177,7 +254,8 @@ def generate_pool_predictions(
         pool (str): List of image paths to predict on.
         patch_size (int, optional): The size of the image patches to predict on. Defaults to 512.
         patch_overlap (float, optional): The amount of overlap between image patches. Defaults to 0.1.
-        min_score (float, optional): The minimum score for a prediction to be included. Defaults to 0.1.
+        min_score (float, optional): The minimum score for a prediction to be included.
+            Defaults to 0.70, matching predict.min_score.
         model (main.deepforest, optional): A trained deepforest model. Defaults to None.
         batch_size (int, optional): The batch size for prediction. Defaults to 16.
         crop_model (CropModel, optional): A deepforest.model.CropModel object. Defaults to None.
@@ -250,7 +328,7 @@ def select_images(
     strategy,
     n=10,
     target_labels=None,
-    min_score=0.3,
+    min_score=0.70,
     drop_n_most_common=1,
     rarest_confidence_selection="lowest",
     min_classification_score=None,

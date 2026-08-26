@@ -29,7 +29,15 @@ import pandas as pd
 import glob
 import comet_ml
 from pytorch_lightning.loggers import CometLogger
-from src.classification import preprocess_and_train
+from src.classification import (
+    DOLPHIN_FAMILY_CLASS,
+    SLASH_NOT_A_TAXON,
+    _slash_label_to_genus,
+    map_ambiguous_slash_labels,
+    map_dolphin_family_labels,
+    map_turtle_labels,
+    preprocess_and_train,
+)
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
@@ -52,6 +60,15 @@ def _flight_name_from_image_path(image_path: str) -> str | None:
 # Detection-task combined splits: exclude so we only load per-image CSVs (avoids duplicate rows and Object vs species label conflicts).
 UBFAI_CROPS_EXCLUDE_CSV = frozenset({"train.csv", "test.csv", "zero_shot.csv"})
 UBFAI_CROPS_EXCLUDE_PREFIX = "train_max_empty_"  # e.g. train_max_empty_0_10.csv
+
+# NEAQ is a different imaging platform (variable-distance/boat-based) mixed in with the
+# fixed-altitude UBFAI aerial surveys. Its crops span a much wider and differently-scaled
+# range of apparent object size for the same species, which the classifier picks up as a
+# size/fill-fraction shortcut for species identity -- confirmed as the mechanism behind
+# Delphinus delphis being classified as Megaptera novaeangliae (see JOB_LEDGER.md,
+# classifier confusion matrix 56e8585). Excluding NEAQ until it has its own scale-aware
+# handling (or its own model); BOEM-platform data only for now.
+UBFAI_CROPS_EXCLUDE_NEAQ_PREFIX = "NEAQ"
 
 
 def _crop_path_to_parent_stem(crop_path: str) -> str | None:
@@ -184,12 +201,20 @@ def train_test_split_by_image(
 
 
 def normalize_label(l):
+    """Trim a label to two words, resolving "A/B" ambiguity to the genus.
+
+    A slash means the annotator could not separate two species, so the label resolves to
+    "Genus sp" -- never to the first species, which is what the old
+    ``s.replace("/", " ")`` did. map_ambiguous_slash_labels normally handles these earlier
+    (before the class-count filter, so variants merge); this is the same rule applied
+    defensively for any caller that reaches here with a raw slash label.
+    """
     if pd.isna(l):
         return l
     s = str(l).strip()
-    s = s.replace("/", " ")
-    s = " ".join(s.split()[:2])
-    return s
+    if "/" in s and s not in SLASH_NOT_A_TAXON:
+        return _slash_label_to_genus(s)
+    return " ".join(s.split()[:2])
 
 
 @hydra.main(config_path=str(PROJECT_ROOT / "boem_conf"), config_name="boem_config")
@@ -206,10 +231,14 @@ def main(cfg: DictConfig):
         x for x in all_csvs
         if os.path.basename(x) not in UBFAI_CROPS_EXCLUDE_CSV
         and not os.path.basename(x).startswith(UBFAI_CROPS_EXCLUDE_PREFIX)
+        and not os.path.basename(x).startswith(UBFAI_CROPS_EXCLUDE_NEAQ_PREFIX)
     ]
+    n_neaq_excluded = sum(
+        1 for x in all_csvs if os.path.basename(x).startswith(UBFAI_CROPS_EXCLUDE_NEAQ_PREFIX)
+    )
     n_excluded = len(all_csvs) - len(per_image_csvs)
     if n_excluded:
-        print(f"[annotation pool] Loading {len(per_image_csvs)} per-image CSVs (excluded {n_excluded} combined splits: train/test/zero_shot, train_max_empty_*)")
+        print(f"[annotation pool] Loading {len(per_image_csvs)} per-image CSVs (excluded {n_excluded} combined splits: train/test/zero_shot, train_max_empty_*, NEAQ_* [{n_neaq_excluded} files])")
     if not per_image_csvs:
         raise ValueError(
             f"No per-image CSVs found in {ubfai_crops_dir}. "
@@ -237,6 +266,27 @@ def main(cfg: DictConfig):
         if label_counts is not None:
             n_conflict = int((label_counts > 1).sum())
             print(f"[dedup] Boxes with conflicting labels (same image+box, multiple labels): {n_conflict}")
+
+    # Sea turtles are annotated at family/order rank, so collapse them onto one
+    # two-word class before the >25 and two-word filters would discard them.
+    n_turtle_before = int(crop_annotations["label"].isin(["Chelonioidea sp"]).sum())
+    crop_annotations["label"] = map_turtle_labels(crop_annotations["label"])
+    n_turtle = int((crop_annotations["label"] == "Chelonioidea sp").sum())
+    print(f"[turtles] {n_turtle - n_turtle_before} crops relabeled to 'Chelonioidea sp'")
+
+    # Family-rank dolphin annotations are one token, so the two-word filter below would drop
+    # them all; keep them as an indeterminate class instead (same fix as turtles above).
+    n_dolphin_before = int((crop_annotations["label"] == DOLPHIN_FAMILY_CLASS).sum())
+    crop_annotations["label"] = map_dolphin_family_labels(crop_annotations["label"])
+    n_dolphin = int((crop_annotations["label"] == DOLPHIN_FAMILY_CLASS).sum())
+    print(f"[dolphins] {n_dolphin - n_dolphin_before} crops relabeled to '{DOLPHIN_FAMILY_CLASS}'")
+
+    # Resolve "A/B" annotator ambiguity to the genus BEFORE the class-count filter, so that
+    # every slash variant of a genus merges into one class and is counted together.
+    slash_before = crop_annotations["label"].astype(str).str.contains("/", na=False).sum()
+    crop_annotations["label"] = map_ambiguous_slash_labels(crop_annotations["label"])
+    n_ambiguous = int(slash_before - crop_annotations["label"].astype(str).str.contains("/", na=False).sum())
+    print(f"[ambiguous] {n_ambiguous} crops resolved from 'A/B' species labels to 'Genus sp'")
 
     # Keep labels with more than 25 images
     crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 25)

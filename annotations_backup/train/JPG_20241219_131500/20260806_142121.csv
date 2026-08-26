@@ -1,0 +1,3 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+1401.0,432.0,1438.0,505.0,FalsePositive,C5_L1_F2447_T20241219_135818_686.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20241219_131500
+858.0,296.00000000000006,896.0000000000001,377.00000000000006,FalsePositive,C5_L1_F2447_T20241219_135818_686.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20241219_131500

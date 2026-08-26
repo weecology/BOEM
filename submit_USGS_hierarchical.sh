@@ -6,7 +6,11 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=60GB
-#SBATCH --time=48:00:00
+# 100 epochs at ~28 min/epoch is ~47h, which 48h did not safely cover: 39614374 needed
+# 41h42m and the current train set is larger (179,569 rows vs 176,338). The partition
+# allows 14 days (the ewhite-b QOS caps at 4) and there is no --resume, so a wall-clock kill
+# costs the whole run. 96:00:00 sat exactly on the QOS cap and was rejected at launch (0:53).
+#SBATCH --time=72:00:00
 #SBATCH --output=/home/b.weinstein/logs/classification_hier_BOEM%j.out
 #SBATCH --error=/home/b.weinstein/logs/classification_hier_BOEM%j.err
 #SBATCH --ntasks-per-node=1
@@ -22,7 +26,13 @@ ulimit -c 0
 ANNOTATIONS_DIR="/blue/ewhite/b.weinstein/BOEM/training/crops"
 IMAGE_DIR="/blue/ewhite/b.weinstein/BOEM/training/crops"
 CHECKPOINT_DIR="/blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints"
-OUTPUT_DIR="${BOEM_OUTPUT_DIR:-output/usgs_hier}"
+# Write the checkpoint to a per-job directory, NOT straight into output/usgs_hier.
+# USGS_hierarchical.py saves best_checkpoint.pth on every new best starting at epoch 0,
+# and boem_conf/hierarchical/hierarchical.yaml reads that exact path in production. Job
+# 40263761 crashed at epoch 7 and its epoch-5 weights (Species@1 26.91) overwrote the
+# wired 39614374 checkpoint (76.72), which had no backup and is unrecoverable. Promote
+# into output/usgs_hier/ by hand only after a run finishes and its accuracy checks out.
+OUTPUT_DIR="${BOEM_OUTPUT_DIR:-output/usgs_hier/run_${SLURM_JOB_ID}}"
 TAXONOMY="taxonomy.json"
 EXPAND_PIXELS="${BOEM_EXPAND_PIXELS:-30}"
 

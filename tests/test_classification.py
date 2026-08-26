@@ -116,3 +116,50 @@ def test_preprocess_and_train_with_checkpoint(sample_annotations, tmp_path):
         comet_logger=None,
     )
     assert model2 is not None
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # An "A/B" label is annotator uncertainty, so it resolves to the genus -- never to
+        # species A, which is what silently built the Larus delawarensis attractor class.
+        ("Larus delawarensis/argentatus", "Larus sp"),
+        ("Sterna hirundo/paradisaea", "Sterna sp"),
+        ("Calonectris/Puffinus diomedea/gravis", "Calonectris sp"),
+        ("Larus argentatus", "Larus argentatus"),
+        ("Unknown/Other", "Unknown/Other"),  # not a taxon; stays droppable
+    ],
+)
+def test_map_ambiguous_slash_labels(raw, expected):
+    from src.classification import map_ambiguous_slash_labels
+
+    assert map_ambiguous_slash_labels(pd.Series([raw])).iloc[0] == expected
+
+
+def test_coarse_taxa_survive_the_two_word_filter():
+    """Family-rank dolphins must reach the classifier, not be dropped as single tokens."""
+    from src.classification import DOLPHIN_FAMILY_CLASS, map_dolphin_family_labels
+
+    mapped = map_dolphin_family_labels(pd.Series(["Delphinidae", "Tursiops truncatus"]))
+    assert mapped.iloc[0] == DOLPHIN_FAMILY_CLASS == "Delphinidae sp"
+    assert mapped.iloc[1] == "Tursiops truncatus"
+    assert all(len(str(v).split()) == 2 for v in mapped)
+
+
+def test_indeterminate_classes_keep_real_ancestor_ids():
+    """"Delphinidae sp" must share a family head target with a real dolphin species."""
+    from scripts.taxonomy_hier import load_taxonomy_restricted_to_species
+
+    nb_classes, name_to_ids = load_taxonomy_restricted_to_species(
+        "taxonomy.json",
+        ["Tursiops truncatus", "Larus argentatus", "Delphinidae sp", "Larus sp"],
+        include_ancestor_labels=True,
+    )
+    assert name_to_ids["Delphinidae sp"][0] == name_to_ids["Tursiops truncatus"][0]
+    assert name_to_ids["Delphinidae sp"][2] != name_to_ids["Tursiops truncatus"][2]
+    # A genus-rank label determines both family and genus, only the species is synthetic.
+    assert name_to_ids["Larus sp"][:2] == name_to_ids["Larus argentatus"][:2]
+    assert name_to_ids["Larus sp"][2] != name_to_ids["Larus argentatus"][2]
+    # Every id must be addressable by the model heads.
+    for fid, gid, sid in name_to_ids.values():
+        assert sid < nb_classes[0] and gid < nb_classes[1] and fid < nb_classes[2]

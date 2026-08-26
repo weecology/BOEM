@@ -1,15 +1,31 @@
 force_train: False
-# Metadata-free classifier (job 38374817, Comet e79ca03e4e1b45f6820c009df6c190b5): plain
-# CropModel, state_dict is model.* only with no metadata_encoder, 70 classes. First
-# checkpoint trained on neaq-inclusive crops (prepare job 38374816). Micro-Average
-# Accuracy 0.764, Macro-Average Precision 0.638, val_loss 2.77 — beats the previous
-# dce44064 (0.745 / 0.632 / 4.45) on all three.
-# Must be paired with use_metadata: false below — the older d8995ca8 checkpoint has a
-# metadata_encoder and the two are NOT interchangeable.
-# Known-bad classes at 0.0 accuracy: Eubalaena glacialis (new 70th class, came in with
-# neaq and is not yet learned), Ardea herodias, Mergus merganser, Puffinus puffinus,
-# Phalaropus lobatus, Pluvialis squatarola, Podiceps auritus, Pterodroma hasitata.
-checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/buffer_30/e79ca03e4e1b45f6820c009df6c190b5.ckpt
+# Metadata-free classifier (Comet a3dc30a085f5442393736ecd96b564c5, job 39613239,
+# 2026-08-18): plain CropModel, no metadata_encoder, 70 classes. Replaces
+# 56e8585add144d1eabba1f00c411b985 (also 70 classes, so it drops in without changes
+# downstream, but the class LIST differs -- Eubalaena glacialis is out, Chelonioidea sp
+# is in). Two changes vs 56e8585:
+#   1. Sea turtles are a class at last (Chelonioidea sp), see JOB_LEDGER.md 39613239.
+#   2. NEAQ crops are excluded from training (UBFAI_CROPS_EXCLUDE_NEAQ_PREFIX in
+#      scripts/USGS_classification.py). NEAQ is close-range imagery pooled into
+#      fixed-altitude aerial surveys, so its dolphins produced whale-sized crops
+#      (median 379px vs 158px for BOEM dolphins) and the classifier learned crop scale
+#      as a species cue. Job 39696287: Megaptera predictions 82 -> 8 and Delphinus
+#      recall 0.15 -> 0.50, at unchanged overall val accuracy (0.759 -> 0.756).
+# Cost of that: the large whales lost their only data source and are now unusable
+# (Megaptera val recall 0.00 on 6 crops, Eubalaena gone). Do not read whale counts off
+# this checkpoint. Must be paired with use_metadata: false below.
+checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/buffer_30/a3dc30a085f5442393736ecd96b564c5.ckpt
+# Post-hoc temperature scaling (Guo et al. 2017). src/classification.apply_temperature()
+# divides the logits by this before DeepForest's softmax, so cropmodel_score is a calibrated
+# probability instead of a raw max-softmax. Fit by minimising NLL on THIS checkpoint's val
+# split (job 39825931): ECE 0.209 -> 0.070, NLL 3.008 -> 1.147, accuracy unchanged at 0.7564.
+# PAIRED WITH THE CHECKPOINT ABOVE AND NOTHING ELSE. It does not transfer. Re-fit with
+#   sbatch submit_classifier_confusion.sh <comet_id>
+# whenever `checkpoint` moves, and move the cropmodel_score thresholds with it (see
+# human_review.review_high in boem_config.yaml for the list). Set to null to disable
+# scaling and return every threshold to the raw scale.
+# Labels are unaffected -- dividing by a positive scalar cannot move an argmax.
+temperature: 5.6136
 checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/training/classification/crops/train
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train

@@ -229,6 +229,19 @@ human_review:
   # against a degenerate classifier, not a working filter.
   review_low: 0.05
   review_high: 0.50
+  # Send a box to review when the CropModel and H-CAST name different species, whatever its
+  # confidence, and put those boxes at the FRONT of the queue (detection score still orders
+  # within each group -- it is the only foam discriminator).
+  #
+  # Measured on the a3dc30a0 val split (3,695 crops, 900 classifier errors), at matched budget:
+  #   confidence band [0.05, 0.50]  24.6% reviewed, 51.1% of errors caught, 50.6% precision
+  #   model disagreement            24.3% reviewed, 66.4% of errors caught, 66.5% precision
+  #   union of the two              35.5% reviewed, 77.4% of errors caught, 53.1% precision
+  # The band is blind to a CONFIDENT error, which is the failure that matters: the boxes the
+  # flat model called Larus delawarensis at 1.000 confidence were dolphins. Disagreement sees
+  # them. Setting this false restores the pre-2026-08-26 band-only behaviour; it is also a
+  # no-op when hierarchical.checkpoint is null, since there are no hcast_* columns to compare.
+  review_on_disagreement: true
 
 report:
   enabled: true

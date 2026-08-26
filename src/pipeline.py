@@ -694,6 +694,8 @@ class Pipeline:
                 self.config.human_review, "min_detection_score", self.config.predict.min_score),
             review_low=getattr(self.config.human_review, "review_low", 0.3),
             review_high=getattr(self.config.human_review, "review_high", 0.6),
+            review_on_disagreement=getattr(
+                self.config.human_review, "review_on_disagreement", True),
             predictions=human_review_pool.copy(deep=True),
         )
 
@@ -705,7 +707,17 @@ class Pipeline:
             print("No images to review")
             review_images_to_annotate = []
         else:
-            review_images_to_annotate = uncertain_predictions.sort_values(by="score", ascending=False).head(self.config.human_review.n)["image_path"].unique()
+            # Model disagreement first, then detection score descending WITHIN each group.
+            # Both halves matter: disagreement catches 66.4% of classifier errors against the
+            # confidence band's 51.1% at the same budget, and detection score stays the
+            # tiebreak because it is the only foam discriminator (see predict.min_score).
+            queue = uncertain_predictions.copy()
+            queue["_disagrees"] = ~queue.get(
+                "review_reason", pd.Series("", index=queue.index)
+            ).isin(["disagreement", "both"])
+            review_images_to_annotate = queue.sort_values(
+                by=["_disagrees", "score"], ascending=[True, False]
+            ).head(self.config.human_review.n)["image_path"].unique()
 
         print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
         print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")

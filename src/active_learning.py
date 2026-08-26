@@ -3,6 +3,7 @@ import os
 import random
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src import detection
@@ -128,7 +129,26 @@ def get_leaf_labels_for_taxonomy_aliases(
     return result
 
 
-def human_review(predictions, min_detection_score=0.70, review_low=0.05, review_high=0.50):
+def crop_hcast_species_disagree(predictions: pd.DataFrame) -> pd.Series:
+    """Boolean mask: the CropModel and H-CAST name a different species for this box.
+
+    Rows missing either prediction are False -- absence of an opinion is not disagreement.
+    """
+    if "hcast_species" not in predictions.columns or "cropmodel_label" not in predictions.columns:
+        return pd.Series(False, index=predictions.index)
+    crop = predictions["cropmodel_label"]
+    hcast = predictions["hcast_species"]
+    both = crop.notna() & hcast.notna()
+    return both & (crop.astype(str) != hcast.astype(str))
+
+
+def human_review(
+    predictions,
+    min_detection_score=0.70,
+    review_low=0.05,
+    review_high=0.50,
+    review_on_disagreement=True,
+):
     """
     Split trusted detections into confident and uncertain by classifier confidence.
 
@@ -139,6 +159,14 @@ def human_review(predictions, min_detection_score=0.70, review_low=0.05, review_
                                            detection is most likely spurious)
         review_low <= s <= review_high  -> uncertain, send to human review
         cropmodel_score >  review_high  -> confident, safe to auto-annotate
+
+    A box where the CropModel and H-CAST name different species is ALSO uncertain, whatever
+    its confidence. That trigger is strictly the better of the two: measured on the a3dc30a0
+    val split at matched review budget, the confidence band reviews 24.6% of crops and catches
+    51.1% of the classifier's errors at 50.6% precision, while disagreement reviews 24.3% and
+    catches 66.4% at 66.5%. The band cannot see a confident error, and confident errors are
+    exactly the failure mode that matters here -- the crops the flat model called
+    Larus delawarensis at 1.000 confidence were dolphins.
 
     Uncertainty is box-level but review is image-level: any image holding at least one
     uncertain box goes to review, and is withheld from the confident set even if its
@@ -162,23 +190,42 @@ def human_review(predictions, min_detection_score=0.70, review_low=0.05, review_
             boxes instead of ~25%. If temperature is ever set to null, every
             cropmodel_score threshold has to go back to the raw scale together; see
             boem_conf/boem_config.yaml:human_review for the list and the derivation.
+        review_on_disagreement (bool): Also send a box to review when the CropModel and
+            H-CAST disagree on species. No-op when the hcast_* columns are absent
+            (hierarchical.checkpoint: null), so this is safe with H-CAST disabled.
 
     Returns:
-        tuple: (confident_predictions, uncertain_predictions)
+        tuple: (confident_predictions, uncertain_predictions). uncertain_predictions carries
+        a ``review_reason`` column ("disagreement", "low_confidence", or "both") so the queue
+        can be ordered and the two triggers can be told apart downstream.
     """
     if review_low > review_high:
         raise ValueError(
             f"review_low ({review_low}) must be <= review_high ({review_high})"
         )
 
-    detected = predictions[predictions["score"] >= min_detection_score]
+    detected = predictions[predictions["score"] >= min_detection_score].copy()
 
-    uncertain_predictions = detected[
+    in_band = (
         (detected["cropmodel_score"] >= review_low) &
-        (detected["cropmodel_score"] <= review_high)]
+        (detected["cropmodel_score"] <= review_high)
+    )
+    disagrees = (
+        crop_hcast_species_disagree(detected)
+        if review_on_disagreement
+        else pd.Series(False, index=detected.index)
+    )
+
+    detected["review_reason"] = np.select(
+        [in_band & disagrees, disagrees, in_band],
+        ["both", "disagreement", "low_confidence"],
+        default="",
+    )
+    uncertain_predictions = detected[in_band | disagrees]
 
     confident_predictions = detected[
         (detected["cropmodel_score"] > review_high) &
+        ~disagrees &
         ~detected["image_path"].isin(uncertain_predictions["image_path"])]
 
     return confident_predictions, uncertain_predictions

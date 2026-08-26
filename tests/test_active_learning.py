@@ -336,3 +336,50 @@ def test_human_review_defaults_are_on_the_calibrated_scale():
     # a.jpg is below review_low; d.jpg never cleared min_detection_score.
     assert "a.jpg" not in set(uncertain.image_path) | set(confident.image_path)
     assert "d.jpg" not in set(uncertain.image_path) | set(confident.image_path)
+
+
+def test_human_review_routes_confident_disagreement():
+    """A confident CropModel label that H-CAST contradicts must reach review, not auto-annotation.
+
+    This is the dolphin case: cropmodel_score 0.998 sits far above review_high, so the
+    confidence band alone would auto-annotate a Tursiops as Larus delawarensis.
+    """
+    import pandas as pd
+
+    from src.active_learning import human_review
+
+    df = pd.DataFrame({
+        "image_path": ["a.jpg", "b.jpg", "c.jpg"],
+        "score": [0.9, 0.9, 0.9],
+        "cropmodel_score": [0.998, 0.998, 0.30],
+        "cropmodel_label": ["Larus delawarensis", "Larus delawarensis", "Larus argentatus"],
+        "hcast_species": ["Tursiops truncatus", "Larus delawarensis", "Larus argentatus"],
+    })
+    confident, uncertain = human_review(df, min_detection_score=0.7, review_low=0.05, review_high=0.5)
+
+    assert set(uncertain["image_path"]) == {"a.jpg", "c.jpg"}
+    assert uncertain.set_index("image_path").loc["a.jpg", "review_reason"] == "disagreement"
+    assert uncertain.set_index("image_path").loc["c.jpg", "review_reason"] == "low_confidence"
+    # The agreeing, confident box is still auto-annotated.
+    assert set(confident["image_path"]) == {"b.jpg"}
+
+    # Opting out restores the band-only behaviour.
+    _, band_only = human_review(df, min_detection_score=0.7, review_on_disagreement=False)
+    assert set(band_only["image_path"]) == {"c.jpg"}
+
+
+def test_human_review_without_hcast_columns():
+    """No hcast_* columns (hierarchical.checkpoint: null) must behave exactly as before."""
+    import pandas as pd
+
+    from src.active_learning import human_review
+
+    df = pd.DataFrame({
+        "image_path": ["a.jpg", "b.jpg"],
+        "score": [0.9, 0.9],
+        "cropmodel_score": [0.998, 0.30],
+        "cropmodel_label": ["Larus delawarensis", "Larus argentatus"],
+    })
+    confident, uncertain = human_review(df, min_detection_score=0.7)
+    assert set(uncertain["image_path"]) == {"b.jpg"}
+    assert set(confident["image_path"]) == {"a.jpg"}

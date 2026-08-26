@@ -2178,3 +2178,66 @@ Next: on completion (expect Species@1 ~76 and hierarchy sizes 72/50/18):
      --hcast-checkpoint/--hcast-label-csv at this run's output, to decide whether the product
      ensemble still buys ~3 points now that the flat model's cetacean failure is fixed.
   Leave expand=30/square=true/eval_crop_ratio=0.875 pinned; that geometry is worth +14 points.
+
+## (no job) — 2026-08-26 — land filter: dialled to zero measured water loss on collaborator request
+
+Collaborators want the land screen maximally gentle: only unambiguous land (houses, trees,
+suburban) should be dropped, nothing with water, a lagoon, or a beach that could hold birds.
+
+**Checked Label Studio before touching anything, since the ask referenced "new annotations".**
+There aren't any yet: `Bureau of Ocean Energy Management - Land Screen` is still 62/250 tasks
+annotated (25 Land / 37 Water, unchanged since 2026-08-24), zero of them Mixed or Unusable, and
+`BOEM - Land Screen Validation` (the 400-frame correction pass from the entry above) has only 2/400
+done. So today's change is fit on the same 61 frames as the 0.610 operating point, not on new data.
+
+**`scripts/fit_land_filter.py:WATER_LOSS_BUDGET` 0.03 -> 0.0.** Refit operating point: 0.610 ->
+**0.920**, land recall 87.5% -> **33.3%**, measured water loss 1/37 -> **0/37**. This is the
+"most extreme frames only" end of the curve the fit script already exposes — going further
+(t>0.97) zeroes out land recall entirely, i.e. the filter stops doing anything. cv_auc unchanged at
+0.968 (only the threshold moved, not the model). Note the zero-loss point is a max() over 37 water
+frames, same instability the earlier 0.03 budget was chosen to avoid — one additional hard-negative
+water frame could move it again.
+
+**Added a Mixed-frame check to `fit_land_filter.py:main()`**: after fitting, it scores every frame
+labelled Mixed and reports how many the chosen threshold would flag as land. Currently prints "none
+labelled yet" since there are zero Mixed annotations to check against — this is a report, not a
+gate, and becomes the real test of "nothing mixed gets caught" once collaborators produce some.
+
+Tests: `tests/test_land_filter.py` unchanged, 10 passed (uses a synthetic model file, not the
+refitted artifact).
+Next: (1) once `BOEM - Land Screen Validation` and/or Mixed labels accumulate, rerun
+`scripts/fit_land_filter.py` and read the new Mixed-frame line; (2) if Mixed frames still get
+flagged at 0.920, the fix is a higher threshold or a Mixed-aware fitting objective, not more Land/
+Water data; (3) still nothing in the pipeline calls the land filter.
+
+## (no job) — 2026-08-26 (later same day) — correction: new annotations HAD landed, Mixed check was blind to them
+
+Ben caught this by pointing at a specific task (project 213, task 56032) that had just been
+annotated. The "no new annotations" read above was correct when it was made but stale within the
+hour: a collaborator was actively labelling while the previous entry was being written. Re-pulling
+found (1) one new Water annotation on `Land Screen` (63/250, 25 Land / 38 Water) and (2) both
+annotations completed so far on `Land Screen Validation` are **Mixed** -- exactly the class this
+whole exercise exists to protect.
+
+**The Mixed-frame check added earlier reported "none labelled yet" even though 2 existed, because
+it only looked at `PROJECT_NAME` and only had features for images in `manifest.csv`.** Both real
+Mixed frames come from the Validation project's broader mined pool, not the training manifest, so
+the merge silently produced zero rows -- not a crash, just a quiet false negative. Fixed in
+`scripts/fit_land_filter.py`: the Mixed check now also fetches `VALIDATION_PROJECT_NAME` and falls
+back to `new_flight_scores.csv` / `new_flight_scores_deep.csv` for features when a labelled image
+isn't in the manifest.
+
+**Refit with the one new Water label: threshold 0.920 -> 0.910, cv_auc 0.968 -> 0.971, land recall
+33.3% -> 41.7%, water lost still 0/38.** Checked both real Mixed frames directly against the new
+model (matches the script's own printed line):
+  C1_L8_F2714_T20260713_112215_915.jpg  p(land)=0.860  flagged=False (model previously called this
+    Land at p=0.856 under the OLD 0.610 threshold)
+  C4_L3_F4162_T20260712_110808_917.jpg  p(land)=0.907  flagged=False (was Land at p=0.904 under
+    0.610)
+So the gentler threshold is doing its job on the only two Mixed examples that exist: both would
+have been wrongly screened out at 0.610, neither is at 0.910.
+
+Tests: 10 passed, unchanged.
+Next: same as above, plus (4) don't trust a "checked Label Studio, nothing new" read as durable --
+annotation is ongoing and live; re-pull immediately before reporting counts, not from memory of an
+earlier pull in the same session.

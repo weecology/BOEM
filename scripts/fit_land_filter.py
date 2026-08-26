@@ -37,11 +37,23 @@ from src.land_filter import (MAX_BG_FRAC, MAX_EDGE_RATIO, MIN_CHROMA,
 
 OUT_DIR = Path("/blue/ewhite/b.weinstein/BOEM/annotations/land_screen")
 PROJECT_NAME = "Bureau of Ocean Energy Management - Land Screen"
+# Annotations here are anchored to the model's own pre-filled guess (see
+# upload_land_validation.py), so they are not used to fit the model -- only to check
+# Mixed frames below, since Mixed was never part of the fit either way.
+VALIDATION_PROJECT_NAME = "BOEM - Land Screen Validation"
+# Feature source for frames outside the training manifest -- the validation project's
+# frames come from a broader mined pool than manifest.csv covers.
+SCORE_POOLS = [OUT_DIR / "new_flight_scores.csv", OUT_DIR / "new_flight_scores_deep.csv"]
 FEATURES = ["struct", "fine_edge", "chroma", "bg_frac"]
 
-# Share of water frames we are willing to drop. Non-zero on purpose -- see the
-# threshold selection in main() for why zero is not a usable target.
-WATER_LOSS_BUDGET = 0.03
+# Share of water frames we are willing to drop. 2026-08-26: collaborators asked for
+# maximum gentleness -- only the most extreme, unambiguous land frames should be
+# screened, nothing that could plausibly hold water or a shoreline bird. Set to 0.0
+# rather than the old 0.03: on the 61-frame set this lands at t=0.92 (0/37 water lost,
+# land recall 37.5%, vs 1/37 lost at 0.875 recall for the old budget). Revisit once the
+# Label Studio "Land Screen Validation" project (2/400 done as of 2026-08-26) and any
+# Mixed-labelled frames accumulate -- see the mixed-frame check in main() below.
+WATER_LOSS_BUDGET = 0.0
 
 # Annotations rejected on inspection. Kept here rather than fixed in Label Studio so
 # that a re-pull cannot silently reintroduce them; drop an entry once the task itself
@@ -119,6 +131,36 @@ def main():
           f"water lost {rule[y == 0].mean():.1%} ({rule[y == 0].sum()}/{(y == 0).sum()})")
 
     model.fit(X, y)
+
+    # Sanity check for the thing collaborators actually care about: a frame they called
+    # Mixed (land and water both present, e.g. a shoreline) should not get screened as
+    # land. There is no reliable ground truth for Mixed one way or the other -- it is
+    # not in the fit -- so this is a report, not a gate. Mixed frames mostly turn up in
+    # the Validation project (its sample is drawn from a broader pool than the training
+    # manifest), so pull labels from both projects and fall back to the score pools for
+    # features when a frame isn't in manifest.csv.
+    validation_project = ls_mod.connect_to_label_studio(
+        url=cfg.annotation.label_studio.url, project_name=VALIDATION_PROJECT_NAME)
+    all_labels = pd.concat([labels, fetch_labels(validation_project)]).drop_duplicates("image")
+    mixed_labels = all_labels[all_labels.label == "Mixed"]
+
+    feat_pool = feats
+    missing = set(mixed_labels.image) - set(feats.image)
+    if missing:
+        extra = pd.concat([pd.read_csv(p) for p in SCORE_POOLS if p.exists()])
+        feat_pool = pd.concat([feats, extra[extra.image.isin(missing)]]).drop_duplicates("image")
+
+    d_mixed = feat_pool.merge(mixed_labels, on="image")
+    if len(d_mixed):
+        p_mixed = model.predict_proba(d_mixed[FEATURES].values)[:, 1]
+        flagged = p_mixed > thresh
+        print(f"\nMixed frames: {flagged.sum()}/{len(d_mixed)} would be screened as land "
+              f"at threshold {thresh:.3f}")
+        for image, p, f in zip(d_mixed.image, p_mixed, flagged):
+            print(f"  {image}  p(land)={p:.3f}  flagged={f}")
+    else:
+        print("\nMixed frames: none labelled yet -- cannot check flag rate")
+
     lr = model.named_steps["logisticregression"]
     coefs = dict(zip(FEATURES, lr.coef_[0].round(3)))
     out = {"features": FEATURES, "coef": lr.coef_[0].tolist(),

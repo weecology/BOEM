@@ -2241,3 +2241,57 @@ Tests: 10 passed, unchanged.
 Next: same as above, plus (4) don't trust a "checked Label Studio, nothing new" read as durable --
 annotation is ongoing and live; re-pull immediately before reporting counts, not from memory of an
 earlier pull in the same session.
+
+## (no job) — 2026-08-26 (later same day) — Label Studio projects retired, and the boundary is uglier than the numbers suggested
+
+Ben asked to back up and delete both Label Studio land projects now that annotation is done with,
+then look at actual images around the new 0.910 threshold to judge whether it matches what the
+collaborators want.
+
+**Backup before delete:** pulled full raw task JSON (not just image+label) for both projects to
+`/blue/ewhite/b.weinstein/BOEM/annotations/land_screen/label_studio_full_backup_20260826.json`
+(914 KB) -- `Bureau of Ocean Energy Management - Land Screen` (id 213, 250 tasks, 63 annotated) and
+`BOEM - Land Screen Validation` (id 214, 400 tasks, 2 annotated). Verified the annotated counts in
+the backup match the live counts before deleting. Both projects deleted via
+`label_studio_sdk.Client.delete_project` (204 response, confirmed gone from `get_projects()`).
+Nothing in the repo or on /blue depended on the projects existing -- `annotations.csv` and the
+scored-frame pools already had everything extracted.
+
+**Added `scripts/viz_land_boundary.py`**: rescoring only needs the four cached features
+(struct/fine_edge/chroma/bg_frac) already sitting in `manifest.csv` / `scored_frames.csv` /
+`new_flight_scores*.csv` run back through the *current* `land_model.json` -- no need to reopen any
+JPEG to get an up-to-date probability. Pulled all four pools (321,963 frames deduped, 20 flights),
+rescored with the 0.910 model, and rendered 5 contact sheets (10 frames each, thinned by
+`mine_land_examples.round_robin` so no flight/moment dominates) spanning confident-water ->
+water-side -> just-below-threshold (kept) -> just-above (cut) -> confident-land (cut). Sent to Ben
+as PNGs.
+
+**Two things visible in the images that the threshold number alone did not show:**
+
+1. **The "confident land" tail (p>0.95) is not suburban houses -- it is beach/shoreline, all 4
+   frames available in that band (wanted 10, only 4 existed) from a single flight,
+   `JPG_20241220_104800`.** Bright sand against a dark waterline, exactly the "beachhead that
+   could hold birds" shape collaborators said must stay in, not the houses/trees/suburban target
+   this band is supposed to represent. Structurally the model can't tell "sand next to water" from
+   "the thing we actually want to cut" -- both produce high struct / low chroma / low bg_frac.
+2. **A parking lot with visible cars (`JPG_20260710_155800`, one specific frame) scored p=0.672 --
+   comfortably in the "water_side" band, nowhere near the threshold.** That is unambiguous
+   suburban development by the collaborators' own definition, and the model is confident it is
+   NOT land. This is not a threshold-tuning problem -- moving the operating point cannot fix a
+   frame that scores 0.672 when the cut is at 0.910.
+
+**Reading on these two:** the four features (coarse structure, fine edge ratio, colour spread,
+background-colour fraction) were built to separate "one material" (water) from "many materials"
+(land), and that distinction does not line up with the collaborators' actual criterion (presence of
+human development vs. natural water/shoreline/beach). Sand is structurally land-like but is exactly
+what should stay in; a parking lot at a certain angle/lighting can look texturally like water. No
+threshold choice resolves this -- it is a feature/model limitation, not an operating-point one.
+
+Next: (1) Ben to review the 5 PNGs and confirm whether this is acceptable given nothing currently
+in the pipeline calls the land filter (still true), or whether it blocks deployment; (2) if it
+blocks deployment, the fix is likely a different feature set or model (e.g. something that can
+distinguish built structure from natural texture), not further threshold tuning -- the parking-lot
+miss is a hard counterexample to "just raise the threshold"; (3) the flight-level clustering in the
+confident-land band (4/4 frames one flight) means that band's "confidence" may just be reporting a
+flight-specific sea state/sand type rather than a general land signature -- worth checking whether
+that flight is systematically miscalibrated relative to the rest.

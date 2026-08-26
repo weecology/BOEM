@@ -2125,14 +2125,56 @@ Result: FAILED (exit 1:0) after 3h32m, mid-epoch 7, with NO traceback in either 
   got their own ids as designed.
   Also surfaced a latent problem: at ~28 min/epoch, 100 epochs needs ~47h against the 48h
   wall this script asked for. 39614374 fit in 41h42m only because its train set was smaller.
-Next: see 40272359.
+  DESTRUCTIVE SIDE EFFECT, found 2026-08-26 during /checklog and NOT noticed at the time:
+  this run overwrote the wired H-CAST checkpoint. USGS_hierarchical.py saves
+  best_checkpoint.pth into --output-dir on every new best from epoch 0, and the submit
+  script pointed --output-dir straight at output/usgs_hier, which is the exact path
+  boem_conf/hierarchical/hierarchical.yaml serves in production. At 03:50:39 the epoch-5
+  weights (Species@1 26.91, 72/50/18) replaced 39614374's (76.72, 68/49/18). No backup
+  exists: no other .pth under output/ is newer than 2025-12/2026-03, and the script has no
+  Comet logging, so nothing was uploaded. 76.72 is UNRECOVERABLE except by retraining.
+  The surviving older checkpoints are not fallbacks -- Dec 2025 usgs_hvit_c2f_b128 measured
+  12.81% at the pipeline's geometry, worse than the wreck now in place. Note also that
+  output/usgs_hier/species.csv is still the 68-class vocabulary, so the file in production
+  now has 72 heads against 68 labels.
+Next: see 40272359, then 40306075 which fixes the overwrite.
 
 ## 40272359 — 2026-08-26 05:00 — submit_USGS_hierarchical.sh — SUBMITTED
 Why: rerun of 40263761. Raised --time 48h -> 96h; the partition allows 14 days and the
   script has no --resume, so a wall-clock kill throws away the entire run. No code change,
   since 40263761's crash left no diagnostic and its learning curve was healthy -- if this
   dies at a similar point that is evidence of something systematic rather than transient.
+Result: FAILED (0:53) at 05:00:52 with ZERO elapsed -- killed the same second it started, no
+  .out or .err written at all. sacct shows Timelimit=4-00:00:00 accepted and Reason=None, so
+  the request was not rejected outright; the batch step was CANCELLED after a node was
+  assigned. The ewhite-b QOS MaxWall is exactly 4-00:00:00, so --time=96:00:00 sat precisely
+  on the cap. That is the leading explanation but is NOT confirmed: SLURM normally accepts a
+  request equal to MaxWall. If a sub-cap run dies the same way, the cause is the node/prolog
+  on hpg-b200, not the wall.
+Next: superseded by 40306075 (--time 72h, under the cap either way).
+
+## 40306075 — 2026-08-26 13:0x — submit_USGS_hierarchical.sh — SUBMITTED
+Why: third attempt at the H-CAST retrain on the 2b27e044 split (40263761 crashed at epoch 7,
+  40272359 was killed at 0s). Now also the ONLY way back to a working H-CAST at all, since
+  40263761 destroyed the 39614374 checkpoint and every surviving fallback is worse than the
+  wreck it left behind -- see the 40263761 entry.
+  Two changes, both in submit_USGS_hierarchical.sh, no change to the training code:
+    1. --time 96:00:00 -> 72:00:00, clear of the ewhite-b QOS 4-day cap that 40272359 sat on.
+       Still covers the ~47h that 100 epochs needs at ~28 min/epoch.
+    2. --output-dir now output/usgs_hier/run_$SLURM_JOB_ID instead of output/usgs_hier, so a
+       crashed run can never again overwrite the checkpoint production reads. Promotion into
+       output/usgs_hier/ is now a manual step after a run finishes and its accuracy checks out.
+  hierarchical.yaml is deliberately LEFT pointing at the broken checkpoint (user's call,
+  2026-08-26) rather than nulled, with a loud warning comment naming this job.
 Result: pending
-Next: then rerun scripts/compare_flat_vs_hcast.py --comet-id 2b27e0442e51469c9cce3fa51927d741
-  --hcast-checkpoint/--hcast-label-csv pointing at this run's output, to decide whether the
-  product ensemble still buys ~3 points now that the flat model's cetacean failure is fixed.
+Next: on completion (expect Species@1 ~76 and hierarchy sizes 72/50/18):
+  1. Promote: copy output/usgs_hier/run_40306075/best_checkpoint.pth to
+     output/usgs_hier/best_checkpoint.pth.
+  2. Regenerate output/usgs_hier/species.csv with scripts/build_hcast_label_csv.py off
+     buffer_30/2b27e044 -- the checked-in one is the stale 68-class vocabulary and WILL
+     mismatch the 72-head checkpoint. Never hand-edit it.
+  3. Delete the BROKEN warning block from boem_conf/hierarchical/hierarchical.yaml.
+  4. Rerun scripts/compare_flat_vs_hcast.py --comet-id 2b27e0442e51469c9cce3fa51927d741
+     --hcast-checkpoint/--hcast-label-csv at this run's output, to decide whether the product
+     ensemble still buys ~3 points now that the flat model's cetacean failure is fixed.
+  Leave expand=30/square=true/eval_crop_ratio=0.875 pinned; that geometry is worth +14 points.

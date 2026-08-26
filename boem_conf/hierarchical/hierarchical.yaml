@@ -6,6 +6,17 @@
 # Replaced output/usgs_hvit_c2f_b128/best_checkpoint.pth (Dec 2025), which was trained OUTSIDE
 # this repo (args.data_path=/scratch/user/u.sp270400/USGS_crops) and measured 12.81% species
 # accuracy at the geometry the pipeline was feeding it -- see JOB_LEDGER.md 39811016+39811745.
+#
+# !! BROKEN AS OF 2026-08-26 -- DO NOT TRUST H-CAST OUTPUT FROM THIS PATH !!
+# Job 40263761 (H-CAST retrain on the 2b27e044 split) crashed at epoch 7, but not before
+# saving its epoch-5 weights over this file: the 39614374 checkpoint described above is
+# GONE, with no backup on disk and no Comet copy (USGS_hierarchical.py doesn't log to
+# Comet). What sits here now is 72/50/18 heads at Species@1 26.91 -- and label_csv below
+# is still the 68-class vocabulary, so the heads do not even match the labels.
+# The pre-39614374 fallbacks are worse (Dec 2025 usgs_hvit_c2f_b128 measured 12.81%).
+# Left pointing here deliberately rather than nulled; job 40306075 is retraining a
+# replacement. On completion: promote that run's checkpoint, regenerate species.csv with
+# scripts/build_hcast_label_csv.py off buffer_30/2b27e044, and delete this warning.
 checkpoint: /blue/ewhite/b.weinstein/src/BOEM/output/usgs_hier/best_checkpoint.pth
 # CSV with columns: species, genus, family (optional "index" = species class index,
 # optional "genus_index"/"family_index" = genus/family class indices). If null, numeric labels are used.

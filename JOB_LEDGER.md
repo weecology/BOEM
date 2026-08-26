@@ -2071,3 +2071,45 @@ Result: COMPLETED. Disagreement is a strong review trigger: flat is 89.2% accura
   dolphin/gull error. H-CAST's family head is the only thing that does.
 Next: this closes the comparison against the PRE-fix a3dc30a0. Rerun once 40240876's
   2b27e044 checkpoint lands to see how much the label fixes close the gap on their own.
+
+## 40263760 — 2026-08-26 01:26 — submit_classifier_confusion.sh 2b27e044 — SUBMITTED
+Why: 40240876 COMPLETED (3h48m), micro-average val accuracy 0.7815 vs a3dc30a0's 0.7564,
+  so the two label fixes are worth +2.5 points on their own. Need the val logits, the
+  confusion matrix and a re-fitted temperature for the new checkpoint before it can be
+  wired in or compared. 'Delphinidae sp' class accuracy is 0.95, but Delphinus delphis and
+  Stenella frontalis both fell to 0.0 and Tursiops truncatus to 0.28 -- the indeterminate
+  class is absorbing the species-rank dolphins, which is the tradeoff flagged when it was
+  added. Confirm that in the matrix.
+Result: COMPLETED. **New temperature T=4.4613** (a3dc30a0's was 5.6136 -- does not transfer).
+  Overall val accuracy 0.7815 on 3,964 crops, 73 classes.
+  The label fixes largely solved the dolphin/gull confusion on their own, WITHOUT any
+  ensemble or H-CAST change. True species-rank dolphin crops:
+                        predicted some dolphin   predicted a GULL   exact species
+    a3dc30a0 (46 crops)      25 (54%)                11 (24%)            14
+    2b27e044 (39 crops)      33 (85%)                 1 (3%)              5
+  Of 100 true 'Delphinidae sp' crops, 98 are predicted as some dolphin and ZERO as a gull.
+  Larus delawarensis is no longer an attractor: 45 predictions against 45 true (precision
+  0.76, was 0.45 on 143 predictions against 100 true), and it now pulls in only other
+  gulls/terns -- no dolphins, no whales.
+  ACCEPTED COST: the indeterminate class absorbs the species-rank dolphins. Delphinus
+  delphis recall 0.0 (16/16 -> Delphinidae sp), Stenella frontalis 0.0, Tursiops truncatus
+  0.278 (8/18 -> Delphinidae sp). For a survey that is the right trade -- "dolphin, species
+  indeterminate" is a true record where "ring-billed gull" was a false one -- but it means
+  species-rank cetacean counts from this checkpoint are not comparable to a3dc30a0's.
+Next: every cropmodel_score threshold must be refitted to T=4.4613 before this checkpoint is
+  wired in (human_review.review_low/review_high, active_learning.min_classification_score,
+  pipeline_evaluation.classification_threshold, report.rare_species_min_score).
+
+## 40263761 — 2026-08-26 01:26 — submit_USGS_hierarchical.sh — SUBMITTED
+Why: H-CAST must be retrained on the 2b27e044 split before any flat-vs-H-CAST comparison
+  against the new checkpoint is valid. The wired H-CAST (39614374) trained on a3dc30a0's
+  split, whose val crops are not disjoint from 2b27e044's train, so scoring it on
+  2b27e044's val would leak. Auto-discovery picks the newest split dir, which is
+  buffer_30/2b27e044 (written 2026-08-25 19:16). This is also the first run where the
+  ancestor path actually does anything: commit 9d2d68c stopped the single-token filter
+  from discarding every family/genus row before the extension could use it, and gave
+  indeterminate "X sp" classes real ancestor ids.
+Result: pending
+Next: expect the hierarchy sizes line to show more species than 68 (the new split has 73
+  classes incl. Delphinidae sp / Larus sp / Sterna sp / Aythya sp / Calonectris sp).
+  Then rerun scripts/compare_flat_vs_hcast.py --comet-id 2b27e0442e51469c9cce3fa51927d741.

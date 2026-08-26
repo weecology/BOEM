@@ -96,6 +96,20 @@ def main():
     sp2genus[TURTLE_CLASS] = "Chelonioidea"
     sp2family[TURTLE_CLASS] = "Chelonioidea"
 
+    # Indeterminate classes ("Larus sp", "Delphinidae sp") are not taxonomy species leaves, so
+    # they would roll up to nothing and silently deflate family accuracy. Resolve them to the
+    # rank they actually name: a genus stem keeps its own family, a family stem is its family.
+    genus2family = {g: f for (f, g, _) in triples}
+    all_families = {f for (f, _, _) in triples}
+    for name in set(flat_species) | set(pred["true"].unique()):
+        stem, _, suffix = str(name).rpartition(" ")
+        if suffix != "sp" or not stem or name in sp2family:
+            continue
+        if stem in genus2family:
+            sp2genus[name], sp2family[name] = stem, genus2family[stem]
+        elif stem in all_families:
+            sp2family[name] = stem
+
     truth_species = pred["true"].to_numpy()
     truth_genus = pred["true"].map(sp2genus).to_numpy()
     truth_family = pred["true"].map(sp2family).to_numpy()

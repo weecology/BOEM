@@ -10,6 +10,7 @@ from PIL import Image
 from deepforest.utilities import read_file
 
 from src.active_learning import format_ensemble_suggestion_line
+from src.spatiotemporal_metadata import metadata_for_image
 
 
 def get_taxonomy_leaf_paths(taxonomy_path):
@@ -46,6 +47,7 @@ def upload_to_label_studio(
     preannotations,
     species_to_genus=None,
     import_chunk_size=100,
+    metadata_dir=None,
 ):
     """
     Upload images to Label Studio and import image tasks.
@@ -58,6 +60,9 @@ def upload_to_label_studio(
         images_to_annotate_dir (str): The path to the directory of images to annotate.
         folder_name (str): The name of the folder to upload images to.
         preannotations (list): List of preannotations for the images.
+        metadata_dir (str, optional): Directory of flight `*_captures.csv` files (see
+            cfg.report.metadata_dir). When set, each task's data is annotated with the
+            image's lat/lon (from the captures CSV) and a clickable Google Maps link.
 
     Returns:
         None
@@ -69,6 +74,7 @@ def upload_to_label_studio(
         '    <Label value="Object" background="#D4380D"/>\n'
         '    <Label value="FalsePositive" background="#FFA39E"/>\n'
         '  </RectangleLabels>\n'
+        '  <HyperText name="location" value="$location_link"/>\n'
         '  <Text name="text" value="Select Taxonomy for Classification"/>\n'
         '  <Taxonomy name="taxonomy" perRegion="true" minWidth="600px" toName="image" '
         'apiUrl="https://raw.githubusercontent.com/weecology/BOEM/refs/heads/main/transformed_taxonomy.json" />\n'
@@ -83,6 +89,7 @@ def upload_to_label_studio(
         predictions=preannotations,
         species_to_genus=species_to_genus,
         chunk_size=import_chunk_size,
+        metadata_dir=metadata_dir,
     )
 
 def check_for_new_annotations(url, project_name, csv_dir, image_dir):
@@ -379,6 +386,7 @@ def import_image_tasks(
     predictions=None,
     species_to_genus=None,
     chunk_size=100,
+    metadata_dir=None,
 ):
     """
     Import image tasks into Label Studio project.
@@ -388,11 +396,14 @@ def import_image_tasks(
         image_names (list): List of image names to import as tasks.
         local_image_dir (str): The local directory where the images are stored.
         predictions (dict, optional): Dictionary of predictions with image basename as keys. Defaults to None.
+        metadata_dir (str, optional): Directory of flight `*_captures.csv` files. When set,
+            each task's data is annotated with lat/lon and a Google Maps link.
 
     Returns:
         None
     """
     tasks = []
+    flight_metadata_cache = {}
     for image_name in image_names:
         print(f"Importing {image_name} into Label Studio")
         basename = os.path.basename(image_name)
@@ -411,6 +422,23 @@ def import_image_tasks(
             'flight_name': flight_name,
             'image_relative_path': relative_path,
         }
+
+        meta = (
+            metadata_for_image(image_name, metadata_dir, flight_name, cache=flight_metadata_cache)
+            if metadata_dir is not None else None
+        )
+        if meta is not None:
+            data_dict['lat'] = meta['lat']
+            data_dict['lon'] = meta['lon']
+            data_dict['location_link'] = (
+                f'<a href="https://www.google.com/maps?q={meta["lat"]},{meta["lon"]}" '
+                f'target="_blank">\U0001F4CD {meta["lat"]:.6f}, {meta["lon"]:.6f}</a>'
+            )
+        else:
+            data_dict['lat'] = None
+            data_dict['lon'] = None
+            data_dict['location_link'] = "Location unavailable"
+
         if predictions is not None:
             prediction = predictions.get(basename, pd.DataFrame())
             data_dict["prediction_summary"] = format_prediction_summary_for_task(

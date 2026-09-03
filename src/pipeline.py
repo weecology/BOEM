@@ -358,6 +358,7 @@ class Pipeline:
             images_to_annotate_dir=self.config.image_dir,
             folder_name=ls_cfg.folder_name,
             preannotations=preannotations,
+            metadata_dir=self.config.report.metadata_dir,
         )
 
         self.comet_logger.experiment.log_parameter("full_flight_project", project_name)

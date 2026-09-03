@@ -2153,7 +2153,7 @@ Result: FAILED (0:53) at 05:00:52 with ZERO elapsed -- killed the same second it
   on hpg-b200, not the wall.
 Next: superseded by 40306075 (--time 72h, under the cap either way).
 
-## 40306075 — 2026-08-26 13:0x — submit_USGS_hierarchical.sh — SUBMITTED
+## 40306075 — 2026-08-26 14:05 — submit_USGS_hierarchical.sh — COMPLETED
 Why: third attempt at the H-CAST retrain on the 2b27e044 split (40263761 crashed at epoch 7,
   40272359 was killed at 0s). Now also the ONLY way back to a working H-CAST at all, since
   40263761 destroyed the 39614374 checkpoint and every surviving fallback is worse than the
@@ -2166,18 +2166,72 @@ Why: third attempt at the H-CAST retrain on the 2b27e044 split (40263761 crashed
        output/usgs_hier/ is now a manual step after a run finishes and its accuracy checks out.
   hierarchical.yaml is deliberately LEFT pointing at the broken checkpoint (user's call,
   2026-08-26) rather than nulled, with a loud warning comment naming this job.
-Result: pending
-Next: on completion (expect Species@1 ~76 and hierarchy sizes 72/50/18):
-  1. Promote: copy output/usgs_hier/run_40306075/best_checkpoint.pth to
-     output/usgs_hier/best_checkpoint.pth.
-  2. Regenerate output/usgs_hier/species.csv with scripts/build_hcast_label_csv.py off
-     buffer_30/2b27e044 -- the checked-in one is the stale 68-class vocabulary and WILL
-     mismatch the 72-head checkpoint. Never hand-edit it.
-  3. Delete the BROKEN warning block from boem_conf/hierarchical/hierarchical.yaml.
-  4. Rerun scripts/compare_flat_vs_hcast.py --comet-id 2b27e0442e51469c9cce3fa51927d741
-     --hcast-checkpoint/--hcast-label-csv at this run's output, to decide whether the product
-     ensemble still buys ~3 points now that the flat model's cetacean failure is fixed.
+Result: **COMPLETED 2026-08-28T04:06, 1d 14h01m, all 100 epochs, exit 0:0.** Best Species@1
+  **77.56** (Species@5 ~94, Genus@1 ~84, Family@1 ~91), reached late (epochs 91-99 all 77.1-77.6).
+  Hierarchy sizes species=72 genus=50 family=18, with the synthetic 'Chelonioidea sp'
+  (species_id=71) as designed. This BEATS the 76.72 of the 39614374 checkpoint that 40263761
+  destroyed, so H-CAST is fully recovered, not merely restored. MaxRSS 15.9G of 60G. No Comet
+  (USGS_hierarchical.py still doesn't log). Checkpoint at
+  output/usgs_hier/run_40306075/best_checkpoint.pth (run-scoped dir, so it could not overwrite
+  production this time).
+Next: DONE 2026-08-31 — see the "H-CAST promotion" entry below. Step 4 (compare) is job 40700993.
   Leave expand=30/square=true/eval_crop_ratio=0.875 pinned; that geometry is worth +14 points.
+
+## (no job) — 2026-08-31 — H-CAST promotion: 40306075 wired into production, label-CSV builder fixed
+Why: 40306075 finished 2026-08-28 but nothing had been promoted, so production H-CAST
+  (boem_conf/hierarchical/hierarchical.yaml) was still serving 40263761's broken epoch-5
+  weights (Species@1 26.91, 72 heads against a 68-label CSV). Ran the 4 "Next" steps above.
+Changes:
+  1. **Checkpoint promoted.** output/usgs_hier/run_40306075/best_checkpoint.pth ->
+     output/usgs_hier/best_checkpoint.pth (md5 b4a78942…, verified identical). The broken
+     one is preserved as output/usgs_hier/best_checkpoint.broken_40263761_ep5.pth rather than
+     deleted. Old 68-class species.csv kept as output/usgs_hier/species.stale68.csv.
+     (output/ is gitignored, so none of this is a repo change.)
+  2. **scripts/build_hcast_label_csv.py FIXED (uncommitted, tracked).** It could not emit a
+     CSV for this checkpoint: the 5 indeterminate "X sp" classes commit 9d2d68c added
+     (Aythya/Calonectris/Larus/Sterna sp + Delphinidae sp) get real species ids from
+     load_taxonomy_restricted_to_species but are not taxonomy species, so the builder skipped
+     them and aborted with "No label for species indices [66,67,68,69,70]". 9d2d68c updated
+     USGS_hierarchical.py / taxonomy_hier.py / classification.py but never this script. Added a
+     branch: "Larus sp" -> real genus Larus + its family; "Delphinidae sp" -> real family,
+     synthetic genus id keyed by the class name so it stays distinct from the real
+     "Delphinidae" family row downstream. Turtle path unchanged.
+  3. **species.csv regenerated**, off buffer_30/2b27e0442e51469c9cce3fa51927d741's
+     usgs_train_split.csv / usgs_val_split.csv (the same split 40306075 trained on). 72 rows,
+     genus_index covers 50, family_index covers 18 — matches the checkpoint heads.
+  4. **hierarchical.yaml**: BROKEN warning block removed, header comment rewritten to describe
+     40306075 (77.56, 72/50/18, promoted 08-31) and keep the 39614374 / 40263761 / Dec-2025
+     history as context. checkpoint/label_csv paths unchanged (defaults already correct).
+Verified: load_hcast_model(promoted ckpt, new species.csv, expand=30/square=true/crop=0.875)
+  loads clean, heads 72/50/18, species_71 = 'Chelonioidea sp', forward on a dummy batch
+  returns (B,72)/(B,50)/(B,18). tests/ not run (no H-CAST test module).
+Next: commit build_hcast_label_csv.py + hierarchical.yaml (working tree also carries the
+  land-filter branch's changes — commit selectively). Job 40700993 (step 4) is done — see below.
+
+## 40700993 — 2026-08-31 — submit_cmp_2b27e044.sh (scratchpad) — SUBMITTED
+Why: JOB_LEDGER 40306075 "Next" step 4 — rerun scripts/compare_flat_vs_hcast.py against the
+  2b27e044 flat model (matching split) and the promoted 40306075 H-CAST, to decide whether the
+  product ensemble still buys ~3 points now that the flat model's cetacean failure is fixed
+  (per the 40263760 confusion run, T=4.4613, val acc 0.7815). Uses the existing
+  classifier_confusion_2b27e044_* logits on /blue. Scratchpad submit copy so the tracked
+  submit_compare_flat_hcast.sh (still targets a3dc30a0) is untouched; output ->
+  output/usgs_hier/flat_vs_hcast_val_2b27e044_40306075.csv.
+Result: **COMPLETED 2026-08-31T13:47, 38s, exit 0:0.** Sanity check PASSES: H-CAST Species@1
+  76.74% on the shared val split (3,964 crops), reproducing the 77.56 the training run logged —
+  so the promoted checkpoint, regenerated species.csv and crop geometry are all correct.
+  Accuracy (Species@1 / Genus@1 / Family@1): flat CropModel 78.15 / 82.14 / 91.57 (genus/family
+  are softmax rollups); H-CAST 76.74 / 80.73 / 90.51 (native heads).
+  **Ensembles still earn their keep**: product/log-average 80.34 Species@1, 93.76 Family@1 —
+  +2.2 over flat alone (78.14) and +3.2 over H-CAST alone (77.15) on the shared subset. Mean of
+  probs 79.76. H-CAST-family × flat-species 79.08.
+  Head-to-head: agree on 3,030 crops (90.3% right when they agree); of 934 disagreements flat
+  wins 363, H-CAST 307, both wrong 264. 66% of all flat errors sit in the disagree bucket.
+  Delphinidae vs Laridae (the motivation): flat alone is now clean — 142/155 cetacean right,
+  1→Laridae; ensemble 143/155. The label fixes in 9d2d68c did most of that work; the ensemble
+  adds species-rank accuracy on top.
+  Output: output/usgs_hier/flat_vs_hcast_val_2b27e044_40306075.csv.
+Next: decision for Ben — wire the product ensemble (still ~+3 Species@1) or run H-CAST/flat
+  standalone. All four promotion steps are now done and verified; H-CAST is live and correct.
 
 ## (no job) — 2026-08-26 — land filter: dialled to zero measured water loss on collaborator request
 

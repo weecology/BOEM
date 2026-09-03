@@ -2389,3 +2389,46 @@ Next: on completion, (1) `submit_USGS_classification.sh` (flat, writes the split
 (2) `submit_USGS_detection_combined.sh` (detection, independent), then (3)
 `submit_USGS_hierarchical.sh` off the flat run's split for direct comparability.
 GPU QOS is currently saturated by MillionTrees jobs, so the GPU stages will queue.
+
+### 40994108 result — COMPLETED, 45m25s
+
+Corpus after the refresh: **train 656,990 rows / test 133,272 / zero_shot 22,996** (942 object
+images + 21,738 empty). All 20 July flights recropped (368 images; the extra 32 over the 336
+just-annotated are images carried from earlier pulls whose CSVs were also touched).
+
+Verified the new labels actually reached the classification corpus rather than only the
+detection side: all 336 review images have a per-image CSV under `training/crops`, carrying
+**419 real boxes** (374 annotation boxes, +45 from boxes straddling a patch boundary — normal
+`split_raster` duplication) — Thalasseus maximus 156, Sterninae 71, Phalacrocorax auritus 53,
+Tursiops truncatus 17, Chelonioidea sp 5, and so on. The 52 FalsePositive boxes do not appear
+as positives; they go to the hard-negative bucket, which is where they are useful.
+
+### Where the Google Doc's "Initial Model" numbers actually come from
+
+Established before retraining, so the Refined column is measured the same way rather than by
+a different definition that happens to look better. `reports/summer_2026_aerial_survey.html`
+names each metric and `scripts/threshold_sweep.py --report
+/blue/ewhite/b.weinstein/BOEM/threshold_sweep_a09c6933_e16.json` reproduces the detection row
+exactly at threshold 0.700:
+
+  Detection Recall     75.8%  = **image** recall (share of frames holding an animal that surface)
+  Detection Precision  90.2%  = box precision
+  (box recall — "individuals" — is 44.3% at the same point, and is NOT the doc's recall row)
+  Empty Frame Accuracy 99.9%  = detection training log
+  Species/Genus/Family 76.7 / 82.2 / 89.1 = H-CAST job 39614374 val log
+  Number of Species    68     = H-CAST species head count (the report's "70" is the flat
+                                CropModel's class count — different model, don't mix them)
+
+**The doc's two blank rows already have initial-model answers**, from
+`scripts/survey_metrics.py a3dc30a085f5442393736ecd96b564c5` against the pre-July
+`output/corpus_abundance.csv` (preserved as `corpus_abundance.pre_july.csv` before the refresh
+invalidated it):
+  Rank 10 Abundance : **79.9%** (10 species = 76.1% of individuals)
+  90% Abundance     : **79.5%** (22 species = 90.5% of individuals)
+  long tail: the other 46 species are 9.5% of individuals at 49.9% macro accuracy.
+
+Also measured the same way for 2b27e044 (the flat CropModel trained 2026-08-26 and paired to
+H-CAST 40306075, but never promoted into boem_config — that still points at a3dc30a0):
+overall val 0.7815 vs 0.7564, rank-10 81.2%, 90% abundance 80.7%.
+
+Next: GPU stages are queued behind `QOSGrpGRES` (MillionTrees is holding the group GPU limit).

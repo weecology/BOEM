@@ -2349,3 +2349,43 @@ miss is a hard counterexample to "just raise the threshold"; (3) the flight-leve
 confident-land band (4/4 frames one flight) means that band's "confidence" may just be reporting a
 flight-specific sea state/sand type rather than a general land signature -- worth checking whether
 that flight is systematically miscalibrated relative to the rest.
+
+## 40994108 — 2026-09-03 — prepare_USGS: fold the completed July review pass into the training corpus
+
+Ben asked for a full refresh now that annotation of the July 2026 surveys is finished:
+pull the annotations, retrain detection + flat classification + H-CAST on the new corpus,
+and re-measure recall / precision / classification accuracy for the "Refined Model" column
+of the survey metrics table
+(https://docs.google.com/document/d/11vW9WByJ0qh3brrYqEVHI_5yaMX2_Fx48kEG-LtrFc0).
+
+**Pulled first, live, before anything else** (`scripts/download_annotations.py`), because
+annotators work in real time and an earlier pull is never durable. Live project state:
+  197 Bureau of Ocean Energy Management - Review        336 tasks, 336 annotated  (100%)
+  195 Bureau of Ocean Energy Management - Validation      0 tasks
+   65 Bureau of Ocean Energy Management - Training         0 tasks
+  217 BOEM - Dolphin Species Review                    2033 tasks, 698 annotated  (34.3%)
+Only 197 had anything new. Downloaded 426 boxes over 336 images across all 20 July flights
+to `annotations/review/<flight>/20260903_120646.csv`: **374 real / 52 FalsePositive**.
+All 336 images resolve under `BOEM/imagery/<flight>/` — nothing missing.
+
+Project 217 (the dolphin one-off) is deliberately NOT in this refresh. It is a separate
+species-review of existing boxes, it is only a third done, and it is not one of the three
+instances in `boem_conf/annotation/label_studio.yaml`, so nothing reads it.
+
+Backup: 20 new files, **0 changed** (`scripts/backup_annotations.py`), committed on branch
+`retrain-july-2026`. A "changed" here would have meant an overwritten annotation; there were none.
+
+This job: `sbatch submit_prepare_annotations.sh`, 32 CPUs, no GPU. Regenerates detection
+crops for the 336 images whose annotation CSVs are now newer, copies them into
+`training/crops`, and rewrites train/test/zero_shot. Zero-shot flights held at
+JPG_20260202_141900 + JPG_20260201_134000 (unchanged from the initial-model run) so the
+refined numbers land on the same held-out flights and stay comparable.
+
+Note on where the new data lands: `create_train_test_split` groups `annotations/review`
+with `annotations/train`, so the July review boxes become TRAINING data. The refined
+metrics are still measured on the same held-out test + zero-shot split, not on these.
+
+Next: on completion, (1) `submit_USGS_classification.sh` (flat, writes the split dir),
+(2) `submit_USGS_detection_combined.sh` (detection, independent), then (3)
+`submit_USGS_hierarchical.sh` off the flat run's split for direct comparability.
+GPU QOS is currently saturated by MillionTrees jobs, so the GPU stages will queue.

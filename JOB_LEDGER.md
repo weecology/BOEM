@@ -2432,3 +2432,220 @@ H-CAST 40306075, but never promoted into boem_config — that still points at a3
 overall val 0.7815 vs 0.7564, rank-10 81.2%, 90% abundance 80.7%.
 
 Next: GPU stages are queued behind `QOSGrpGRES` (MillionTrees is holding the group GPU limit).
+
+## 41098248 — 2026-09-04 — submit_USGS_classification_balance_factor2.sh — SUBMITTED
+Why: Bracket the class-balance downsampling cap (`gentle_class_balance` in
+scripts/USGS_classification.py) around the 40994173 baseline. That factor was
+hardcoded (4.0) and unlogged; made it a CLI-overridable hydra param
+(`classification_model.class_balance_factor`, default 4.0, `null` disables
+downsampling) so this run and 41098249 aren't one-off patches.
+This run: `class_balance_factor=2.0` (tighter cap, closer to full per-class
+balance — expect a smaller train pool than 40994173's 59,492 and likely
+higher macro precision / lower micro accuracy).
+Result: pending.
+Next: compare micro accuracy, macro precision, and per-class zeros against
+40994173 (factor=4.0, micro 0.7651/macro 0.6530) and 41098249 (no cap).
+
+## 41098249 — 2026-09-04 — submit_USGS_classification_balance_none.sh — SUBMITTED
+Why: Other end of the same bracket — `class_balance_factor=null`, i.e. no
+downsampling at all (full ~176,847-row train pool, natural class imbalance).
+Same code/config change as 41098248. Expect longer wall clock than the
+4x-cap run (pool is ~3x larger) and likely higher micro accuracy but worse
+performance on rare classes (majority-class dominance unchecked).
+Result: pending.
+Next: same comparison as above; if none of the three arms clearly wins on
+both micro and macro, that's itself the answer — the cap factor isn't the
+lever to pull and effort should go elsewhere (e.g. more data for the
+zero-recall classes listed in 40994173's entry).
+
+## 41840299 — 2026-09-12 11:43 — submit_window_sweep.sh — SUBMITTED
+Why: The Year-2 annual report needs detection recall / precision / empty-frame rate at BOTH
+ends of the window (2025-09-16 .. 2026-09-15) and **no such measurement exists**. Checked
+Comet directly: 1,233 BOEM experiments ran in the window, only 82 log any eval metric, and
+the earliest logging box_precision / box_recall / empty_frame_accuracy is 2026-05-27
+(0b6c36df). Everything from 2025-09 to 2026-05 logged training losses only
+(val_classification / val_bbox_regression). This is a measurement gap, not a data gap — the
+weights survive, so it is fixable retroactively.
+
+Two checkpoints, one job, same pinned holdout (648 reviewed frames / 1,229 animals,
+JPG_20260201_134000 + JPG_20260202_141900), same script and settings as 39385379 so the
+curves are directly comparable to the existing a09c6933 / 55d29b2c JSONs:
+  START  detection/checkpoints/JPG_20241219_165600/ee7ba70a6bdf47ae99eab2b8f3024bce.ckpt
+         trained 2025-09-18, Comet ee7ba70a, val_classification 0.0523. Best of the 52
+         detection checkpoints written 2025-09-16..10-15.
+  END    training/checkpoints/1968e962113f4c57bc6bf5f07fae1b25/epoch29-val_cls0.0899.ckpt
+         job 40994172, 2026-09-03, best of 30 epochs.
+
+**Both holdouts are clean by construction, which is the point of these two picks:**
+ee7ba70a predates the Feb-2026 holdout flights entirely (they did not exist when it trained);
+1968e962 was trained after the 2026-08-06 pinning that explicitly excludes them.
+
+CAVEAT ON THE START CHECKPOINT: this is a *contemporaneous* pipeline-trained model, NOT the
+one boem_config.yaml actually pointed at on 2025-09-30. That was
+`UBFAI Images with Detection Data/checkpoints/f3c687c8824f4b9fafa4bafbbe3fad8b.pl`, which
+**no longer exists on /blue**. So the start row characterises "a detector of that vintage",
+not "the deployed detector", and the report must say so.
+
+**a09c6933/epoch16 is deliberately NOT re-run** — threshold_sweep_a09c6933_e16.json
+(2026-08-13) already holds it. It is the contamination control: it was trained 2026-07-07,
+a month BEFORE the holdout was pinned, when prepare drew holdout flights at random, and its
+July split was overwritten by later prepare runs so it cannot be recovered. The ledger vouches
+that the two flights were excluded for 38834235/55d29b2c (see the 39385379 entry) but says
+nothing equivalent for a09c6933. **This matters beyond this job: the 75.8% frame recall /
+90.2% precision currently in reports/summer_2026_aerial_survey.html and the survey metrics
+Google Doc come from a09c6933 and may be measured partly on flights it trained on.** If the
+two clean checkpoints bracket it sensibly and a09c6933 sits anomalously high, that is the
+signal. It is not proof either way, but it is the only test available without the lost split.
+
+Result: pending.
+Next: read all four JSONs with `scripts/threshold_sweep.py --report`; fill the start/end row
+of the annual report (reports/annual_report_year2_highlights.md) and the still-blank "Refined
+Model" column of the survey metrics doc from the END sweep.
+
+### 41840299 interim — sweep 1 of 2 FAILED, sweep 2 running; and the deployed start-of-window
+### checkpoint is confirmed LOST (but its metrics survive in Comet)
+
+**Sweep 2 (END, 1968e962/epoch29) is running normally.** Sweep 1 (START, ee7ba70a) died
+instantly: `_pickle.UnpicklingError` — the 2025-vintage checkpoint pickles its
+hyper_parameters as an omegaconf DictConfig, and torch's default `weights_only=True` refuses
+it. Newer checkpoints are unaffected.
+
+**Behind that was a second, real problem: library drift.** Forcing weights_only=False gets
+past the unpickle and then hits `ConfigAttributeError: Missing key detections_per_img`. The
+2025 config is structurally older than what the installed deepforest expects — it carries a
+nested `retinanet: {score_thresh: 0.3}` block and lacks SEVEN keys the current default config
+has: detections_per_img, topk_candidates, precision, matmul_precision, log_root, cropmodel,
+point. Same class of failure as 33084407 (stale checkpoint vs installed deepforest).
+Resolved by injecting the current library defaults, verified loading clean
+(label_dict {'Object': 0}, detections_per_img 300, topk_candidates 1000 — the last two are
+torchvision RetinaNet defaults, so they almost certainly match what the 2025 model actually
+ran with rather than being invented). Patched copy written to the session scratchpad; the
+original on /blue is untouched. Wrapper + submit kept OUT of the tracked tree (scratchpad),
+per the 40700993 precedent — this is a one-off report measurement, not a production path.
+
+**The checkpoint boem_config.yaml actually pointed at on 2025-09-30 no longer exists.**
+`UBFAI Images with Detection Data/checkpoints/f3c687c8824f4b9fafa4bafbbe3fad8b.pl` — a
+filesystem-wide search of /blue/ewhite/b.weinstein and /orange/ewhite/b.weinstein returns
+nothing, and the entire `UBFAI Images with Detection Data` directory is gone (only
+`UBFAI Data Collection` remains). The oldest surviving final `.pl` is 9a203c4f (2025-06-13).
+
+**But Comet preserved that lost model's identity and metrics**, which partly answers the
+report question from the record alone:
+  f3c687c8 "famous_honeyberry_6397" — **trained 2025-06-11**, i.e. the detector deployed at
+  the start of Year 2 was already three months old when the window opened.
+  box_precision 0.8135 · box_recall 0.1578 · val_classification 0.1269
+  (DeepForest training-set eval on that run's own split, with the ceilinged box_recall — NOT
+  comparable to the holdout sweep, but it fixes the vintage.)
+  9a203c4f (2025-06-13) is a degenerate run — box_precision 0.0020 — and is not a usable
+  substitute.
+
+**Consequence for the report, to state rather than paper over:** the START row will describe
+ee7ba70a, a per-flight pipeline fine-tune from 2025-09-18, whereas the END row describes a
+corpus-wide retrain. Those are different KINDS of artifact, not just different vintages, and
+the deployed-at-the-time model cannot be measured because its weights are gone.
+
+Next: 41840299 sweep 2 gives the END row; the scratchpad retry gives the START row.
+
+### Metric taxonomy — "zero-shot" and "validation" box recall are two different numbers, and today's 44.3% / 75.8% are BOTH zero-shot
+
+Ben's correction, 2026-09-12: a gallery of "missed individuals" was built off
+`threshold_sweep_a09c6933_e16.json` and presented alongside a claim that 44.3% box recall was
+low. Both **44.3% box recall** and **75.8% recall** (the number already in
+`reports/summer_2026_aerial_survey.html`) come from that SAME sweep, on the SAME two pinned
+zero-shot holdout flights (JPG_20260202_141900, JPG_20260201_134000). They differ only in
+unit — 44.3% is box-level (individuals matched by IoU 0.4 at score>=0.70), 75.8% is
+frame-level (share of frames with ground truth that surfaced any detection). **Neither is a
+validation number**, and the 75.8% is not "secretly the validation figure" — that was a
+reasonable guess but wrong.
+
+What "validation box recall" should mean: the same clean IoU-matching method
+(`deepforest.evaluate.evaluate_boxes`, no empty-frame denominator — i.e. the same approach
+`threshold_sweep.py` already uses), applied instead to held-out images from flights that WERE
+in the detector's training corpus (in-distribution). This is the number Ben actually wants
+tracked going forward — "in no situation are we going to ask [the detector] to do this
+zero-shot," and zero-shot recall always carries some baked-in annotator-vs-detector gap no
+matter how good the model gets.
+
+**We do not currently have a trustworthy validation box recall for a09c6933** (the production
+checkpoint). Checked two candidates, both unusable:
+  1. `annotations/validation/` (189 flight folders, the in-distribution tier
+     `src/pipeline.py`'s `PipelineEvaluation.evaluate_detection()` is built to consume) is the
+     right INPUT, but nothing in Comet shows that clean evaluation was ever run and logged for
+     a09c6933's training job specifically.
+  2. Comet experiment `a09c69331af8496380cbf99e3859d656` ("detection_posfrac0.5") does log its
+     own `box_recall` (0.799 current), `box_precision` (0.928), `empty_frame_accuracy` (0.998)
+     — but that's DeepForest's built-in training-time `RecallPrecision` callback, the metric
+     `deepforest_box_recall_issue.md` documents as ceilinged by empty-frame count and already
+     flagged three times elsewhere in this ledger as **not comparable across runs**. It also
+     ran on that job's own internal "posfrac0.5" resample, not the `annotations/validation/`
+     tier. It is a third, differently-biased number — do not relabel it as "the validation
+     recall." (A fourth number, `zero_shot_pretraining_box_recall` = 0.459 on the same
+     experiment at step 0, is yet another quantity — logged before this run's fine-tuning
+     started, close to but not equal to 44.3%. Not investigated further; noted so it isn't
+     mistaken for either real number.)
+  3. a09c6933's exact train/val split is unrecoverable (see the 41840299 entry above), so a
+     clean validation number can't even be reconstructed retroactively for this checkpoint.
+
+**Standard going forward: every detection checkpoint gets two numbers, both via the clean
+IoU-matching method, both against a split that is pinned to disk and never overwritten:**
+  - **validation box recall** — held out from that run's own training flights (in-distribution)
+  - **zero-shot box recall** — the permanent pinned holdout flights (out-of-distribution)
+Always label which is which; never report one number called just "recall."
+
+### 41840299 + 41840640 result — BOTH COMPLETED (15m25s / 14m07s), exit 0:0
+
+Four checkpoints now measured on the identical pinned holdout (648 reviewed frames, 1,229
+objects, 2,000-frame queue sample, IoU 0.4). JSONs in /blue/ewhite/b.weinstein/BOEM/
+threshold_sweep_{window_start_ee7ba70a,window_end_1968e962_e29,a09c6933_e16,55d29b2c_e08}.json.
+
+**RECALL CEILING ROSE MONOTONICALLY ACROSS YEAR 2 — the cleanest single result:**
+  START ee7ba70a (2025-09-18)  64.2%   score range 0.010-0.997
+  MID   a09c6933 (2026-07-07)  67.8%   score range 0.010-0.931
+  END   1968e962 (2026-09-03)  71.4%   score range 0.010-0.993
+This is the metric min_score cannot touch (a third of objects were invisible at ANY
+threshold), so +7.2 points of ceiling is real detector improvement, not calibration.
+
+**At MATCHED PRECISION ~85% (the fairest cross-model point, since score distributions differ):**
+                              thr  boxRec   prec  imgRec  queue img/1k
+  START ee7ba70a             0.70   51.5%  85.4%   87.5%          2.0
+  MID   a09c6933             0.50   57.9%  84.4%   94.1%          1.0
+  END   1968e962             0.60   61.0%  84.7%   98.2%          1.0
+  -> +9.5 pts box recall, +10.7 pts image recall across the window at equal precision.
+
+**At MATCHED IMAGE RECALL >=97%, the annotator cost collapsed 40x:**
+  START 0.35 -> 97.6% img recall for 40.0 queue img/1k
+  END   0.60 -> 98.2% img recall for  1.0 queue img/1k
+  Better recall for a fortieth of the review burden.
+
+**Empty-water pass rate at 0.70, measured on unscreened survey frames (not a training log):**
+  START 99.80% · MID 99.90% · END 99.90% (1-2 of every 1,000 frames flagged).
+
+**THE CONTAMINATION HYPOTHESIS IS NOT SUPPORTED — and the reason is the opposite of what was
+feared.** a09c6933 does not sit anomalously HIGH between the two clean checkpoints; at the
+adopted 0.70 cut it is the WORST of the three (44.3% box recall / 75.8% image recall, vs
+51.5%/87.5% for a 2025 model and 57.9%/94.2% for the Sept 2026 one). A checkpoint that had
+memorised these flights could not underperform a model that has never seen them. So the
+75.8% / 90.2% in reports/summer_2026_aerial_survey.html and the survey metrics doc is NOT
+inflated by leakage. The undocumented July split remains undocumented, but it no longer
+threatens the reported numbers.
+
+**What it IS, is score compression.** a09c6933 never exceeds 0.931 on this holdout while both
+other checkpoints reach ~0.995, so a fixed 0.70 cut bites far deeper into its distribution.
+That is why it looks bad at 0.70 and fine at 0.50 — a calibration artifact of that
+checkpoint, which is exactly the portability trap the 39385379 entry documented.
+
+**ACTIONABLE: boem_config.yaml still points at a09c6933, and 1968e962 beats it decisively at
+the SAME 0.70 threshold — image recall 94.2% vs 75.8% (+18.4 points), box recall 57.9% vs
+44.3%, precision 86.6% vs 90.2% (-3.6).** Promoting it would recover roughly a fifth of all
+occupied frames currently being passed over, at a small precision cost. Not done here: a
+promotion invalidates every prediction cache (see the 08-12 entry) and is Ben's call.
+
+**"Refined Model" column of the survey metrics doc can now be filled** from END at 0.70:
+detection recall (frames) 94.2%, detection recall (individuals) 57.9%, detection precision
+86.6%, empty-frame 99.9%.
+
+CAVEAT to carry into the report: START is a per-flight pipeline fine-tune, END a corpus-wide
+retrain — different KINDS of artifact. The genuinely deployed 2025-09 model (f3c687c8,
+trained 2025-06-11) cannot be measured; its weights are gone.
+Next: Ben to decide on promoting 1968e962; update reports/annual_report_year2_highlights.md
+(done) and the Google Doc's Refined column.

@@ -33,7 +33,24 @@ flight_name: null
 predict:
   patch_size: 1000
   patch_overlap: 0
-  # !! PAIRING NOT YET RE-DERIVED FOR THE CURRENT CHECKPOINT !!
+  # PAIRING VERIFIED FOR THE CURRENT CHECKPOINT (job 41939457, 2026-09-13).
+  # The foam risk described below was measured and did NOT materialise — the opposite
+  # happened. On the two foam-heavy July flights (JPG_20260712_100400 + JPG_20260712_113200,
+  # 3,000-frame sample) 1968e962/epoch29 emits FEWER boxes at 0.70 than a09c6933 did on the
+  # same flights: 0.67 boxes/1k vs 2.08 boxes/1k (120 boxes over 57,657 frames). Across the
+  # band it is ~3.5x more conservative at 0.40 (126 boxes/1k vs the 0.40-era 25,280 boxes
+  # over those same 57,657 frames = 438/1k).
+  # That is the profile of a model that learned to REJECT foam while scoring real animals
+  # higher — consistent with its training corpus, which is the first to include the July
+  # review pass's 52 human-marked FalsePositives as hard negatives.
+  # CAVEAT, do not over-read: 0.67 boxes/1k on a 3,000-frame sample is TWO boxes. It is at
+  # the sample's resolution limit, so it supports "no foam excess" but cannot settle whether
+  # the new model is now too conservative on July imagery. The Feb zero-shot holdout says its
+  # recall is better (94.2% vs 75.8% image recall), but Feb and July imagery differ sharply
+  # (79.1% of Feb boxes sit above 0.85 vs 1.4% of July ones), so that does not fully transfer
+  # either. A July-imagery recall answer needs reviewed July ground truth, which does not
+  # exist outside the pinned Feb pair.
+  # Original (now-closed) risk statement kept below for the reasoning:
   # 0.70 was calibrated for a09c69331af8496380cbf99e3859d656/epoch16 on JULY SURVEY imagery
   # (see the derivation below). detection_model.checkpoint moved to 1968e962/epoch29 on
   # 2026-09-13, and this value has NOT been re-derived on survey imagery for it.
@@ -45,9 +62,9 @@ predict:
   # holdout vs a09c6933's 0.931), so on July imagery it may push FOAM above 0.70 that
   # a09c6933 kept below. The 0.70 value exists precisely to exclude that foam, and the
   # lesson of 2026-08-20 is that a threshold does not transfer between checkpoints.
-  # BEFORE the next full survey run, repeat the survey-imagery derivation below for this
-  # checkpoint (score distribution + per-class share clearing the cut + an eyeball of the
-  # Morus crops). Until then treat any survey species counts from this pairing as unverified.
+  # The survey-imagery derivation called for here WAS run: job 41939457, result at the top
+  # of this comment. Remaining unmeasured piece is per-class share clearing the cut and an
+  # eyeball of the Morus crops, which needs a survey run on the new checkpoint to produce.
   # Re-derive with scripts/threshold_sweep.py whenever detection_model.checkpoint changes.
   #
   # 0.70 chosen 2026-08-20, on SURVEY imagery. This supersedes the 0.30 set on 2026-08-13

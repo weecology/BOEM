@@ -2649,3 +2649,100 @@ retrain — different KINDS of artifact. The genuinely deployed 2025-09 model (f
 trained 2025-06-11) cannot be measured; its weights are gone.
 Next: Ben to decide on promoting 1968e962; update reports/annual_report_year2_highlights.md
 (done) and the Google Doc's Refined column.
+
+## (no job) — 2026-09-13 — detection promotion: 1968e962/epoch29 wired into production
+
+Ben's call, acting on the 41840299/41840640 result. `boem_conf/boem_config.yaml`
+detection_model.checkpoint: a09c6933/epoch16 -> 1968e962/epoch29 (job 40994172).
+Committed 1e09fe5 on branch `retrain-july-2026`.
+
+Justification (ZERO-SHOT, pinned Feb holdout — NOT validation): at the same 0.70 cut,
+image recall 94.2% vs 75.8%, box recall 57.9% vs 44.3%, precision 86.6% vs 90.2%; box-recall
+ceiling 71.4% vs 67.8%. Recorded next to the checkpoint path, per the pairing rule.
+
+**Verified rather than assumed — cache safety.** The worry was that promoting a checkpoint
+while leaving predict.min_score unchanged would leave every `.prediction_cache` looking valid
+and silently serve a09c6933 boxes. It does not: `src/pipeline.py:505` gates reuse on
+`cached_ckpt == actual_detection_checkpoint` AND min_score, so the swap forces a full
+re-predict of any flight. Cost is a re-run, not a correctness risk.
+
+**Verified — the live floor.** 1968e962 carries the same baked-in `score_thresh: 0.4` as the
+a09c6933 family, and `detection.load()` pushes predict.min_score into it, so the live model
+reports score_thresh 0.70. Config resolves with all three gates (predict.min_score,
+human_review.min_detection_score, active_learning.min_detection_score) at 0.70 and
+label_dict {'Object': 0}.
+
+**LEFT OPEN AND FLAGGED IN THE CONFIG: 0.70 is not re-derived for this checkpoint.** It was
+fitted to a09c6933 on JULY SURVEY imagery (the Feb-derived 0.30 famously did not transfer),
+whereas the promotion evidence is the Feb holdout. 1968e962 scores higher overall (holdout max
+0.993 vs 0.931), so it may push foam above 0.70 that a09c6933 kept below — and excluding foam
+is the whole purpose of this gate. Holding 0.70 cannot lose frames relative to the model being
+replaced, so the promotion is safe in the recall direction; the risk is precision on survey
+imagery. Job 41939457 (below) measures it. **Until that lands, treat survey species counts
+from this pairing as unverified.**
+
+**PRE-EXISTING BREAK, unrelated to this change but worth knowing:** `tests/` is 86 passed /
+1 failed / 1 skipped, and the failure is
+`tests/test_detection.py::test_detection_preprocess_and_train` ->
+`TypeError: deepforest.__init__() got an unexpected keyword argument 'label_dict'` at
+`src/detection.py:275`. Confirmed pre-existing by stashing the config change and re-running.
+It is in the from-scratch branch of `preprocess_and_train` (no checkpoint), NOT the
+`load(checkpoint)` path production uses — so it does not affect this promotion, but **the
+next detection retrain from scratch will fail** until `main.deepforest(label_dict=...)` is
+updated for the installed deepforest. Same class of drift as the 2025-checkpoint config gap.
+
+## 41939457 — 2026-09-13 — submit_july_floor_check.sh — SUBMITTED
+Why: close the open risk above. Measures 1968e962/epoch29's score distribution on JULY survey
+imagery — the substrate 0.70 was actually derived on — using threshold_sweep.py's QUEUE half
+(boxes and images per 1,000 unscreened frames at each threshold). Two flights chosen because
+they carried 25,280 of the 41,694 boxes in the 0.40-era survey and are the known foam-heavy
+pair (small ~20-25px detections on bright specks in chop).
+The RECALL half of the output is meaningless here — these flights have no fully-reviewed
+ground truth, only the pinned Feb pair does — and must be ignored; recall is already answered
+by 41840299/41840640. Script lives in /blue/ewhite/b.weinstein/BOEM/report_sweeps/ rather than
+the tracked tree (one-off verification, and /tmp is node-local so it cannot go in a scratchpad).
+Result: pending.
+Next: compare boxes/1k at 0.70 against what a09c6933 produced on the same flights (388 boxes
+across 533,876 frames survey-wide). A large excess is the foam signal and means min_score must
+be re-derived upward for this checkpoint before any survey run; a comparable number means 0.70
+transfers and the pairing can be marked verified in boem_config.yaml.
+
+### 41939457 result — COMPLETED 26m56s, exit 0:0 — THE FOAM RISK DID NOT MATERIALISE
+
+1968e962/epoch29 on the two foam-heavy July flights (JPG_20260712_100400 +
+JPG_20260712_113200), 3,000-frame queue sample, score range 0.0100-0.9903 over 149,995 raw
+boxes:
+    thresh   images/1k   boxes/1k
+      0.40      99.3       126.3
+      0.50      31.7        36.3
+      0.60       6.3         6.3
+      0.70       0.67        0.67
+      0.85       0.33        0.33
+
+**It emits FEWER boxes than a09c6933, not more — the opposite of the stated risk.** Measured
+a09c6933 on the SAME two flights off their 0.70 caches: 120 boxes over 119 images in 57,657
+frames = **2.08 boxes/1k vs the new model's 0.67**, about a third as many. The gap is wider
+lower down: at 0.40 the new model gives 126 boxes/1k where the 0.40-era run gave 25,280 boxes
+over those same 57,657 frames = **438/1k, ~3.5x more**.
+
+**Reading: this is a model that learned to reject foam while scoring real animals higher.**
+Its training corpus (job 40994108) is the first to carry the July review pass's 52
+human-marked FalsePositives as hard negatives, which is exactly the foam. Simultaneously
+higher zero-shot recall on reviewed frames (94.2% vs 75.8% image recall) and ~3x fewer
+detections on unreviewed foam-heavy survey frames is the signature you would want.
+
+**DO NOT OVER-READ — 0.67 boxes/1k on 3,000 frames is TWO boxes.** That is the sample's
+resolution floor, the same limit flagged in the 39385379 entry. It supports "no foam excess"
+and nothing finer. It CANNOT settle the opposite question — whether the new model is now too
+conservative on July imagery and dropping real animals. The Feb zero-shot holdout says recall
+improved, but Feb and July differ sharply (79.1% of Feb boxes above 0.85 vs 1.4% of July), so
+that does not simply transfer. **A July-imagery recall answer requires reviewed July ground
+truth, which does not exist outside the pinned Feb pair** — the LS 197 review pass labelled
+detections, not every animal in each frame, so it cannot measure what was missed.
+
+Config updated: predict.min_score 0.70 pairing marked VERIFIED for 1968e962/epoch29, with the
+numbers and the two-box caveat inline. Survey species counts from this pairing are no longer
+blocked on this check, though they remain machine output pending species-level review.
+Next: (1) the per-class share clearing the cut, and the Morus crop eyeball, still need a survey
+run on the new checkpoint to produce; (2) if July recall ever needs answering, it needs a
+fully-reviewed July frame set, which is a new annotation ask, not a measurement.

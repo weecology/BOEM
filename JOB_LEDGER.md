@@ -2746,3 +2746,18 @@ blocked on this check, though they remain machine output pending species-level r
 Next: (1) the per-class share clearing the cut, and the Morus crop eyeball, still need a survey
 run on the new checkpoint to produce; (2) if July recall ever needs answering, it needs a
 fully-reviewed July frame set, which is a new annotation ask, not a measurement.
+
+## 44961750-44961790 (20 jobs) — 2026-10-06 — submit_all_flights.sh --b200 --time 06:00:00 — SUBMITTED
+Why: Ben asked for the July survey rerun so annotations, predictions and reports are all current.
+Annotations first: `scripts/download_annotations.py` (train/validation: none new; review: the same 426
+boxes / 336 images / 20 flights re-pulled, tasks are left on the server by this script). Backup sync:
+0 changed, 20 new timestamped files, committed c12ad88. check_annotations=False in the fan-out.
+**This is NOT cache-only.** All 20 July caches carry detection_checkpoint.txt = a09c6933/epoch16, but
+production is now 1968e962/epoch29, so the cache is invalid and every flight re-detects ALL its frames:
+533,876 images total (largest 61,900), ~36 GPU-h on B200 per the benchmark in submit_all_flights.sh.
+Config: 1968e962/epoch29, predict.min_score 0.70, extra overrides = the documented n=0 gates +
+flythrough off (no Label Studio upload). Rewrites each flight's `.prediction_cache` and reports.
+Known: JPG_20260711_131000 has no capture CSV, expect 19/20 reports.
+Result: pending.
+Next: confirm 20/20 completed with `^Pool: [0-9]+ images with` in logs (not `>=0.7 detections`), check
+reports/<flight>/taxonomic_summary.csv, then compare boxes/1k against the 0.67/1k floor-check figure.

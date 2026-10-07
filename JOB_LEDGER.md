@@ -2758,6 +2758,15 @@ production is now 1968e962/epoch29, so the cache is invalid and every flight re-
 Config: 1968e962/epoch29, predict.min_score 0.70, extra overrides = the documented n=0 gates +
 flythrough off (no Label Studio upload). Rewrites each flight's `.prediction_cache` and reports.
 Known: JPG_20260711_131000 has no capture CSV, expect 19/20 reports.
-Result: pending.
+Result: all 20 COMPLETED exit 0 (23m-4h35m each, none cache-reused, as expected), BUT 17/20 reports regenerated:
+ - **JPG_20260710_155800 (44961750) and JPG_20260712_125900 (44961775) CRASHED** with `KeyError: 'label'` at
+   src/pipeline_evaluation.py:126 (`_evaluate_hierarchical_metrics`), in `pipeline_monitor.evaluate()` BEFORE the
+   report step. SLURM still says exit 0 because the batch script continues (throughput.csv rc=1). Their
+   predictions were rewritten but their reports under imagery/reports/ are STALE (08-20). Likely cause: every
+   annotation on these flights is filtered out before the 2-word-label filter, leaving an empty frame that
+   `ann[ann["label"].apply(...)]` then column-selects to no columns. Needs an early `if ann.empty` return.
+ - JPG_20260711_131000 produced no report (no capture CSV), as predicted.
+ - Frigatebirds: Fregata magnificens now in observations_table.csv: 083900=4, 092800=2, 100400=3, 101500=4 (13/13).
+Pool sizes at 0.70 on 1968e962: 3-77 boxes per flight, 459 boxes total.
 Next: confirm 20/20 completed with `^Pool: [0-9]+ images with` in logs (not `>=0.7 detections`), check
 reports/<flight>/taxonomic_summary.csv, then compare boxes/1k against the 0.67/1k floor-check figure.

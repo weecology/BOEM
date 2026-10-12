@@ -2770,3 +2770,15 @@ Result: all 20 COMPLETED exit 0 (23m-4h35m each, none cache-reused, as expected)
 Pool sizes at 0.70 on 1968e962: 3-77 boxes per flight, 459 boxes total.
 Next: confirm 20/20 completed with `^Pool: [0-9]+ images with` in logs (not `>=0.7 detections`), check
 reports/<flight>/taxonomic_summary.csv, then compare boxes/1k against the 0.67/1k floor-check figure.
+
+## 45711962 (JPG_20260710_155800), 45711965 (JPG_20260712_125900) — 2026-10-12 — submit_all_flights.sh --b200 --time 01:00:00 — SUBMITTED
+Why: the two flights whose reports were stale after 44961750-44961790 (evaluation crashed `KeyError: 'label'`).
+Root cause reproduced in pandas: in `_evaluate_hierarchical_metrics` (src/pipeline_evaluation.py), when the
+label filters leave `ann` empty, `ann["label"].apply(...)` returns an empty object Series, and `ann[<that>]` is
+treated as a column selection, dropping every column, so the next `ann["label"]` raises. Fix: return early on
+empty `ann` before the `.apply` lines (uncommitted at submit time).
+Config: cache-only recipe (caches already 1968e962/epoch29 @ 0.70, so no re-detection) with check_annotations=False,
+n=0 gates, flythrough off.
+Result: pending.
+Next: confirm reports under imagery/reports/<flight>/ are dated today, then build the zip with all 19 flights
+(131000 has no capture CSV, no report).

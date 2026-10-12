@@ -121,16 +121,19 @@ class PipelineEvaluation:
         ann = ann[~ann.label.isin([0, "0", "FalsePositive", "Object", "Bird", "Reptile", "Turtle", "Mammal", "Artificial"])]
         ann = ann[ann.xmin != 0]
         ann = ann[~ann.label.isnull()]
+        no_metrics = {"species_agreement": None, "genus_agreement": None, "hierarchical_micro_accuracy": None, "hierarchical_macro_accuracy": None}
+        if ann.empty:  # .apply on an empty Series makes the boolean mask below a column selector
+            return no_metrics
         ann["label"] = ann["label"].apply(lambda x: " ".join(x.split()[:2]))
         ann = ann[ann["label"].apply(lambda x: len(x.split()) == 2)]
         ann = ann[ann["label"].isin(self.classification_label_dict.keys())]
         if ann.empty:
-            return {"species_agreement": None, "genus_agreement": None, "hierarchical_micro_accuracy": None, "hierarchical_macro_accuracy": None}
+            return no_metrics
 
         preds = self.predictions[self.predictions.image_path.isin(ann.image_path)].copy()
         preds = preds[preds["hcast_species"].notna() & preds["cropmodel_label"].isin(self.classification_label_dict.keys())]
         if preds.empty:
-            return {"species_agreement": None, "genus_agreement": None, "hierarchical_micro_accuracy": None, "hierarchical_macro_accuracy": None}
+            return no_metrics
 
         ann["cropmodel_label"] = ann["label"].apply(lambda x: self.classification_label_dict[x])
         num_classes = max(len(self.classification_label_dict), 1)

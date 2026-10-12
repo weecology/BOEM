@@ -1,4 +1,5 @@
 import os
+import shutil
 from io import BytesIO
 from urllib.request import urlopen
 from urllib.parse import urlencode
@@ -413,6 +414,8 @@ def select_sample_crops(predictions, image_dir, output_dir,
                         n_samples=5, n_rare=2,
                         rare_min_score=0.7, expand=60):
     """Pick sample crop images, prioritising rare species with high confidence."""
+    # Filenames embed the label, so crops from an earlier run would linger under outdated labels.
+    shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
 
     preds = predictions[predictions["cropmodel_label"].notna()].copy()

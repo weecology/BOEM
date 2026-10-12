@@ -2779,6 +2779,10 @@ treated as a column selection, dropping every column, so the next `ann["label"]`
 empty `ann` before the `.apply` lines (uncommitted at submit time).
 Config: cache-only recipe (caches already 1968e962/epoch29 @ 0.70, so no re-detection) with check_annotations=False,
 n=0 gates, flythrough off.
-Result: pending.
-Next: confirm reports under imagery/reports/<flight>/ are dated today, then build the zip with all 19 flights
+Result: both COMPLETED exit 0 (2m40s, 2m58s); reports regenerated 2026-10-12, KeyError fix confirmed. 19/20 flights now have
+current reports (131000 has no capture CSV).
+Follow-up: sample_crops/ was never cleared, so Aug 20 crops lingered under outdated labels (e.g. Tursiops_truncatus_000.png was
+the human-verified Fregata box on C5_L1_F311). select_sample_crops now rmtree's the folder; 77 stale PNGs deleted across the 19 flights.
+Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261012_v2.zip (19 flights, no fullsize_example.png).
+(old Next, done:) confirm reports under imagery/reports/<flight>/ are dated today, then build the zip with all 19 flights
 (131000 has no capture CSV, no report).

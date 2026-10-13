@@ -2786,3 +2786,28 @@ the human-verified Fregata box on C5_L1_F311). select_sample_crops now rmtree's 
 Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261012_v2.zip (19 flights, no fullsize_example.png).
 (old Next, done:) confirm reports under imagery/reports/<flight>/ are dated today, then build the zip with all 19 flights
 (131000 has no capture CSV, no report).
+
+## 45773425 (1968e962/epoch29), 45773426 (a09c6933/epoch16) — 2026-10-13 — report_sweeps/submit_paired_compare.sh — SUBMITTED
+Why: Ben asked whether the new detector "ranks everything higher" vs the old one and whether to go back to a09c6933.
+Prior evidence is Feb-holdout and 2 foam flights only; there is no PAIRED raw-score comparison on July frames, and the
+cache comparison is confounded (reviewed frames are excluded from the new pool, and the 82 loon/scoter/eider boxes were
+selected on new>=0.70, which biases any "old scored lower" reading). Both checkpoints are run on the IDENTICAL frame set
+at floor 0.01 with all raw boxes saved: (labelled) every July frame with human annotations, GT = those boxes;
+(random) seeded 2,000 unscreened July frames; (group) the frames carrying a current Gavia/Melanitta/Somateria box.
+Script + submit file: /blue/ewhite/b.weinstein/BOEM/report_sweeps/{paired_detector_compare.py,submit_paired_compare.sh}
+(not in the repo, one-off). Outputs: /blue/ewhite/b.weinstein/BOEM/paired_{new_1968e962,old_a09c6933}/.
+Caveat built in: July GT is the REVIEW pass (queued boxes only, picked by a09c6933 >=0.70) so recall there is "found what
+the old detector found and a human confirmed", biased toward the old model; it cannot show new-model extra recall.
+Result: both COMPLETED exit 0 (17m34s / 17m10s). Frames: 389 labelled, 2,000 random, 80 group (2 of the 82 share a frame).
+ - NOT a uniform upward shift. Matched box pairs (n=2,077, Spearman 0.63): old 0.45->new 0.43, 0.54->0.52, 0.64->0.64; they
+   diverge only at the top (old 0.80->new 0.87). Old is COMPRESSED: raw max on the 2,000 random frames 0.646 vs new 0.898.
+ - Random unscreened frames, boxes/1k at 0.5/0.6/0.7: new 16.5/4.0/1.0, old 7.0/1.0/0.0. At 0.70 that is 2 vs 0 boxes: no resolution.
+ - July labelled frames at 0.70: confirmed animals found old 315/468 vs new 312/468 (305 shared); human-FalsePositive foam still
+   firing old 54/175 vs new 9/175; at >=0.80 confirmed animals old 188 vs new 300. CONTAMINATED FOR NEW: 1968e962 trained on the July
+   review pass (animals + 52 FalsePositives), a09c6933 did not, so this favours new and is NOT clean evidence; the Feb holdout
+   (94.2% vs 75.8% image recall at 0.70) and the random-frame pairing are the clean tests. 67% ceiling for both = box-edit/IoU matching.
+ - Top boxes on random frames for BOTH models are dominated by chromatically-fringed glint pairs (the Fratercula/eider artifact);
+   new's top box (0.90) is a sea turtle. Going back to a09c6933 would not remove these.
+Outputs: /blue/ewhite/b.weinstein/BOEM/paired_{new_1968e962,old_a09c6933}/*_boxes.csv.
+Next (done): paired box matching (IoU>0.3) -> score shift per matched box, box counts per threshold, recall on confirmed July
+animals, and eyeball the new-only / old-only boxes in the loon/scoter/eider group.

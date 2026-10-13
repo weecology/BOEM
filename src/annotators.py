@@ -1,4 +1,5 @@
 import os
+import re
 import glob
 from typing import Dict, Iterable, List, Optional
 import pandas as pd
@@ -9,6 +10,11 @@ from src import label_studio as ls_mod
 from src import sagemaker_gt as sm_mod
 
 from deepforest.utilities import read_file as df_read_file
+
+def _download_stamp(csv_file: str) -> str:
+    """Sortable download time from a Label Studio CSV name (20260903_120646.csv, train_20250301_101500.csv)."""
+    return "_".join(re.findall(r"\d{6,8}", os.path.basename(csv_file)))
+
 
 def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     """
@@ -49,12 +55,17 @@ def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
         csv_dfs = []
         for csv_file in labelstudio_files:
             try:
-                csv_dfs.append(pd.read_csv(csv_file))
+                csv_dfs.append(pd.read_csv(csv_file).assign(_downloaded=_download_stamp(csv_file)))
             except Exception as exc:
                 print(f"Warning: failed to parse CSV {csv_file}: {exc}")
         
         if csv_dfs:
             labelstudio_df = pd.concat(csv_dfs, ignore_index=True)
+            # Each download is the complete state of a task, so the newest one replaces the
+            # frame's earlier rows. Unioning them keeps a relabelled box under both labels and
+            # resurrects boxes the annotator deleted.
+            newest = labelstudio_df.groupby("image_path")["_downloaded"].transform("max")
+            labelstudio_df = labelstudio_df[labelstudio_df["_downloaded"] == newest].drop(columns="_downloaded")
             labelstudio_df.drop_duplicates(inplace=True)
             labelstudio_df.reset_index(drop=True, inplace=True)
             labelstudio_df = df_read_file(labelstudio_df, image_dir)

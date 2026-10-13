@@ -22,6 +22,9 @@ comet:
   workspace: bw4sz
 
 check_annotations: false
+# Rebuild the report from .prediction_cache and the annotations on disk: no models, no GPU,
+# no Label Studio upload. Use after labels change (scripts/download_annotations.py first).
+report_only: false
 # Force upload bypasses the pipeline, useful for debugging and starting a new project
 force_upload: False
 image_dir: /blue/ewhite/b.weinstein/BOEM/imagery/JPG_20241107_135800

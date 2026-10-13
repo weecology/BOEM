@@ -126,3 +126,17 @@ def test_different_densities(sample_predictions, test_image, min_density):
     
     for crop in result['crops']:
         assert crop['num_detections'] >= min_density 
+
+def test_gather_data_newest_download_replaces_the_frame(tmp_path):
+    """A relabel in Label Studio arrives as a newer CSV for the same frame. The newer download
+    must replace the frame's rows, not be unioned with them, or the box is counted under both labels."""
+    import pandas as pd
+    from src.annotators import gather_data
+
+    box = dict(xmin=10, ymin=10, xmax=50, ymax=50, annotator="a", flight_name="f")
+    pd.DataFrame([{**box, "label": "Tursiops truncatus", "image_path": "a.jpg"},
+                  {**box, "label": "Larus argentatus", "image_path": "b.jpg"}]).to_csv(tmp_path / "20260903_120646.csv", index=False)
+    pd.DataFrame([{**box, "label": "Fregata magnificens", "image_path": "a.jpg"}]).to_csv(tmp_path / "20261006_155225.csv", index=False)
+
+    df = gather_data(str(tmp_path), str(tmp_path))
+    assert dict(zip(df.image_path, df.label)) == {"a.jpg": "Fregata magnificens", "b.jpg": "Larus argentatus"}

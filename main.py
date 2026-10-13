@@ -22,7 +22,7 @@ def main(cfg: DictConfig):
 
     # Initialize and run pipeline
     pipeline = Pipeline(cfg=cfg)
-    results = pipeline.run()
+    results = pipeline.report_only() if cfg.report_only else pipeline.run()
 
 if __name__ == "__main__":
     main()

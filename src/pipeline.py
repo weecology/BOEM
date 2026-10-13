@@ -1,6 +1,8 @@
 import comet_ml
 import os
 import shutil
+import subprocess
+from datetime import datetime
 from omegaconf import DictConfig
 
 from src.active_learning import (
@@ -400,6 +402,225 @@ class Pipeline:
             )
         write_review_provenance(self.config.image_dir, detector, held_frames)
 
+    def _review_split(self, pool):
+        """(confident, uncertain) predictions under the configured human_review gates."""
+        return human_review(
+            min_detection_score=getattr(
+                self.config.human_review, "min_detection_score", self.config.predict.min_score),
+            review_low=getattr(self.config.human_review, "review_low", 0.3),
+            review_high=getattr(self.config.human_review, "review_high", 0.6),
+            review_on_disagreement=getattr(
+                self.config.human_review, "review_on_disagreement", True),
+            predictions=pool.copy(deep=True),
+        )
+
+    def _classifier_stamp(self) -> dict[str, str]:
+        """Identity of the models behind cropmodel_* and hcast_* columns, as stamped on the prediction cache.
+
+        hierarchical.checkpoint is a fixed path that is overwritten on promotion, so its
+        modification time is part of its identity.
+        """
+        hcast = getattr(self.config.hierarchical, "checkpoint", None)
+        return {
+            "checkpoint": str(self.config.classification_model.checkpoint),
+            "temperature": str(getattr(self.config.classification_model, "temperature", None)),
+            "hcast": str(hcast),
+            "hcast_modified": datetime.fromtimestamp(os.path.getmtime(hcast)).isoformat(timespec="seconds") if hcast else "None",
+        }
+
+    def _provenance(self, detector, mode, classifier_stamp=None) -> dict:
+        """What a report was built from: models, thresholds, and the annotations on disk."""
+        sets = {"train": self.existing_training, "validation": self.existing_validation, "review": self.existing_reviewed}
+        return {
+            "flight": self._flight_name(),
+            "generated": datetime.now().isoformat(timespec="seconds"),
+            "mode": mode,
+            "git_commit": subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=os.path.dirname(__file__), capture_output=True, text=True, check=True
+            ).stdout.strip(),
+            "detector": detector,
+            "min_score": self.config.predict.min_score,
+            "classifier": classifier_stamp or self._classifier_stamp(),
+            "annotations": {
+                name: {"frames": int(df.image_path.nunique()), "boxes": len(df)}
+                for name, df in sets.items() if df is not None
+            },
+        }
+
+    def report_only(self):
+        """Rebuild the report from the prediction cache and the annotations on disk.
+
+        No model is loaded and nothing is uploaded, so this is the way to bring a report up to
+        date after labels change in Label Studio (download them first with
+        scripts/download_annotations.py). Predictions come from .prediction_cache, which must
+        have been written by the configured detector and classifier; anything else needs the
+        full pipeline. Frames annotated since the cache was written lose their model boxes to
+        the human ones, exactly as in run().
+        """
+        self.check_annotations()
+        cache_dir = os.path.join(self.config.image_dir, ".prediction_cache")
+        read = lambda name: open(os.path.join(cache_dir, name)).read().strip()
+        detector = read("detection_checkpoint.txt")
+        cached_min_score = float(read("min_score.txt"))
+        cached = dict(line.split("=", 1) for line in read("classifier.txt").splitlines())
+        # Caches written before the H-CAST stamp existed are accepted, and reported as unstamped.
+        cached = {"hcast": "not recorded in cache", "hcast_modified": "not recorded in cache", **cached}
+        stale = {
+            k: (v, cached[k]) for k, v in self._classifier_stamp().items()
+            if cached[k] not in (v, "not recorded in cache")
+        }
+        if detector != self.config.detection_model.checkpoint:
+            stale["detector"] = (self.config.detection_model.checkpoint, detector)
+        if cached_min_score > self.config.predict.min_score:
+            stale["min_score"] = (self.config.predict.min_score, cached_min_score)
+        if stale:
+            raise ValueError(
+                f"Prediction cache {cache_dir} does not match the config (configured, cached): {stale}. "
+                "Run the full pipeline to re-predict."
+            )
+
+        pool = pd.read_csv(os.path.join(cache_dir, "pool_predictions.csv"))
+        pool = pool[
+            (pool["score"] >= self.config.predict.min_score)
+            & ~pool.image_path.map(os.path.basename).isin(self.existing_images)
+        ]
+        _, uncertain_predictions = self._review_split(pool)
+        _, held_frames = review_holdout(
+            image_dir=self.config.image_dir,
+            detector=detector,
+            uncertain_images=uncertain_predictions.image_path.unique(),
+            pool_images=pool.image_path.unique(),
+            has_reviews=self.existing_reviewed is not None and not self.existing_reviewed.empty,
+        )
+        print(f"Report only: {len(pool)} cached model boxes on {pool.image_path.nunique()} unannotated frames, "
+              f"{len(held_frames)} frames held for review")
+        self._assemble_and_report(
+            pool, held_frames, provenance=self._provenance(detector, mode="report only", classifier_stamp=cached),
+        )
+        self.comet_logger.experiment.add_tag("report_only")
+
+    def _assemble_and_report(self, flightline_predictions, held_frames, provenance):
+        """Merge model predictions with the human annotations and write the report.
+
+        Human annotations are authoritative: annotated frames are never in the pool, so each
+        frame is either all-human or all-model. Shared by run() and report_only() so a
+        regenerated report is built exactly like a full-pipeline one.
+
+        Returns:
+            tuple: (predictions before the review hold-out, predictions that were reported).
+        """
+        # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
+        final_predictions = flightline_predictions.copy(deep=True)
+        final_predictions["set"] = "prediction"
+        final_predictions["flight_name"] = self._flight_name()
+
+        # Add in the existing training and validation annotations
+        if self.existing_training is not None:
+            existing_training = self.existing_training.copy(deep=True)
+            existing_training["set"] = "train"
+            # Change label to cropmodel_label
+            existing_training.rename(columns={"label": "cropmodel_label"}, inplace=True)
+            # Add a cropmodel_score column
+            existing_training["cropmodel_score"] = 2.0
+            # Add an object score
+            existing_training["label"] = "Object"
+            existing_training["score"] = 2.0
+
+            if self.config.debug:
+                existing_training = existing_training[:10]
+
+            final_predictions = pd.concat([final_predictions, existing_training], ignore_index=True)
+
+        if self.existing_validation is not None:
+            existing_validation = self.existing_validation.copy(deep=True)
+            existing_validation["set"] = "validation"
+            # Change label to cropmodel_label
+            existing_validation.rename(columns={"label": "cropmodel_label"}, inplace=True)
+            # Add a cropmodel_score column
+            existing_validation["cropmodel_score"] = 2.0
+
+            # Add an object score
+            existing_validation["label"] = "Object"
+            existing_validation["score"] = 2.0
+
+            if self.config.debug:
+                existing_validation = existing_validation[:10]
+            final_predictions = pd.concat([final_predictions, existing_validation], ignore_index=True)
+
+        # Add in the human reviewed annotations
+        if self.existing_reviewed is not None:
+            existing_reviewed = self.existing_reviewed.copy(deep=True)
+            # Change label to cropmodel_label
+            existing_reviewed.rename(columns={"label": "cropmodel_label"}, inplace=True)
+            # Add a set column
+            existing_reviewed["cropmodel_score"] = 2.0
+            
+            #Set detection column
+            existing_reviewed["label"] = "Object"
+            # Add an object score
+            existing_reviewed["score"] = 2.0
+            existing_reviewed["set"] = "reviewed"
+
+            if self.config.debug:
+                existing_reviewed = existing_reviewed[:10]
+
+            final_predictions = pd.concat([final_predictions, existing_reviewed], ignore_index=True)
+        
+        # Reset index
+        final_predictions = final_predictions.reset_index(drop=True)
+
+        # add comet_id
+        final_predictions["comet_id"] = self.comet_logger.experiment.id
+        
+        # Remove False Positives and empty images
+        final_predictions = final_predictions[~final_predictions.cropmodel_label.isin(["FalsePositive", "0",0,"Object"])]
+
+        # Frames awaiting review keep their boxes for the Label Studio upload but not the report.
+        pre_holdout = final_predictions
+        held_rows = (
+            (final_predictions["set"] == "prediction")
+            & final_predictions.image_path.map(os.path.basename).isin(held_frames)
+        )
+        final_predictions = final_predictions[~held_rows]
+        if final_predictions.empty:
+            print("No predictions")
+            return pre_holdout, final_predictions
+
+        # Add geospatial coordinates so the dashboard has lat/lon per detection
+        report_cfg = getattr(self.config, "report", None)
+        metadata_dir = getattr(report_cfg, "metadata_dir", None) if report_cfg else None
+        if metadata_dir:
+            try:
+                captures, img_w, img_h = load_geospatial_metadata(
+                    self._flight_name(), metadata_dir,
+                )
+                final_predictions = georeference_predictions(
+                    final_predictions, captures, img_w, img_h,
+                )
+            except FileNotFoundError:
+                print("Could not load geospatial metadata for final_predictions")
+
+        # Write crops to disk
+        image_paths = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
+
+        # crop_image_id
+        final_predictions["crop_image_id"] = image_paths
+        
+        # give it a complete tag
+        self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
+
+        # Generate report
+        if getattr(self.config, "report", None) and getattr(self.config.report, "enabled", False):
+            generate_report(
+                predictions=final_predictions,
+                config=self.config,
+                comet_logger=self.comet_logger,
+                image_dir=self.config.image_dir,
+                provenance={**provenance, "frames_held_for_review": sorted(held_frames)},
+            )
+
+        return pre_holdout, final_predictions
+
     def run(self):
         # Check for new annotations if the check_annotations flag is set
         status = self.check_annotations()
@@ -640,10 +861,7 @@ class Pipeline:
         # cache written before 2026-08-20, and nothing in the file said so. An unstamped
         # cache is raw max-softmax.
         with open(os.path.join(cache_dir, "classifier.txt"), "w") as f:
-            f.write(
-                f"checkpoint={self.config.classification_model.checkpoint}\n"
-                f"temperature={getattr(self.config.classification_model, 'temperature', None)}\n"
-            )
+            f.write("".join(f"{k}={v}\n" for k, v in self._classifier_stamp().items()))
         flightline_predictions.to_csv(os.path.join(cache_dir, "pool_predictions.csv"), index=False)
 
         flightline_predictions["comet_id"] = self.comet_logger.experiment.id
@@ -725,15 +943,7 @@ class Pipeline:
         print(f"Training images to annotate: {len(train_images_to_annotate)}")
         human_review_pool = flightline_predictions[~flightline_predictions.image_path.isin(self.existing_images + test_images_to_annotate + train_images_to_annotate)]
         
-        confident_predictions, uncertain_predictions = human_review(
-            min_detection_score=getattr(
-                self.config.human_review, "min_detection_score", self.config.predict.min_score),
-            review_low=getattr(self.config.human_review, "review_low", 0.3),
-            review_high=getattr(self.config.human_review, "review_high", 0.6),
-            review_on_disagreement=getattr(
-                self.config.human_review, "review_on_disagreement", True),
-            predictions=human_review_pool.copy(deep=True),
-        )
+        confident_predictions, uncertain_predictions = self._review_split(human_review_pool)
 
         self.comet_logger.experiment.log_table(tabular_data=confident_predictions, filename="confident_predictions.csv")
         self.comet_logger.experiment.log_table(tabular_data=uncertain_predictions, filename="uncertain_predictions.csv") 
@@ -771,117 +981,14 @@ class Pipeline:
         print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
         print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")
 
-        # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
-        final_predictions = flightline_predictions.copy(deep=True)
-        final_predictions["set"] = "prediction"
-        final_predictions["flight_name"] = self._flight_name()
-
-        # Add in the existing training and validation annotations
-        if self.existing_training is not None:
-            existing_training = self.existing_training.copy(deep=True)
-            existing_training["set"] = "train"
-            # Change label to cropmodel_label
-            existing_training.rename(columns={"label": "cropmodel_label"}, inplace=True)
-            # Add a cropmodel_score column
-            existing_training["cropmodel_score"] = 2.0
-            # Add an object score
-            existing_training["label"] = "Object"
-            existing_training["score"] = 2.0
-
-            if self.config.debug:
-                existing_training = existing_training[:10]
-
-            final_predictions = pd.concat([final_predictions, existing_training], ignore_index=True)
-
-        if self.existing_validation is not None:
-            existing_validation = self.existing_validation.copy(deep=True)
-            existing_validation["set"] = "validation"
-            # Change label to cropmodel_label
-            existing_validation.rename(columns={"label": "cropmodel_label"}, inplace=True)
-            # Add a cropmodel_score column
-            existing_validation["cropmodel_score"] = 2.0
-
-            # Add an object score
-            existing_validation["label"] = "Object"
-            existing_validation["score"] = 2.0
-
-            if self.config.debug:
-                existing_validation = existing_validation[:10]
-            final_predictions = pd.concat([final_predictions, existing_validation], ignore_index=True)
-
-        # Add in the human reviewed annotations
-        if self.existing_reviewed is not None:
-            existing_reviewed = self.existing_reviewed.copy(deep=True)
-            # Change label to cropmodel_label
-            existing_reviewed.rename(columns={"label": "cropmodel_label"}, inplace=True)
-            # Add a set column
-            existing_reviewed["cropmodel_score"] = 2.0
-            
-            #Set detection column
-            existing_reviewed["label"] = "Object"
-            # Add an object score
-            existing_reviewed["score"] = 2.0
-            existing_reviewed["set"] = "reviewed"
-
-            if self.config.debug:
-                existing_reviewed = existing_reviewed[:10]
-
-            final_predictions = pd.concat([final_predictions, existing_reviewed], ignore_index=True)
-        
-        # Reset index
-        final_predictions = final_predictions.reset_index(drop=True)
-
-        # add comet_id
-        final_predictions["comet_id"] = self.comet_logger.experiment.id
-        
-        # Remove False Positives and empty images
-        final_predictions = final_predictions[~final_predictions.cropmodel_label.isin(["FalsePositive", "0",0,"Object"])]
-
-        # Frames awaiting review keep their boxes for the Label Studio upload but not the report.
-        pre_holdout = final_predictions
-        held_rows = (
-            (final_predictions["set"] == "prediction")
-            & final_predictions.image_path.map(os.path.basename).isin(held_frames)
-        )
-        final_predictions = final_predictions[~held_rows]
         review_instances = {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}
-
+        pre_holdout, final_predictions = self._assemble_and_report(
+            flightline_predictions, held_frames,
+            provenance=self._provenance(actual_detection_checkpoint, mode="full pipeline"),
+        )
         if final_predictions.empty:
-            print("No predictions")
             self._upload_for_annotation(pre_holdout, review_instances, species_to_genus, actual_detection_checkpoint, held_frames)
             return None
-
-        # Add geospatial coordinates so the dashboard has lat/lon per detection
-        report_cfg = getattr(self.config, "report", None)
-        metadata_dir = getattr(report_cfg, "metadata_dir", None) if report_cfg else None
-        if metadata_dir:
-            try:
-                captures, img_w, img_h = load_geospatial_metadata(
-                    self._flight_name(), metadata_dir,
-                )
-                final_predictions = georeference_predictions(
-                    final_predictions, captures, img_w, img_h,
-                )
-            except FileNotFoundError:
-                print("Could not load geospatial metadata for final_predictions")
-
-        # Write crops to disk
-        image_paths = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
-
-        # crop_image_id
-        final_predictions["crop_image_id"] = image_paths
-        
-        # give it a complete tag
-        self.comet_logger.experiment.log_table(tabular_data=final_predictions, filename="final_predictions.csv")
-
-        # Generate report
-        if getattr(self.config, "report", None) and getattr(self.config.report, "enabled", False):
-            generate_report(
-                predictions=final_predictions,
-                config=self.config,
-                comet_logger=self.comet_logger,
-                image_dir=self.config.image_dir,
-            )
 
         # Flythrough video (uses cached pool_predictions) and upload to Comet
         flythrough_cfg = getattr(self.config, "flythrough_video", None)

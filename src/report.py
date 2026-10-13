@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 from io import BytesIO
@@ -124,6 +125,10 @@ def _species_color_map(species_list):
     }
 
 
+# Which rows a person labelled. The scores cannot say: human rows carry a placeholder 2.0.
+_SOURCE = {"train": "human", "validation": "human", "reviewed": "human", "prediction": "model"}
+
+
 def generate_observations_table(gdf, output_path):
     """Write a CSV table of every observation: det/cls score, predicted label, hierarchical label, lat/lon, image name."""
     lat = gdf.geometry.y
@@ -138,6 +143,8 @@ def generate_observations_table(gdf, output_path):
         "lon": lon.values,
         "image_name": image_name.values,
     })
+    if "set" in gdf.columns:
+        table["source"] = gdf["set"].map(_SOURCE).values
 
     # Consensus first: this is the label to report. predicted_label above is the
     # flat crop model alone, kept for traceability, not for counting.
@@ -171,6 +178,8 @@ def generate_observations_table_with_empty_frames(gdf, captures, output_path):
         "lon": lon.values,
         "image_name": image_name.values,
     })
+    if "set" in gdf.columns:
+        table["source"] = gdf["set"].map(_SOURCE).values
 
     # Consensus first: this is the label to report. predicted_label above is the
     # flat crop model alone, kept for traceability, not for counting.
@@ -679,7 +688,7 @@ def generate_pdf_report(gdf, predictions, crop_info, summary_map_path,
     return output_path
 
 
-def generate_report(predictions, config, comet_logger, image_dir):
+def generate_report(predictions, config, comet_logger, image_dir, provenance=None):
     """Build the full report folder and upload to Comet."""
     flight_name = os.path.basename(image_dir)
     report_dir = os.path.join(
@@ -775,6 +784,11 @@ def generate_report(predictions, config, comet_logger, image_dir):
         min_cls_score=min_cls_score,
         fullsize_example_path=fullsize_path,
     )
+
+    if provenance is not None:
+        provenance = {**provenance, "observations": gdf["set"].map(_SOURCE).value_counts().to_dict()}
+        with open(os.path.join(report_dir, "report_provenance.json"), "w") as f:
+            json.dump(provenance, f, indent=2)
 
     comet_logger.experiment.log_asset_folder(
         report_dir, log_file_name="report_" + flight_name,

@@ -2811,3 +2811,18 @@ Result: both COMPLETED exit 0 (17m34s / 17m10s). Frames: 389 labelled, 2,000 ran
 Outputs: /blue/ewhite/b.weinstein/BOEM/paired_{new_1968e962,old_a09c6933}/*_boxes.csv.
 Next (done): paired box matching (IoU>0.3) -> score shift per matched box, box counts per threshold, recall on confirmed July
 animals, and eyeball the new-only / old-only boxes in the loon/scoter/eider group.
+
+## 45790634 — 2026-10-13 — submit_regenerate_reports.sh '*JPG_202607*' — SUBMITTED
+Why: Ben asked to regenerate the July reports through the new report-only path (branch
+review-holdout-on-detector-change, 93e4035) instead of re-running detection. Goal: reports that carry the
+current Label Studio labels, hold unreviewed uncertain frames out (detector changed a09c6933 -> 1968e962 after
+the Aug 22 review queue), and ship report_provenance.json + a human/model `source` column.
+Annotations first: scripts/download_annotations.py re-pulled review = 426 boxes / 336 images / 20 flights
+(train/validation: none); backup sync 20 new, 0 changed.
+Config: ONE CPU job (4 cpu, 32 GB, 4 h), serial over the 20 flights, main.py report_only=True
+check_annotations=False flythrough_video.enabled=False. No model loaded, no Label Studio upload, caches untouched.
+OVERWRITES /blue/ewhite/b.weinstein/BOEM/imagery/reports/<flight>/ (the 2026-10-12 reports in
+July2026_flight_reports_20261012_v2.zip are preserved in that zip).
+Expect: 19 reports (131000 has no capture CSV); human rows unchanged; model rows on held frames removed
+(dry run on JPG_20260712_100400: 187 -> 145 rows, 42 model rows on 41 frames held).
+Next: check log for FAILED lines, compare row counts per flight against the v2 zip, then decide on a v3 zip.

@@ -2826,3 +2826,13 @@ July2026_flight_reports_20261012_v2.zip are preserved in that zip).
 Expect: 19 reports (131000 has no capture CSV); human rows unchanged; model rows on held frames removed
 (dry run on JPG_20260712_100400: 187 -> 145 rows, 42 model rows on 41 frames held).
 Next: check log for FAILED lines, compare row counts per flight against the v2 zip, then decide on a v3 zip.
+Result (45790634): COMPLETED 33m07s, exit 0:0, no FAILED lines. 19/19 reports regenerated 2026-10-13 (131000: no capture
+CSV, as expected). Checked against July2026_flight_reports_20261012_v2.zip, per flight: human rows identical in all 19;
+model rows identical apart from held frames in all 19. Totals 994 -> 606 rows = 475 human + 131 model; 388 model rows
+on held frames removed (top: Chelonioidea sp 56, Tursiops truncatus 43, Larus delawarensis 32, Somateria mollissima 30,
+Clangula hyemalis 28). 382 frames held across the 20 flights. Loon/scoter/eider now: Gavia 6 (5 human), Melanitta 4
+(1 human), Somateria 68 (48 human) -- 24 model rows remain because classifier and H-CAST agree confidently.
+Known noise: two "Error processing image" crop lines for the label "Larus delawarensis/argentatus" (slash in filename);
+same error is in the 2026-10-06 logs, not new.
+Next: the 382 held frames are NOT in Label Studio -- report_only never uploads. Queue them (full pipeline upload or a
+one-off upload from the caches) before the held rows can return; no v3 zip built yet.

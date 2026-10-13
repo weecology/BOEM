@@ -6,6 +6,8 @@ from omegaconf import DictConfig
 from src.active_learning import (
     generate_pool_predictions,
     human_review,
+    review_holdout,
+    write_review_provenance,
     load_species_to_genus_from_csv,
     select_images,
 )
@@ -365,6 +367,39 @@ class Pipeline:
         self.comet_logger.experiment.log_parameter("full_flight_n_images", len(images_to_upload))
         print(f"Full flight upload complete: {len(images_to_upload)} images uploaded.")
 
+    def _upload_for_annotation(self, predictions, instances, species_to_genus, detector, held_frames):
+        """Upload each instance's images with their preannotations, then stamp the review provenance."""
+        for instance, image_basenames in instances.items():
+            if len(image_basenames) == 0:
+                print(f"No images to upload for instance {instance}, skipping")
+                continue
+
+            image_paths = [os.path.join(self.config.image_dir, x) for x in image_basenames]
+            # Normalize image_path in predictions to basenames for comparison
+            predictions_normalized = predictions.copy()
+            predictions_normalized["image_path_basename"] = predictions_normalized["image_path"].apply(
+                lambda x: os.path.basename(x) if os.path.sep in str(x) else x
+            )
+            preannotations_df = predictions_normalized[
+                predictions_normalized["image_path_basename"].isin(image_basenames)
+            ].copy(deep=True)
+
+            # As a dict with basename as key (matching what SageMaker upload expects)
+            preannotations = {}
+            for basename, group in preannotations_df.groupby("image_path_basename"):
+                # Ensure image_path column uses basename for manifest writing
+                group = group.copy()
+                group["image_path"] = basename
+                # Use basename as key to match the format expected by SageMaker upload
+                preannotations[basename] = group.drop(columns=["image_path_basename"], errors="ignore")
+            self.annotator.upload(
+                images=image_paths,
+                instance_name=instance,
+                preannotations=preannotations,
+                species_to_genus=species_to_genus if species_to_genus else None,
+            )
+        write_review_provenance(self.config.image_dir, detector, held_frames)
+
     def run(self):
         # Check for new annotations if the check_annotations flag is set
         status = self.check_annotations()
@@ -703,7 +738,20 @@ class Pipeline:
         self.comet_logger.experiment.log_table(tabular_data=confident_predictions, filename="confident_predictions.csv")
         self.comet_logger.experiment.log_table(tabular_data=uncertain_predictions, filename="uncertain_predictions.csv") 
 
-        # Human review 
+        # Reviews only hold for the detector whose boxes the human saw. After a detector change,
+        # every uncertain frame is queued (no cap) and withheld from the report until reviewed.
+        detector_changed, held_frames = review_holdout(
+            image_dir=self.config.image_dir,
+            detector=actual_detection_checkpoint,
+            uncertain_images=uncertain_predictions.image_path.unique(),
+            pool_images=flightline_predictions.image_path.unique(),
+            has_reviews=self.existing_reviewed is not None and not self.existing_reviewed.empty,
+        )
+        if detector_changed:
+            print(f"Detector changed since the last review queue: queueing all uncertain frames, "
+                  f"holding {len(held_frames)} frames out of the report until reviewed")
+
+        # Human review
         if len(uncertain_predictions) == 0:
             print("No images to review")
             review_images_to_annotate = []
@@ -718,7 +766,7 @@ class Pipeline:
             ).isin(["disagreement", "both"])
             review_images_to_annotate = queue.sort_values(
                 by=["_disagrees", "score"], ascending=[True, False]
-            ).head(self.config.human_review.n)["image_path"].unique()
+            ).head(len(queue) if detector_changed else self.config.human_review.n)["image_path"].unique()
 
         print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
         print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")
@@ -789,8 +837,18 @@ class Pipeline:
         # Remove False Positives and empty images
         final_predictions = final_predictions[~final_predictions.cropmodel_label.isin(["FalsePositive", "0",0,"Object"])]
 
+        # Frames awaiting review keep their boxes for the Label Studio upload but not the report.
+        pre_holdout = final_predictions
+        held_rows = (
+            (final_predictions["set"] == "prediction")
+            & final_predictions.image_path.map(os.path.basename).isin(held_frames)
+        )
+        final_predictions = final_predictions[~held_rows]
+        review_instances = {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}
+
         if final_predictions.empty:
             print("No predictions")
+            self._upload_for_annotation(pre_holdout, review_instances, species_to_genus, actual_detection_checkpoint, held_frames)
             return None
 
         # Add geospatial coordinates so the dashboard has lat/lon per detection
@@ -874,36 +932,7 @@ class Pipeline:
             except Exception as e:
                 print(f"Flythrough video failed (non-fatal): {e}")
 
-        # Use generic annotator to upload for each instance
-        for instance, image_basenames in {"train": train_images_to_annotate, "validation": test_images_to_annotate, "review": review_images_to_annotate}.items():
-            if len(image_basenames) == 0:
-                print(f"No images to upload for instance {instance}, skipping")
-                continue
-
-            image_paths = [os.path.join(self.config.image_dir, x) for x in image_basenames]
-            # Normalize image_path in final_predictions to basenames for comparison
-            final_predictions_normalized = final_predictions.copy()
-            final_predictions_normalized["image_path_basename"] = final_predictions_normalized["image_path"].apply(
-                lambda x: os.path.basename(x) if os.path.sep in str(x) else x
-            )
-            preannotations_df = final_predictions_normalized[
-                final_predictions_normalized["image_path_basename"].isin(image_basenames)
-            ].copy(deep=True)
-
-            # As a dict with basename as key (matching what SageMaker upload expects)
-            preannotations = {}
-            for basename, group in preannotations_df.groupby("image_path_basename"):
-                # Ensure image_path column uses basename for manifest writing
-                group = group.copy()
-                group["image_path"] = basename
-                # Use basename as key to match the format expected by SageMaker upload
-                preannotations[basename] = group.drop(columns=["image_path_basename"], errors="ignore")
-            self.annotator.upload(
-                images=image_paths,
-                instance_name=instance,
-                preannotations=preannotations,
-                species_to_genus=species_to_genus if species_to_genus else None,
-            )
+        self._upload_for_annotation(pre_holdout, review_instances, species_to_genus, actual_detection_checkpoint, held_frames)
 
         self.comet_logger.experiment.add_tag("complete")
         return None

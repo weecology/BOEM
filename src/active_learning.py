@@ -231,6 +231,42 @@ def human_review(
     return confident_predictions, uncertain_predictions
 
 
+def review_holdout(
+    image_dir: str,
+    detector: str,
+    uncertain_images,
+    pool_images,
+    has_reviews: bool,
+) -> tuple[bool, set[str]]:
+    """
+    Decide which frames must stay out of the report until a human has reviewed them.
+
+    Reviews are only valid for the detector that produced the boxes the human saw. The
+    flight records the detector of the last review queue in ``.review_provenance.json``; when
+    the current detector differs (or the flight has reviews but no record, i.e. they predate
+    this check), every uncertain frame is held out and must be queued in full, ignoring
+    human_review.n. Frames still pending from an earlier hold-out stay held until they are
+    reviewed -- reviewed frames leave the pool, so they drop out of ``pending`` on their own.
+
+    Returns:
+        tuple: (detector_changed, basenames to hold out of final predictions).
+    """
+    path = Path(image_dir) / ".review_provenance.json"
+    provenance = json.loads(path.read_text()) if path.exists() else None
+    changed = (provenance["detector"] != detector) if provenance else has_reviews
+    held = {os.path.basename(p) for p in uncertain_images} if changed else set()
+    if provenance:
+        held |= set(provenance["pending"]) & {os.path.basename(p) for p in pool_images}
+    return changed, held
+
+
+def write_review_provenance(image_dir: str, detector: str, pending) -> None:
+    """Record the detector behind the review queue just uploaded, and the frames still unreviewed."""
+    (Path(image_dir) / ".review_provenance.json").write_text(
+        json.dumps({"detector": detector, "pending": sorted(pending)}, indent=2)
+    )
+
+
 def generate_pool_predictions(
     pool,
     patch_size=512,

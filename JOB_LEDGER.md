@@ -2836,3 +2836,30 @@ Known noise: two "Error processing image" crop lines for the label "Larus delawa
 same error is in the 2026-10-06 logs, not new.
 Next: the 382 held frames are NOT in Label Studio -- report_only never uploads. Queue them (full pipeline upload or a
 one-off upload from the caches) before the held rows can return; no v3 zip built yet.
+
+## 45924470-45924495 — 2026-10-14 — regenerate EVERY reportable flight after the FalsePositive-label fix — SUBMITTED
+Why: Ben found a FalsePositive crop (JPG_20260712_113200 C3_L1_F118, "Chroicocephalus philadelphia") shipped as a
+human-verified row. Root cause: a box rejected in Label Studio keeps the model's prefilled species in the per-region
+taxonomy; convert_json_to_dataframe emitted both rows, the pipeline dropped the FalsePositive one and kept the species.
+1,027 boxes / 220 frames / 65 flights in the newest downloads; July: 103 boxes / 10 frames, incl. all 48 human eiders.
+prepare_USGS read the same CSVs, so these were training positives too. Fixed in 18f5ab3 (parser by region id;
+read_label_studio_csvs for existing CSVs, shared by gather_data and prepare_USGS). Ben: "regenerate all reports for
+any flight we have, this is serious."
+Annotations first: download_annotations.py -> review 425 rows / 336 images / 20 flights (426 yesterday: the 1-row drop
+is the fix collapsing a FalsePositive+Sterninae box on JPG_20260711_131000 C7_L2_F1307, not an edit). Backup 20 new, 0 changed.
+Scope: 32 flights with imagery; 27 have a capture CSV (the 5 without -- 20241219_120500/131500/150200,
+20260202_141900, 20260711_131000 -- cannot produce a report).
+ (a) 19 July flights: caches are 1968e962 + a3dc30a0 -> report-only, one CPU job.
+ (b) 8 older flights (20241219_160100, _164400, 20241220_104800, _145900, 20260201_093500, _134000, 20260202_094800,
+     _122400; 320,081 images): caches are detector a1c56496 with no classifier stamp, so report-only refuses ->
+     full pipeline on B200, one job each, --time 12:00:00. Overrides: human_review.n=0 active_learning.n_images=0
+     active_testing.n_images=0 flythrough_video.enabled=False (no Label Studio upload; n=0 is honoured after a detector
+     change as of 18f5ab3) and pipeline_evaluation.detection_true_positive_threshold=1.01 -- without it a flight whose
+     validation recall > 0.8 exits at check_success() BEFORE the report step and silently keeps its stale report.
+     Detector changes a1c56496 -> 1968e962 on flights with reviews, so uncertain frames are held out of these reports.
+     Overwrites their .prediction_cache (old caches are disposable per project_detection_band_070_final).
+Job IDs: (a) 45924470 report-only, 19 July flights. (b) 45924471 JPG_20241219_160100, 45924472 JPG_20241219_164400,
+45924474 JPG_20241220_104800, 45924480 JPG_20241220_145900, 45924482 JPG_20260201_093500, 45924493 JPG_20260201_134000,
+45924494 JPG_20260202_094800, 45924495 JPG_20260202_122400.
+Next: per flight, confirm report dated 2026-10-14 with report_provenance.json; no human row may sit on a box whose
+newest annotation is FalsePositive; then build a v4 zip of all 27.

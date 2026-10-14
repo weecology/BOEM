@@ -54,6 +54,7 @@ import pandas as pd
 import PIL.Image
 import torch
 from deepforest.utilities import read_file
+from src.annotators import read_label_studio_csvs
 
 # --- Paths ---
 ANNOTATIONS_BASE = "/blue/ewhite/b.weinstein/BOEM/annotations"
@@ -687,8 +688,10 @@ def create_train_test_split(
     reviewed_csvs = glob.glob(os.path.join(ANNOTATIONS_BASE, "review", "*", "*.csv"))
     val_csvs = glob.glob(os.path.join(ANNOTATIONS_BASE, "validation", "*", "*.csv"))
 
-    flight_train = pd.concat([pd.read_csv(x) for x in train_csvs + reviewed_csvs])
-    flight_val = pd.concat([pd.read_csv(x) for x in val_csvs])
+    # Not plain read_csv: a rejected box would come back as its prefilled species, and a
+    # relabelled one under both labels (see read_label_studio_csvs).
+    flight_train = pd.concat([read_label_studio_csvs(train_csvs), read_label_studio_csvs(reviewed_csvs)])
+    flight_val = read_label_studio_csvs(val_csvs)
 
     # NOTE: do NOT filter or transform flight_annotations here. The
     # consolidated hard-negative split runs once below (after combined_train /

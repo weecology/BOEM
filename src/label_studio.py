@@ -255,6 +255,7 @@ def convert_json_to_dataframe(x):
 
         # Create dictionary
         result = {
+            "region": annotation.get("id", f"_{len(results)}"),
             "xmin": xmin,
             "ymin": ymin,
             "xmax": xmax,
@@ -266,6 +267,13 @@ def convert_json_to_dataframe(x):
         results.append(result)
 
     df = pd.DataFrame(results)
+
+    # A region carries a rectangle label (Object / FalsePositive) and a per-region taxonomy
+    # prefilled with the model's species. Rejecting the box changes only the rectangle label,
+    # so FalsePositive must override the species left in the dropdown.
+    rejected = df.groupby("region")["label"].transform(lambda s: (s == "FalsePositive").any())
+    df.loc[rejected, "label"] = "FalsePositive"
+    df = df.drop(columns="region").drop_duplicates()
 
     # Drop the 'Object' labels for the taxonomy row
     df = df[~(df.label == "Object")]

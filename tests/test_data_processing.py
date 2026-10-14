@@ -140,3 +140,26 @@ def test_gather_data_newest_download_replaces_the_frame(tmp_path):
 
     df = gather_data(str(tmp_path), str(tmp_path))
     assert dict(zip(df.image_path, df.label)) == {"a.jpg": "Fregata magnificens", "b.jpg": "Larus argentatus"}
+
+
+def test_rejected_box_is_false_positive_not_its_prefilled_species(tmp_path):
+    """Rejecting a box in Label Studio changes the rectangle label to FalsePositive but leaves the
+    per-region taxonomy on the model's species. Both the parser and the reader of already-downloaded
+    CSVs must resolve that box to FalsePositive, or the rejection reaches reports as a human label."""
+    import pandas as pd
+    from src.annotators import gather_data
+    from src.label_studio import convert_json_to_dataframe
+
+    value = dict(x=10, y=10, width=5, height=5)
+    region = lambda id, **v: dict(id=id, original_width=100, original_height=100, value={**value, **v})
+    parsed = convert_json_to_dataframe([
+        region("r1", rectanglelabels=["FalsePositive"]), region("r1", taxonomy=[["Aves", "Somateria mollissima"]]),
+        region("r2", rectanglelabels=["Object"]), region("r2", taxonomy=[["Aves", "Larus argentatus"]]),
+    ])
+    assert sorted(parsed.label) == ["FalsePositive", "Larus argentatus"]
+
+    box = dict(xmin=10, ymin=10, xmax=50, ymax=50, image_path="a.jpg", annotator="a", flight_name="f")
+    pd.DataFrame([{**box, "label": "FalsePositive"}, {**box, "label": "Somateria mollissima"},
+                  {**box, "xmin": 60, "xmax": 90, "label": "Larus argentatus"}]).to_csv(tmp_path / "20260822_142510.csv", index=False)
+    df = gather_data(str(tmp_path), str(tmp_path))
+    assert sorted(df.label) == ["FalsePositive", "Larus argentatus"]

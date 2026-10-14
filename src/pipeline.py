@@ -974,9 +974,13 @@ class Pipeline:
             queue["_disagrees"] = ~queue.get(
                 "review_reason", pd.Series("", index=queue.index)
             ).isin(["disagreement", "both"])
+            # After a detector change the whole queue goes up, except that n=0 still means
+            # "touch no Label Studio project" (the fan-out recipe). Held frames stay out of the
+            # report either way.
+            n = len(queue) if detector_changed and self.config.human_review.n > 0 else self.config.human_review.n
             review_images_to_annotate = queue.sort_values(
                 by=["_disagrees", "score"], ascending=[True, False]
-            ).head(len(queue) if detector_changed else self.config.human_review.n)["image_path"].unique()
+            ).head(n)["image_path"].unique()
 
         print(f"Images requiring human review: {len(uncertain_predictions.image_path.unique())}")
         print(f"Images auto-annotated: {len(confident_predictions.image_path.unique())}")

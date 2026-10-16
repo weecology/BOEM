@@ -2873,9 +2873,13 @@ cluster network outage on 2026-10-14 ~14:40-15:00 (NameResolutionError, SLURM co
  - 45924472/74/80/82/94/95: reports regenerated 2026-10-14. 104800 held 29 frames after the detector change.
 Next: resubmit the 10 July flights (report-only) and 134000 (full, B200).
 
-## 46226469 + 46226476 — 2026-10-16 — resubmit the outage casualties of 45924470/45924493 — SUBMITTED
+## 46226882 + 46226883 (were 46226469 + 46226476) — 2026-10-16 — resubmit the outage casualties of 45924470/45924493 — SUBMITTED
 Why: finish the all-flights regeneration after the FalsePositive-label fix (see 45924470-45924495).
-46226469: report-only for the 10 July flights listed above (one CPU job). 46226476: JPG_20260201_134000 full pipeline on B200,
+46226882: report-only for the 10 July flights listed above (one CPU job). 46226883: JPG_20260201_134000 full pipeline on B200,
 same overrides as 45924493. Annotations re-pulled and backed up just before submitting.
 Next: run the per-flight verification (human rows == corrected annotations, nothing from a rejected box) over all 26
 reports, then build the v4 zip.
+46226469 FAILED at launch (exit 0:53, no log) and 46226476 was cancelled before it ran: /home/b.weinstein is 100% full
+(40G/40G), so SLURM could not create /home/b.weinstein/logs/*.out. Cause: ~25.5 GB of Pylance crash core dumps in
+~/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist/core.MainThread-* (Oct 6, 14, 16 x2); not deleted,
+waiting on Ben. Resubmitted as 46226882/46226883 with logs in /blue/ewhite/b.weinstein/BOEM/slurm_logs/.

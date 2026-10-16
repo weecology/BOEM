@@ -2863,3 +2863,19 @@ Job IDs: (a) 45924470 report-only, 19 July flights. (b) 45924471 JPG_20241219_16
 45924494 JPG_20260202_094800, 45924495 JPG_20260202_122400.
 Next: per flight, confirm report dated 2026-10-14 with report_provenance.json; no human row may sit on a box whose
 newest annotation is FalsePositive; then build a v4 zip of all 27.
+Result (45924470-45924495), checked 2026-10-16: all 9 COMPLETED exit 0:0, but exit 0 hides two failures, both from the
+cluster network outage on 2026-10-14 ~14:40-15:00 (NameResolutionError, SLURM controller unreachable):
+ - 45924470 report-only: 9/19 July reports regenerated (155800 .. 092800); the last 10 (100400 .. 160300) FAILED at startup
+   connecting to Label Studio/Comet. Those 10 reports are still the 2026-10-13 versions WITH the FalsePositive bug.
+ - 45924493 JPG_20260201_134000: failed after 50 s in create_sftp_client (throughput rc=1); report still from 2026-05-18.
+ - 45924471 JPG_20241219_160100: ran, 0 boxes >= 0.70 on 865 frames and no surviving human species rows -> "No
+   predictions", no report (it never had one).
+ - 45924472/74/80/82/94/95: reports regenerated 2026-10-14. 104800 held 29 frames after the detector change.
+Next: resubmit the 10 July flights (report-only) and 134000 (full, B200).
+
+## 46226469 + 46226476 — 2026-10-16 — resubmit the outage casualties of 45924470/45924493 — SUBMITTED
+Why: finish the all-flights regeneration after the FalsePositive-label fix (see 45924470-45924495).
+46226469: report-only for the 10 July flights listed above (one CPU job). 46226476: JPG_20260201_134000 full pipeline on B200,
+same overrides as 45924493. Annotations re-pulled and backed up just before submitting.
+Next: run the per-flight verification (human rows == corrected annotations, nothing from a rejected box) over all 26
+reports, then build the v4 zip.

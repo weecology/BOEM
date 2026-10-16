@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,image_path,annotator,flight_name
+2270.0,1635.0,2469.0,1817.0,Fregata magnificens,C1_L2_F719_T20260712_094443_319.jpg," benweinstein2010@gmail.com, 2",JPG_20260712_092800
+519.6798759657534,4261.988234764189,612.6798759657532,4340.988234764188,Phalacrocorax auritus,C4_L4_F1787_T20260712_095736_695.jpg," benweinstein2010@gmail.com, 2",JPG_20260712_092800
+2175.0,2298.0,2276.0,2391.0,Phalacrocorax auritus,C4_L4_F1880_T20260712_095843_195.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_092800
+269.99999999999994,1307.0,515.0,1482.0000000000002,Fregata magnificens,C7_L2_F299_T20260712_094003_293.jpg," benweinstein2010@gmail.com, 2",JPG_20260712_092800

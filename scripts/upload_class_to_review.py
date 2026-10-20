@@ -204,8 +204,8 @@ def main() -> None:
 
     selected["cropmodel_label"] = selected["label"]
     selected["label"] = "Object"
-    selected["score"] = 2.0
-    selected["cropmodel_score"] = 2.0
+    selected["score"] = float("nan")  # human labels: no model score
+    selected["cropmodel_score"] = float("nan")
     selected["comet_id"] = "usgs_qc_upload"
 
     preannotations = {}

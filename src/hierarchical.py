@@ -434,30 +434,9 @@ def infer_head_sizes_from_checkpoint(checkpoint_path: str) -> List[int]:
 
 CONSENSUS_RANKS = ("verified", "species", "genus", "family", "unresolved")
 
-# `set` values that mark a row as a human annotation rather than a model prediction.
-# src/pipeline.py concatenates these into final_predictions alongside the model pool.
-HUMAN_SETS = frozenset({"train", "validation", "reviewed"})
-
-
 def _is_human_row(row) -> bool:
-    """True for a human annotation, which is never rolled up.
-
-    Preferred signal is the `set` column written by pipeline.py. The score==2.0
-    sentinel is the fallback for callers that drop `set` (pipeline.py assigns 2.0
-    to train/reviewed rows; validation rows may carry neither, hence both checks).
-    """
-    st = row.get("set")
-    if st is not None and not pd.isna(st) and str(st) in HUMAN_SETS:
-        return True
-    for key in ("cropmodel_score", "score"):
-        val = row.get(key)
-        if val is not None and not pd.isna(val):
-            try:
-                if float(val) >= 2.0:
-                    return True
-            except (TypeError, ValueError):
-                pass
-    return False
+    """True for a human annotation (``human_reviewed``, set by src/pipeline.py), which is never rolled up."""
+    return bool(row.get("human_reviewed", False))
 
 
 def load_species_to_ranks(
@@ -561,24 +540,24 @@ def resolve_row_rank(row, species_to_genus, species_to_family):
       ``consensus_label`` for traceability but the rank marks it as unsupported,
       so downstream counts can exclude it.
 
-    Human annotations short-circuit the whole ladder at ``verified`` — their label
-    is kept regardless of any model prediction, and never demoted by
+    Human annotations short-circuit the whole ladder at ``verified`` — their
+    ``human_label`` is kept regardless of any model prediction (``cropmodel_label``
+    on a human row is what the model proposed), and never demoted by
     ``min_consensus_score``.
 
     When the H-CAST columns are absent or null the row passes through at
     ``species`` rank with the crop label, preserving pre-rollup behaviour for
     runs with ``hierarchical.checkpoint: null``.
     """
+    # A human annotation is ground truth: keep its label exactly, whatever any
+    # model says. Score is NaN because "confidence" is meaningless here.
+    if _is_human_row(row):
+        return row["human_label"], "verified", float("nan")
+
     crop = row.get("cropmodel_label")
     if crop is None or pd.isna(crop):
         return None, "unresolved", float("nan")
     crop = str(crop)
-
-    # A human annotation is ground truth: keep its label exactly, whatever any
-    # model says. Score is NaN because "confidence" is meaningless here, and
-    # carrying the 2.0 sentinel would poison mean_score in the summary.
-    if _is_human_row(row):
-        return crop, "verified", float("nan")
 
     crop_score = _score(row, "cropmodel_score")
 

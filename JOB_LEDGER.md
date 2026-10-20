@@ -2933,3 +2933,24 @@ Result (46713226), checked 2026-10-20: COMPLETED 43m53s, exit 0:0, no Traceback/
 Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261019_v5.zip — 19 flights, no fullsize_example.png, 69.7 MB,
 770 files, integrity test passes. Crops are per-box tight crops (e.g. ~200-320 px), not full frames.
 Next: send v5; v4 (sample_crops layout) is superseded.
+
+## 46884306 — 2026-10-20 — report_only on JPG_20260712_100400 + JPG_20260713_101500 (branch human-reviewed-column) — SUBMITTED
+Why: end-to-end test of dropping the score=2.0 sentinel for human rows. Human rows now carry human_reviewed=True and
+human_label; their model columns are the model's view captured at Label Studio download (blank for all existing CSVs).
+Report score floors apply to model rows only. CSV/shapefile lead with final_label/final_rank/final_score/human_reviewed;
+predicted_label -> model_label, source dropped, crop_file added; crops named <image stem>__<box_id>_<final_label>.png;
+map draws human rows as squares. 100400 has train+validation+review rows. Baselines (2026-10-19 regen, job 46713226)
+copied to the session scratchpad before overwrite. One CPU job, 4 cpu / 32 GB / 1 h.
+Next: diff before/after — same row count and human-row count, model-row scores unchanged, final_label == human_label on
+every human row, crops count == rows, every crop_file exists.
+Result (46884306), checked 2026-10-20: COMPLETED, both flights reported, no Traceback/FAILED. Before/after (baselines from
+46713226), keyed on box_id (row set and sort unchanged, so ids align):
+ - JPG_20260712_100400: 112 rows before/after, 95 human / 17 model both; model det/cls/label identical; final_label ==
+   old consensus on model rows; final_label == human_label == old label on 95/95 human rows, all verified, det/cls blank;
+   112 crops == rows, every crop_file exists, crop stem == image stem; shapefile 112 rows; map 95 squares + 17 circles.
+ - JPG_20260713_101500: 64 rows, 45 human / 19 model; same checks all pass (45/45).
+ - with-empty-frames tables: identical row counts (43,099 / 48,576).
+One pre-existing error in the log: the Comet crops.zip writer (src/visualization.py:write_crops) failed on the
+'Larus delawarensis/argentatus' label ('/' in filename) -- fixed on the branch, not re-run.
+Next: PR human-reviewed-column; after merge, regenerate all flight reports (submit_regenerate_reports.sh).
+

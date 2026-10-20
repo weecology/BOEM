@@ -125,76 +125,67 @@ def _species_color_map(species_list):
     }
 
 
-# Which rows a person labelled. The scores cannot say: human rows carry a placeholder 2.0.
-_SOURCE = {"train": "human", "validation": "human", "reviewed": "human", "prediction": "model"}
+def add_final_label(gdf):
+    """Add final_label / final_rank / final_score: the one label to use for each box.
+
+    A human-reviewed box takes the human's label at rank ``verified``. A model box takes the
+    taxonomic consensus when the rollup ran, otherwise the classifier's label at species rank.
+    """
+    if "consensus_label" in gdf.columns:
+        return gdf.assign(final_label=gdf["consensus_label"], final_rank=gdf["consensus_rank"],
+                          final_score=gdf["consensus_score"])
+    human = gdf["human_reviewed"]
+    return gdf.assign(
+        final_label=gdf["human_label"].where(human, gdf["cropmodel_label"]),
+        final_rank=np.where(human, "verified", "species"),
+        final_score=gdf["cropmodel_score"].where(~human),
+    )
+
+
+def crop_filename(image_path, box_id, label):
+    """`<image stem>__<box_id>_<label>.png`: the parent image is everything before the double underscore."""
+    stem = os.path.splitext(os.path.basename(str(image_path)))[0]
+    return f"{stem}__{box_id:05d}_{str(label).replace(' ', '_').replace('/', '-')}.png"
+
+
+def _observations(gdf):
+    """One row per box. final_label is the label to use; the columns after crop_file are traceability.
+
+    human_label is the annotator's label. model_label / det_score / cls_score are what the models
+    said -- on a human-reviewed row, what they proposed for the box before review (blank when
+    not recorded, see src/label_studio.py:model_view_of_regions).
+    """
+    table = pd.DataFrame({
+        "box_id": gdf["box_id"].values,
+        "final_label": gdf["final_label"].values,
+        "final_rank": gdf["final_rank"].values,
+        "final_score": gdf["final_score"].values,
+        "human_reviewed": gdf["human_reviewed"].values,
+        "human_label": gdf["human_label"].values,
+        "lat": gdf.geometry.y.values,
+        "lon": gdf.geometry.x.values,
+        "image_name": gdf["image_path"].apply(lambda p: os.path.basename(str(p))).values,
+        "crop_file": gdf["crop_file"].values,
+        "model_label": gdf["cropmodel_label"].values,
+        "det_score": gdf["score"].values,
+        "cls_score": gdf["cropmodel_score"].values,
+    })
+    for col in ("hcast_species", "hcast_genus", "hcast_family"):
+        if col in gdf.columns:
+            table[col] = gdf[col].values
+    return table
 
 
 def generate_observations_table(gdf, output_path):
-    """Write a CSV table of every observation: det/cls score, predicted label, hierarchical label, lat/lon, image name."""
-    lat = gdf.geometry.y
-    lon = gdf.geometry.x
-    image_name = gdf["image_path"].apply(lambda p: os.path.basename(str(p)))
-
-    table = pd.DataFrame({
-        "box_id": gdf["box_id"].values,
-        "det_score": gdf["score"].values,
-        "cls_score": gdf["cropmodel_score"].values,
-        "predicted_label": gdf["cropmodel_label"].values,
-        "lat": lat.values,
-        "lon": lon.values,
-        "image_name": image_name.values,
-    })
-    if "set" in gdf.columns:
-        table["source"] = gdf["set"].map(_SOURCE).values
-
-    # Consensus first: this is the label to report. predicted_label above is the
-    # flat crop model alone, kept for traceability, not for counting.
-    for col in ("consensus_label", "consensus_rank", "consensus_score"):
-        if col in gdf.columns:
-            table[col] = gdf[col].values
-
-    if "hcast_species" in gdf.columns:
-        table["hcast_species"] = gdf["hcast_species"].values
-    if "hcast_genus" in gdf.columns:
-        table["hcast_genus"] = gdf["hcast_genus"].values
-    if "hcast_family" in gdf.columns:
-        table["hcast_family"] = gdf["hcast_family"].values
-
-    table.to_csv(output_path, index=False)
+    """Write a CSV table of every observation."""
+    _observations(gdf).to_csv(output_path, index=False)
     print("Observations table written to " + output_path)
     return output_path
 
 
 def generate_observations_table_with_empty_frames(gdf, captures, output_path):
     """Write observations plus one blank row per capture frame without detections."""
-    lat = gdf.geometry.y
-    lon = gdf.geometry.x
-    image_name = gdf["image_path"].apply(lambda p: os.path.basename(str(p)))
-
-    table = pd.DataFrame({
-        "box_id": gdf["box_id"].values,
-        "det_score": gdf["score"].values,
-        "cls_score": gdf["cropmodel_score"].values,
-        "predicted_label": gdf["cropmodel_label"].values,
-        "lat": lat.values,
-        "lon": lon.values,
-        "image_name": image_name.values,
-    })
-    if "set" in gdf.columns:
-        table["source"] = gdf["set"].map(_SOURCE).values
-
-    # Consensus first: this is the label to report. predicted_label above is the
-    # flat crop model alone, kept for traceability, not for counting.
-    for col in ("consensus_label", "consensus_rank", "consensus_score"):
-        if col in gdf.columns:
-            table[col] = gdf[col].values
-
-    if "hcast_species" in gdf.columns:
-        table["hcast_species"] = gdf["hcast_species"].values
-    if "hcast_genus" in gdf.columns:
-        table["hcast_genus"] = gdf["hcast_genus"].values
-    if "hcast_family" in gdf.columns:
-        table["hcast_family"] = gdf["hcast_family"].values
+    table = _observations(gdf)
 
     image_name_map = {
         os.path.splitext(name)[0]: name
@@ -212,9 +203,6 @@ def generate_observations_table_with_empty_frames(gdf, captures, output_path):
 
         if not empty_frame_rows.empty:
             empty_rows = pd.DataFrame({
-                "det_score": np.nan,
-                "cls_score": np.nan,
-                "predicted_label": np.nan,
                 "lat": empty_frame_rows["Lat"].values,
                 "lon": empty_frame_rows["Lon"].values,
                 "image_name": empty_frame_rows["Basename"].astype(str).apply(
@@ -260,29 +248,29 @@ def generate_taxonomic_summary(gdf, output_path):
 
 def generate_shapefile(gdf, output_path):
     """Save GeoDataFrame as ESRI Shapefile with short column names."""
+    # Shapefile field names are capped at 10 characters.
     rename_map = {
-        "cropmodel_label": "species",
+        "final_label": "final_lbl",
+        "final_rank": "final_rank",
+        "final_score": "final_scr",
+        "human_reviewed": "human_rev",
+        "human_label": "human_lbl",
+        "cropmodel_label": "model_lbl",
         "cropmodel_score": "cls_score",
         "score": "det_score",
         "image_path": "image",
         "flight_name": "flight",
         "FlightLine": "flt_line",
-        "hcast_genus": "genus",
+        "hcast_genus": "hcast_gen",
         "hcast_species": "hcast_sp",
         "hcast_family": "hcast_fam",
-        "consensus_label": "cons_lbl",
-        "consensus_rank": "cons_rank",
-        "consensus_score": "cons_scr",
     }
-    export = gdf.copy()
-    for old, new in rename_map.items():
-        if old in export.columns:
-            export.rename(columns={old: new}, inplace=True)
+    export = gdf.rename(columns=rename_map)
 
     keep = [
-        "box_id", "cons_lbl", "cons_rank", "cons_scr",
-        "species", "det_score", "cls_score", "genus", "hcast_sp",
-        "hcast_fam", "image", "flight", "flt_line", "geometry",
+        "box_id", "final_lbl", "final_rank", "final_scr", "human_rev", "human_lbl",
+        "image", "crop_file", "model_lbl", "det_score", "cls_score", "hcast_sp", "hcast_gen",
+        "hcast_fam", "flight", "flt_line", "geometry",
     ]
     keep = [c for c in keep if c in export.columns]
     export = export[keep]
@@ -295,6 +283,29 @@ def generate_shapefile(gdf, output_path):
     export.to_file(output_path, driver="ESRI Shapefile")
     print("Shapefile written to " + output_path)
     return output_path
+
+
+_SQUARE_PX = 10
+
+_MARKER_LEGEND = """
+<div style="position: fixed; bottom: 24px; left: 12px; z-index: 9999; background: white;
+            padding: 6px 10px; border: 1px solid #999; border-radius: 4px; font: 12px sans-serif;">
+  <div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;
+       background:#777;margin-right:6px;"></span>Model (size = detection score)</div>
+  <div><span style="display:inline-block;width:10px;height:10px;background:#777;
+       border:1.5px solid #111;margin-right:6px;box-sizing:border-box;"></span>Human reviewed</div>
+</div>
+"""
+
+
+def _square_icon(color):
+    """Fixed-size outlined square, the map marker for a human-reviewed box."""
+    return folium.DivIcon(
+        html=(f'<div style="width:{_SQUARE_PX}px;height:{_SQUARE_PX}px;background:{color};'
+              'border:1.5px solid #111;box-sizing:border-box;"></div>'),
+        icon_size=(_SQUARE_PX, _SQUARE_PX),
+        icon_anchor=(_SQUARE_PX // 2, _SQUARE_PX // 2),
+    )
 
 
 def generate_interactive_map(gdf, captures, output_path):
@@ -329,40 +340,41 @@ def generate_interactive_map(gdf, captures, output_path):
                 name="Flight Path",
             ).add_to(m)
 
-    species_list = sorted(gdf["cropmodel_label"].dropna().unique())
+    species_list = sorted(gdf["final_label"].dropna().unique())
     colors = _species_color_map(species_list)
+    fmt = lambda v: ("{:.2f}".format(v) if isinstance(v, float) else str(v)) if pd.notna(v) else "not recorded"
 
     for sp in species_list:
         fg = folium.FeatureGroup(name=sp)
-        sp_data = gdf[gdf["cropmodel_label"] == sp]
         color = colors[sp]
 
-        for _, row in sp_data.iterrows():
-            det_score = float(row.get("score", 0))
-            cls_score = float(row.get("cropmodel_score", 0))
-            radius = 2 + 3 * det_score
-            opacity = max(0.4, min(1.0, cls_score))
-            img_name = os.path.basename(str(row.get("image_path", "")))
-
-            popup_html = (
-                "<b>" + sp + "</b><br>"
-                + "Detection: {:.2f}<br>".format(det_score)
-                + "Classification: {:.2f}<br>".format(cls_score)
-                + "Image: " + img_name
+        for _, row in gdf[gdf["final_label"] == sp].iterrows():
+            location = [row.geometry.y, row.geometry.x]
+            popup = folium.Popup(
+                "<b>" + sp + "</b> (" + str(row["final_rank"]) + ")<br>"
+                + ("Human reviewed<br>Model proposed: " + fmt(row["cropmodel_label"]) + "<br>"
+                   if row["human_reviewed"] else "")
+                + "Detection: " + fmt(row["score"]) + "<br>"
+                + "Classification: " + fmt(row["cropmodel_score"]) + "<br>"
+                + "Image: " + os.path.basename(str(row["image_path"])),
+                max_width=300,
             )
-
-            folium.CircleMarker(
-                location=[row.geometry.y, row.geometry.x],
-                radius=radius,
-                color=color,
-                fill=True,
-                fill_color=color,
-                fill_opacity=opacity,
-                popup=folium.Popup(popup_html, max_width=300),
-            ).add_to(fg)
+            if row["human_reviewed"]:
+                folium.Marker(location=location, icon=_square_icon(color), popup=popup).add_to(fg)
+            else:
+                folium.CircleMarker(
+                    location=location,
+                    radius=2 + 3 * float(row["score"]),
+                    color=color,
+                    fill=True,
+                    fill_color=color,
+                    fill_opacity=max(0.4, min(1.0, float(row["cropmodel_score"]))),
+                    popup=popup,
+                ).add_to(fg)
 
         fg.add_to(m)
 
+    m.get_root().html.add_child(folium.Element(_MARKER_LEGEND))
     folium.LayerControl(collapsed=False).add_to(m)
     m.save(output_path)
     print("Interactive map written to " + output_path)
@@ -402,7 +414,7 @@ def generate_summary_maps(gdf, output_path):
     fig.colorbar(hb1, ax=ax1, label="Detection count", shrink=0.7)
     ax1.set_title("Detection Abundance", fontsize=12)
 
-    species_codes = pd.Categorical(gdf["cropmodel_label"]).codes.astype(float)
+    species_codes = pd.Categorical(gdf["final_label"]).codes.astype(float)
     hb2 = ax2.hexbin(
         x, y, C=species_codes, gridsize=20, mincnt=1,
         reduce_C_function=lambda v: len(set(v)), cmap="viridis", zorder=2,
@@ -422,7 +434,7 @@ def generate_summary_maps(gdf, output_path):
 
 
 def export_crops(gdf, image_dir, output_dir, expand=60):
-    """Write one crop per box, named `<box_id>_<label>.png` so it joins to the CSV and shapefile on box_id."""
+    """Write one crop per box under its `crop_file` name (see crop_filename), which the CSV and shapefile carry."""
     # Filenames embed the label, so crops from an earlier run would linger under outdated labels.
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
@@ -437,13 +449,12 @@ def export_crops(gdf, image_dir, output_dir, expand=60):
                 if img.dtype != np.uint8:
                     p2, p98 = np.percentile(img, (2, 98))
                     img = np.clip((img.astype(float) - p2) / max(p98 - p2, 1e-6) * 255, 0, 255).astype(np.uint8)
-                label = str(row["cropmodel_label"]).replace(" ", "_").replace("/", "-")
-                Image.fromarray(img).save(os.path.join(output_dir, f"{row['box_id']:05d}_{label}.png"))
+                Image.fromarray(img).save(os.path.join(output_dir, row["crop_file"]))
 
 
 def create_fullsize_example_image(predictions, image_dir, output_path):
     """Create one full-size image with detection boxes and classification labels overlaid (RGB)."""
-    preds = predictions[predictions["cropmodel_label"].notna()].copy()
+    preds = predictions[predictions["final_label"].notna()].copy()
     if preds.empty:
         return None
     by_image = preds.groupby(preds["image_path"].apply(lambda p: os.path.basename(str(p)))).size()
@@ -475,9 +486,9 @@ def create_fullsize_example_image(predictions, image_dir, output_path):
         x2, y2 = int(row["xmax"]), int(row["ymax"])
         rect = plt.Rectangle((x1, y1), x2 - x1, y2 - y1, fill=False, edgecolor="lime", linewidth=2)
         ax.add_patch(rect)
-        label = "{} {:.2f}".format(
-            str(row.get("cropmodel_label", ""))[:20],
-            float(row.get("cropmodel_score", 0)),
+        label = "{} {}".format(
+            str(row["final_label"])[:20],
+            "human" if row["human_reviewed"] else "{:.2f}".format(row["cropmodel_score"]),
         )
         ax.text(x1, y1 - 4, label, color="white", fontsize=8,
                 bbox=dict(facecolor="black", alpha=0.7))
@@ -508,17 +519,17 @@ def _render_pdf_page1(pdf, gdf, species_list, colors, summary_map_path,
 
     # Legend: color only top 5 most common species; rest as "Other" (gray)
     top_n = 5
-    top_species = gdf["cropmodel_label"].value_counts().head(top_n).index.tolist()
+    top_species = gdf["final_label"].value_counts().head(top_n).index.tolist()
     other_species = [sp for sp in species_list if sp not in top_species]
     other_color = "#888888"
     for sp in top_species:
-        sp_data = gdf[gdf["cropmodel_label"] == sp]
+        sp_data = gdf[gdf["final_label"] == sp]
         ax_map.scatter(
             sp_data.geometry.x, sp_data.geometry.y,
             c=colors[sp], label=sp, s=6, alpha=0.7, edgecolors="none", zorder=2,
         )
     if other_species:
-        other_gdf = gdf[gdf["cropmodel_label"].isin(other_species)]
+        other_gdf = gdf[gdf["final_label"].isin(other_species)]
         ax_map.scatter(
             other_gdf.geometry.x, other_gdf.geometry.y,
             c=other_color, label="Other", s=6, alpha=0.7, edgecolors="none", zorder=2,
@@ -554,10 +565,7 @@ def _render_pdf_page2(pdf, predictions, species_list, colors,
         fontsize=16, fontweight="bold", y=0.98,
     )
 
-    if "set" in predictions.columns:
-        preds_only = predictions[predictions["set"] == "prediction"]
-    else:
-        preds_only = predictions
+    preds_only = predictions[~predictions["human_reviewed"]]
     species_counts = preds_only["cropmodel_label"].value_counts().sort_values()
 
     ax_bar = fig.add_axes([0.06, 0.55, 0.45, 0.38])
@@ -594,12 +602,9 @@ def generate_pdf_report(gdf, predictions, summary_map_path,
                         flight_name, output_path, min_det_score=None,
                         min_cls_score=None, fullsize_example_path=None):
     """Two-page PDF: maps on page 1, species summary on page 2."""
-    species_list = sorted(gdf["cropmodel_label"].dropna().unique())
+    species_list = sorted(gdf["final_label"].dropna().unique())
     colors = _species_color_map(species_list)
-    if "set" in predictions.columns:
-        preds_only = predictions[predictions["set"] == "prediction"]
-    else:
-        preds_only = predictions
+    preds_only = predictions[~predictions["human_reviewed"]]
     n_detections = len(preds_only)
     n_images_with_dets = preds_only["image_path"].nunique()
     flight_date = _flight_date_str(flight_name)
@@ -642,10 +647,13 @@ def generate_report(predictions, config, comet_logger, image_dir, provenance=Non
         print("Report: could not load geospatial metadata: " + str(e))
         return None
 
+    # Score floors apply to model boxes only: a human-reviewed box is kept whatever the model
+    # thought of it, and usually has no recorded model score at all.
     rp = predictions.copy()
-    rp = rp[rp["score"] >= min_score]
-    rp = rp[rp["cropmodel_score"] >= min_cls_score]
-    rp = rp[~rp["cropmodel_label"].isin(["FalsePositive", "0", 0, "Object"])]
+    human = rp["human_reviewed"]
+    label = rp["human_label"].where(human, rp["cropmodel_label"])
+    passes = human | ((rp["score"] >= min_score) & (rp["cropmodel_score"] >= min_cls_score))
+    rp = rp[passes & ~label.isin(["FalsePositive", "0", 0, "Object"])]
 
     if rp.empty:
         print("Report: no predictions pass score filters, skipping")
@@ -684,6 +692,8 @@ def generate_report(predictions, config, comet_logger, image_dir, provenance=Non
             species_to_family=species_to_family,
             min_consensus_score=getattr(rollup_cfg, "min_consensus_score", None),
         )
+    gdf = add_final_label(gdf)
+    gdf["crop_file"] = [crop_filename(*r) for r in zip(gdf["image_path"], gdf["box_id"], gdf["final_label"])]
 
     generate_observations_table(gdf, os.path.join(report_dir, "observations_table.csv"))
     generate_observations_table_with_empty_frames(
@@ -707,7 +717,7 @@ def generate_report(predictions, config, comet_logger, image_dir, provenance=Non
     export_crops(gdf, image_dir, os.path.join(report_dir, "crops"), expand=config.predict.buffer)
 
     fullsize_path = os.path.join(report_dir, "fullsize_example.png")
-    create_fullsize_example_image(rp, image_dir, fullsize_path)
+    create_fullsize_example_image(gdf, image_dir, fullsize_path)
 
     generate_pdf_report(
         gdf, predictions, summary_path, flight_name,
@@ -718,7 +728,8 @@ def generate_report(predictions, config, comet_logger, image_dir, provenance=Non
     )
 
     if provenance is not None:
-        provenance = {**provenance, "observations": gdf["set"].map(_SOURCE).value_counts().to_dict()}
+        provenance = {**provenance, "observations": {
+            "human_reviewed": int(gdf["human_reviewed"].sum()), "model": int((~gdf["human_reviewed"]).sum())}}
         with open(os.path.join(report_dir, "report_provenance.json"), "w") as f:
             json.dump(provenance, f, indent=2)
 

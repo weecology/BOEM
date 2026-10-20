@@ -163,3 +163,38 @@ def test_rejected_box_is_false_positive_not_its_prefilled_species(tmp_path):
                   {**box, "xmin": 60, "xmax": 90, "label": "Larus argentatus"}]).to_csv(tmp_path / "20260822_142510.csv", index=False)
     df = gather_data(str(tmp_path), str(tmp_path))
     assert sorted(df.label) == ["FalsePositive", "Larus argentatus"]
+
+
+def test_download_records_what_the_model_proposed_for_each_box(tmp_path):
+    """Label Studio keeps a prediction's region id when the annotator accepts or edits the box, so
+    the download carries the model's scores and label for it. A box the annotator drew has a new
+    id and no model view; a rejected box stays FalsePositive."""
+    from src.label_studio import download_completed_tasks
+
+    value = dict(x=10, y=10, width=5, height=5)
+    region = lambda id, **v: dict(id=id, original_width=100, original_height=100, value={**value, **v})
+    rect = lambda id, label, **kw: dict(region(id, rectanglelabels=[label]), type="rectanglelabels", **kw)
+    taxo = lambda id, sp, **kw: dict(region(id, taxonomy=[["Aves", sp]]), type="taxonomy", **kw)
+
+    task = dict(
+        id=1,
+        data=dict(image="a.jpg", flight_name="f"),
+        predictions=[dict(result=[
+            rect("region0", "Object", score=0.91), taxo("region0", "Larus argentatus", score=0.62),
+            rect("region1", "Object", score=0.75), taxo("region1", "Gavia immer", score=0.88),
+        ])],
+        annotations=[dict(created_username="a", result=[
+            rect("region0", "Object"), taxo("region0", "Larus marinus"),        # relabelled
+            rect("region1", "FalsePositive"), taxo("region1", "Gavia immer"),   # rejected
+            dict(region("drawn", rectanglelabels=["Object"]), type="rectanglelabels"),
+            dict(region("drawn", taxonomy=[["Aves", "Sterna hirundo"]]), type="taxonomy"),
+        ])],
+    )
+    project = type("Project", (), {"get_tasks": lambda self: [task]})()
+
+    df = download_completed_tasks(project, str(tmp_path)).set_index("label")
+    assert sorted(df.index) == ["FalsePositive", "Larus marinus", "Sterna hirundo"]
+    assert df.loc["Larus marinus", ["model_det_score", "model_label", "model_cls_score"]].tolist() == [0.91, "Larus argentatus", 0.62]
+    assert df.loc["FalsePositive", "model_label"] == "Gavia immer"
+    assert df.loc["Sterna hirundo", ["model_det_score", "model_label"]].isna().all()
+    assert "region" not in df.columns

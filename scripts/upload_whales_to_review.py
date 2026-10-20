@@ -139,8 +139,8 @@ def main() -> None:
 
     pool["cropmodel_label"] = pool["label"]
     pool["label"] = "Object"
-    pool["score"] = 2.0
-    pool["cropmodel_score"] = 2.0
+    pool["score"] = float("nan")  # human labels: no model score
+    pool["cropmodel_score"] = float("nan")
     pool["comet_id"] = "cetacean_qc_upload"
 
     preannotations: dict[str, pd.DataFrame] = {}

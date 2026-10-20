@@ -39,6 +39,27 @@ def _collect_images(image_dir: str) -> list[str]:
     return [p for ext in _IMAGE_EXTS for p in glob.glob(os.path.join(image_dir, f"*.{ext}"))]
 
 
+# Annotation CSV columns captured at Label Studio download -> the prediction columns they fill.
+_MODEL_VIEW = {"model_det_score": "score", "model_label": "cropmodel_label", "model_cls_score": "cropmodel_score"}
+
+
+def _human_rows(annotations: pd.DataFrame, set_name: str) -> pd.DataFrame:
+    """Human annotations in the predictions schema, flagged human_reviewed.
+
+    The human's label goes to human_label. The model columns hold what the model proposed for
+    the box, as recorded by ls_mod.model_view_of_regions; annotations downloaded before that
+    capture existed, and boxes the annotator drew, have none and stay NaN.
+    """
+    out = annotations.rename(columns={"label": "human_label", **_MODEL_VIEW})
+    missing = [c for c in _MODEL_VIEW.values() if c not in out]
+    return out.assign(**dict.fromkeys(missing, float("nan")), label="Object", set=set_name, human_reviewed=True)
+
+
+def _reported_label(predictions: pd.DataFrame) -> pd.Series:
+    """The human's label where a person reviewed the box, otherwise the classifier's."""
+    return predictions["human_label"].where(predictions["human_reviewed"], predictions["cropmodel_label"])
+
+
 class Pipeline:
     """Pipeline for training and evaluating a detection and classification model"""
     def __init__(self, cfg: DictConfig):
@@ -324,8 +345,8 @@ class Pipeline:
                 continue
             ann.rename(columns={"label": "cropmodel_label"}, inplace=True)
             ann["label"] = "Object"
-            ann["score"] = 2.0
-            ann["cropmodel_score"] = 2.0
+            ann["score"] = float("nan")
+            ann["cropmodel_score"] = float("nan")
             if "comet_id" not in ann.columns:
                 ann["comet_id"] = "human_annotation"
             for img_path, group in ann.groupby("image_path"):
@@ -509,71 +530,32 @@ class Pipeline:
         Returns:
             tuple: (predictions before the review hold-out, predictions that were reported).
         """
-        # Construct the final predictions, which are the existing train, test and human review overriding the auto-annotations
+        # Model predictions plus the train, validation and review annotations. Annotated frames are
+        # never in the pool, so no box appears twice.
         final_predictions = flightline_predictions.copy(deep=True)
         final_predictions["set"] = "prediction"
+        final_predictions["human_reviewed"] = False
+        final_predictions["human_label"] = None
         final_predictions["flight_name"] = self._flight_name()
 
-        # Add in the existing training and validation annotations
-        if self.existing_training is not None:
-            existing_training = self.existing_training.copy(deep=True)
-            existing_training["set"] = "train"
-            # Change label to cropmodel_label
-            existing_training.rename(columns={"label": "cropmodel_label"}, inplace=True)
-            # Add a cropmodel_score column
-            existing_training["cropmodel_score"] = 2.0
-            # Add an object score
-            existing_training["label"] = "Object"
-            existing_training["score"] = 2.0
-
-            if self.config.debug:
-                existing_training = existing_training[:10]
-
-            final_predictions = pd.concat([final_predictions, existing_training], ignore_index=True)
-
-        if self.existing_validation is not None:
-            existing_validation = self.existing_validation.copy(deep=True)
-            existing_validation["set"] = "validation"
-            # Change label to cropmodel_label
-            existing_validation.rename(columns={"label": "cropmodel_label"}, inplace=True)
-            # Add a cropmodel_score column
-            existing_validation["cropmodel_score"] = 2.0
-
-            # Add an object score
-            existing_validation["label"] = "Object"
-            existing_validation["score"] = 2.0
-
-            if self.config.debug:
-                existing_validation = existing_validation[:10]
-            final_predictions = pd.concat([final_predictions, existing_validation], ignore_index=True)
-
-        # Add in the human reviewed annotations
-        if self.existing_reviewed is not None:
-            existing_reviewed = self.existing_reviewed.copy(deep=True)
-            # Change label to cropmodel_label
-            existing_reviewed.rename(columns={"label": "cropmodel_label"}, inplace=True)
-            # Add a set column
-            existing_reviewed["cropmodel_score"] = 2.0
-            
-            #Set detection column
-            existing_reviewed["label"] = "Object"
-            # Add an object score
-            existing_reviewed["score"] = 2.0
-            existing_reviewed["set"] = "reviewed"
-
-            if self.config.debug:
-                existing_reviewed = existing_reviewed[:10]
-
-            final_predictions = pd.concat([final_predictions, existing_reviewed], ignore_index=True)
-        
-        # Reset index
-        final_predictions = final_predictions.reset_index(drop=True)
+        human = [
+            _human_rows(ann, set_name)
+            for ann, set_name in (
+                (self.existing_training, "train"),
+                (self.existing_validation, "validation"),
+                (self.existing_reviewed, "reviewed"),
+            )
+            if ann is not None
+        ]
+        if self.config.debug:
+            human = [h[:10] for h in human]
+        final_predictions = pd.concat([final_predictions, *human], ignore_index=True)
 
         # add comet_id
         final_predictions["comet_id"] = self.comet_logger.experiment.id
-        
+
         # Remove False Positives and empty images
-        final_predictions = final_predictions[~final_predictions.cropmodel_label.isin(["FalsePositive", "0",0,"Object"])]
+        final_predictions = final_predictions[~_reported_label(final_predictions).isin(["FalsePositive", "0", 0, "Object"])]
 
         # Frames awaiting review keep their boxes for the Label Studio upload but not the report.
         pre_holdout = final_predictions
@@ -601,7 +583,10 @@ class Pipeline:
                 print("Could not load geospatial metadata for final_predictions")
 
         # Write crops to disk
-        image_paths = crop_images(final_predictions, root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer)
+        image_paths = crop_images(
+            final_predictions.assign(cropmodel_label=_reported_label(final_predictions)),
+            root_dir=self.config.image_dir, experiment=self.comet_logger.experiment, expand=self.config.predict.buffer,
+        )
 
         # crop_image_id
         final_predictions["crop_image_id"] = image_paths

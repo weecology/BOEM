@@ -55,6 +55,8 @@ import PIL.Image
 import torch
 from deepforest.utilities import read_file
 from src.annotators import read_label_studio_csvs
+from src.classification import DOLPHIN_FAMILY_LABELS
+from src.data_processing import is_blacklisted_label
 
 # --- Paths ---
 ANNOTATIONS_BASE = "/blue/ewhite/b.weinstein/BOEM/annotations"
@@ -936,6 +938,35 @@ def create_train_test_split(
 # ---------------------------------------------------------------------------
 
 
+def apply_dolphin_review(df: pd.DataFrame, min_iou: float = 0.5) -> pd.DataFrame:
+    """Overwrite family-rank dolphin labels with the species picked in the dolphin review.
+
+    The review project (LS "BOEM - Dolphin Species Review") holds the crops themselves, so a
+    reviewed box is matched back to a crop-CSV row by image_path + IoU (annotators sometimes
+    nudged the box). Slash labels ("A/B") are skipped: normalize_label would collapse them
+    into a confident species. Single-word replies (Laridae, Aves, ...) are kept; the
+    two-word filter downstream then drops the box instead of leaving it a dolphin.
+    """
+    reviewed = read_label_studio_csvs(glob.glob(os.path.join(ANNOTATIONS_BASE, "dolphin_review", "*", "*.csv")))
+    df = df.reset_index(drop=True)
+    box = ["xmin", "ymin", "xmax", "ymax"]
+    reviewed = reviewed[reviewed.label.map(lambda x: "/" not in str(x) or is_blacklisted_label(x))]
+    rows = df.index[df.label.astype(str).str.strip().isin(DOLPHIN_FAMILY_LABELS)]
+    cand = df.loc[rows, ["image_path", *box]].reset_index().merge(
+        reviewed[["image_path", *box, "label"]], on="image_path", suffixes=("", "_r")
+    )
+    iw = np.minimum(cand.xmax, cand.xmax_r) - np.maximum(cand.xmin, cand.xmin_r)
+    ih = np.minimum(cand.ymax, cand.ymax_r) - np.maximum(cand.ymin, cand.ymin_r)
+    inter = iw.clip(lower=0) * ih.clip(lower=0)
+    area = lambda s: (cand[f"xmax{s}"] - cand[f"xmin{s}"]) * (cand[f"ymax{s}"] - cand[f"ymin{s}"])
+    cand["iou"] = inter / (area("") + area("_r") - inter)
+    best = cand[cand.iou >= min_iou].sort_values("iou").drop_duplicates("index", keep="last").set_index("index")
+    df.loc[best.index, "label"] = best["label"]
+    print(f"dolphin review: {len(best)}/{len(rows)} family-rank boxes relabelled")
+    print(best["label"].value_counts().to_string())
+    return df
+
+
 def main():
     args = parse_args()
     set_seed(args.seed)
@@ -953,6 +984,8 @@ def main():
     flight_annotations = collect_workflow_annotations(
         update_labels=not args.no_update_labels
     )
+
+    train, test, flight_annotations = (apply_dolphin_review(d) for d in (train, test, flight_annotations))
 
     # Stage 3: combine everything and produce final train/test splits
     explicit_zs_flights = (

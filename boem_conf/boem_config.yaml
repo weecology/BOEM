@@ -241,7 +241,6 @@ human_review:
   #   human_review.review_low / review_high      (this block)
   #   active_learning.min_classification_score
   #   pipeline_evaluation.classification_threshold
-  #   report.rare_species_min_score
   #
   # History: 0.6 -> 0.99 (raw) on 2026-08-20, then -> 0.50 (calibrated) the same day.
   #
@@ -301,11 +300,6 @@ report:
   # a near-superset — the only file it lacks is 20211201_125800_captures.csv); until then
   # this points at the inner one.
   metadata_dir: /blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs/metadata_aflight_csvs
-  n_sample_crops: 5
-  n_rare_species: 2
-  # CALIBRATED SCALE (classification_model.temperature). 0.7 raw -> 0.21 by val quantile.
-  # Picks high-confidence rare-species crops for the report; see human_review.review_high.
-  rare_species_min_score: 0.21
 
   # Taxonomic rollup: report the FINEST rank at which the flat CropModel and
   # H-CAST agree, instead of trusting the CropModel species alone.

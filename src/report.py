@@ -136,6 +136,7 @@ def generate_observations_table(gdf, output_path):
     image_name = gdf["image_path"].apply(lambda p: os.path.basename(str(p)))
 
     table = pd.DataFrame({
+        "box_id": gdf["box_id"].values,
         "det_score": gdf["score"].values,
         "cls_score": gdf["cropmodel_score"].values,
         "predicted_label": gdf["cropmodel_label"].values,
@@ -171,6 +172,7 @@ def generate_observations_table_with_empty_frames(gdf, captures, output_path):
     image_name = gdf["image_path"].apply(lambda p: os.path.basename(str(p)))
 
     table = pd.DataFrame({
+        "box_id": gdf["box_id"].values,
         "det_score": gdf["score"].values,
         "cls_score": gdf["cropmodel_score"].values,
         "predicted_label": gdf["cropmodel_label"].values,
@@ -278,7 +280,7 @@ def generate_shapefile(gdf, output_path):
             export.rename(columns={old: new}, inplace=True)
 
     keep = [
-        "cons_lbl", "cons_rank", "cons_scr",
+        "box_id", "cons_lbl", "cons_rank", "cons_scr",
         "species", "det_score", "cls_score", "genus", "hcast_sp",
         "hcast_fam", "image", "flight", "flt_line", "geometry",
     ]
@@ -419,92 +421,24 @@ def generate_summary_maps(gdf, output_path):
     return output_path
 
 
-def select_sample_crops(predictions, image_dir, output_dir,
-                        n_samples=5, n_rare=2,
-                        rare_min_score=0.7, expand=60):
-    """Pick sample crop images, prioritising rare species with high confidence."""
+def export_crops(gdf, image_dir, output_dir, expand=60):
+    """Write one crop per box, named `<box_id>_<label>.png` so it joins to the CSV and shapefile on box_id."""
     # Filenames embed the label, so crops from an earlier run would linger under outdated labels.
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    preds = predictions[predictions["cropmodel_label"].notna()].copy()
-    if preds.empty:
-        return []
-
-    species_counts = preds["cropmodel_label"].value_counts()
-    rarest_first = species_counts.index.tolist()[::-1]
-
-    selected_rows = []
-    used_indices = set()
-    picked_species = set()
-
-    for sp in rarest_first:
-        if len(selected_rows) >= n_rare:
-            break
-        sp_df = preds[preds["cropmodel_label"] == sp]
-        hi = sp_df[sp_df["cropmodel_score"] >= rare_min_score]
-        pool = hi if not hi.empty else sp_df
-        best = pool.sort_values("cropmodel_score", ascending=False).iloc[0]
-        selected_rows.append(best)
-        used_indices.add(best.name)
-        picked_species.add(sp)
-
-    remaining = preds[~preds.index.isin(used_indices)].sort_values(
-        "cropmodel_score", ascending=False,
-    )
-    for _, row in remaining.iterrows():
-        if len(selected_rows) >= n_samples:
-            break
-        if row["cropmodel_label"] not in picked_species:
-            selected_rows.append(row)
-            used_indices.add(row.name)
-            picked_species.add(row["cropmodel_label"])
-
-    for _, row in remaining.iterrows():
-        if len(selected_rows) >= n_samples:
-            break
-        if row.name not in used_indices:
-            selected_rows.append(row)
-            used_indices.add(row.name)
-
-    crop_info = []
-    for i, row in enumerate(selected_rows):
-        img_rel = str(row["image_path"])
-        if os.path.isabs(img_rel):
-            full_path = img_rel
-        else:
-            full_path = os.path.join(image_dir, os.path.basename(img_rel))
-
-        xmin = max(0, int(row["xmin"]) - expand)
-        ymin = max(0, int(row["ymin"]) - expand)
-        xmax = int(row["xmax"]) + expand
-        ymax = int(row["ymax"]) + expand
-
-        species_safe = str(row["cropmodel_label"]).replace(" ", "_")
-        crop_path = os.path.join(
-            output_dir, species_safe + "_" + str(i).zfill(3) + ".png"
-        )
-
-        try:
-            with rasterio.open(full_path) as src:
-                img = src.read(window=((ymin, ymax), (xmin, xmax)))
-                img = np.rollaxis(img, 0, 3)
-                if img.shape[2] >= 3:
-                    img = img[:, :, :3]
+    for image_path, boxes in gdf.groupby("image_path"):
+        full_path = str(image_path) if os.path.isabs(str(image_path)) else os.path.join(image_dir, os.path.basename(str(image_path)))
+        with rasterio.open(full_path) as src:
+            for _, row in boxes.iterrows():
+                window = ((max(0, int(row["ymin"]) - expand), int(row["ymax"]) + expand),
+                          (max(0, int(row["xmin"]) - expand), int(row["xmax"]) + expand))
+                img = np.rollaxis(src.read(window=window), 0, 3)[:, :, :3]
                 if img.dtype != np.uint8:
                     p2, p98 = np.percentile(img, (2, 98))
                     img = np.clip((img.astype(float) - p2) / max(p98 - p2, 1e-6) * 255, 0, 255).astype(np.uint8)
-                Image.fromarray(img).save(crop_path)
-                crop_info.append({
-                    "path": crop_path,
-                    "species": row["cropmodel_label"],
-                    "det_score": float(row["score"]),
-                    "cls_score": float(row["cropmodel_score"]),
-                })
-        except Exception as e:
-            print("Failed to crop " + full_path + ": " + str(e))
-
-    return crop_info
+                label = str(row["cropmodel_label"]).replace(" ", "_").replace("/", "-")
+                Image.fromarray(img).save(os.path.join(output_dir, f"{row['box_id']:05d}_{label}.png"))
 
 
 def create_fullsize_example_image(predictions, image_dir, output_path):
@@ -610,9 +544,9 @@ def _render_pdf_page1(pdf, gdf, species_list, colors, summary_map_path,
     plt.close(fig)
 
 
-def _render_pdf_page2(pdf, predictions, crop_info, species_list, colors,
+def _render_pdf_page2(pdf, predictions, species_list, colors,
                       flight_name, report_meta=None, fullsize_example_path=None):
-    """Page 2: species bar chart, stats, sample crops."""
+    """Page 2: species bar chart, stats, example image."""
     report_meta = report_meta or {}
     fig = plt.figure(figsize=(11, 8.5))
     fig.suptitle(
@@ -656,7 +590,7 @@ def _render_pdf_page2(pdf, predictions, crop_info, species_list, colors,
     plt.close(fig)
 
 
-def generate_pdf_report(gdf, predictions, crop_info, summary_map_path,
+def generate_pdf_report(gdf, predictions, summary_map_path,
                         flight_name, output_path, min_det_score=None,
                         min_cls_score=None, fullsize_example_path=None):
     """Two-page PDF: maps on page 1, species summary on page 2."""
@@ -679,7 +613,7 @@ def generate_pdf_report(gdf, predictions, crop_info, summary_map_path,
         )
         
         _render_pdf_page2(
-            pdf, predictions, crop_info, species_list, colors, flight_name,
+            pdf, predictions, species_list, colors, flight_name,
             report_meta={},
             fullsize_example_path=fullsize_example_path,
         )
@@ -727,6 +661,9 @@ def generate_report(predictions, config, comet_logger, image_dir, provenance=Non
         print("Report: no predictions could be georeferenced, skipping")
         return None
 
+    georeffed = georeffed.sort_values(["image_path", "xmin", "ymin"]).reset_index(drop=True)
+    georeffed["box_id"] = georeffed.index
+
     geometry = [
         Point(lon, lat)
         for lon, lat in zip(georeffed["pred_lon"], georeffed["pred_lat"])
@@ -766,19 +703,14 @@ def generate_report(predictions, config, comet_logger, image_dir, provenance=Non
     summary_path = os.path.join(report_dir, "abundance_diversity.png")
     generate_summary_maps(gdf, summary_path)
 
-    crop_info = select_sample_crops(
-        rp, image_dir, os.path.join(report_dir, "sample_crops"),
-        n_samples=config.report.n_sample_crops,
-        n_rare=config.report.n_rare_species,
-        rare_min_score=config.report.rare_species_min_score,
-        expand=config.predict.buffer,
-    )
+    shutil.rmtree(os.path.join(report_dir, "sample_crops"), ignore_errors=True)  # superseded by crops/
+    export_crops(gdf, image_dir, os.path.join(report_dir, "crops"), expand=config.predict.buffer)
 
     fullsize_path = os.path.join(report_dir, "fullsize_example.png")
     create_fullsize_example_image(rp, image_dir, fullsize_path)
 
     generate_pdf_report(
-        gdf, predictions, crop_info, summary_path, flight_name,
+        gdf, predictions, summary_path, flight_name,
         os.path.join(report_dir, "report.pdf"),
         min_det_score=min_score,
         min_cls_score=min_cls_score,

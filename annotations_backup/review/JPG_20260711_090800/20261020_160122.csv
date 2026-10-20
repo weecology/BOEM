@@ -1,0 +1,39 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+869.0,1485.0,954.0,1546.0000000000002,Thalasseus maximus,0.7471911,Thalasseus maximus,,C1_L3_F203_T20260711_092140_041.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+4715.0,2162.0,4785.0,2281.0,Sterninae,0.82779944,Morus bassanus,,C1_L3_F676_T20260711_092720_838.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+4261.999999999999,3204.0,4295.999999999999,3290.0,Thalasseus maximus,0.7358851,Thalasseus maximus,,C1_L3_F785_T20260711_092838_790.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+2745.0,2362.0,2853.0,2426.0,Thalasseus maximus,0.8404406,Thalasseus maximus,,C1_L5_F1003_T20260711_093240_567.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+412.0,1702.0,503.0,1809.0000000000002,Thalasseus maximus,0.86409986,Thalasseus maximus,,C1_L5_F1189_T20260711_093453_575.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+3780.0,484.0,3849.0,574.0,Thalasseus maximus,0.86670357,Thalasseus maximus,,C1_L5_F1294_T20260711_093608_654.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+793.0,558.0,864.0,664.0,Thalasseus maximus,0.8164145,Thalasseus maximus,,C1_L5_F963_T20260711_093211_973.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+621.0,4724.999999999999,684.0,4828.0,Thalasseus maximus,0.84040666,Tursiops truncatus,,C1_L5_F964_T20260711_093212_684.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+5399.0,4353.0,5440.000000000001,4394.0,Larus,0.7925566,Clangula hyemalis,,C2_L5_F1298_T20260711_093611_553.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+2807.0,1823.0000000000002,2832.0,1863.0,FalsePositive,0.7090402,Somateria mollissima,,C2_L5_F1640_T20260711_094016_097.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+864.0,3379.999999999999,941.0,3493.999999999999,Thalasseus maximus,0.84704626,Larus delawarensis,,C2_L5_F929_T20260711_093147_701.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+3743.0,1825.0,3815.0000000000005,1882.0,Thalasseus maximus,0.86378497,Thalasseus maximus,,C2_L6_F1954_T20260711_095405_324.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+4291.0,2392.0,4356.000000000001,2505.0,Thalasseus maximus,0.9202911,Pelecanus occidentalis,,C3_L3_F583_T20260711_092614_447.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+3937.0,2447.0,3991.0000000000005,2513.0,Sterninae,0.8550253,Thalasseus maximus,,C3_L3_F60_T20260711_091949_996.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+2294.000000000001,3936.999999999994,2351.176108473273,4023.1561988676663,Sterninae,0.7911081,Somateria mollissima,,C3_L3_F697_T20260711_092735_946.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+4487.0,2219.0,4551.0,2285.0,Thalasseus maximus,0.88873404,Thalasseus maximus,,C4_L3_F227_T20260711_092158_399.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+5641.0,344.0,5732.0,393.0,Sterninae,0.7695008,Somateria mollissima,,C4_L3_F227_T20260711_092158_399.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+5611.0,3173.999999999999,5670.0,3246.999999999999,Leucophaeus atricilla,0.8696634,Leucophaeus atricilla,,C4_L3_F734_T20260711_092802_207.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+582.9999999999999,293.0,672.9999999999999,350.0,Sterninae,0.79707164,Somateria mollissima,,C5_L3_F226_T20260711_092157_928.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+2380.0,1476.0,2658.0,1627.0,Thalasseus maximus,0.8599985,Larus delawarensis,,C5_L3_F335_T20260711_092317_176.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+545.0,3129.0,602.0,3201.0000000000005,Leucophaeus atricilla,0.82230324,Leucophaeus atricilla,,C5_L3_F733_T20260711_092801_770.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+2011.0,3567.0,2095.0,3629.0,Thalasseus maximus,0.77508956,Thalasseus maximus,,C5_L6_F1922_T20260711_095342_571.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+4490.0,4594.000000000001,4610.0,4861.000000000001,Tursiops truncatus,0.76270425,Larus delawarensis,,C6_L5_F1240_T20260711_093530_268.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+5253.0,4030.0,5314.0,4132.0,Thalasseus maximus,0.907925,Thalasseus maximus,,C6_L5_F1291_T20260711_093606_741.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+4226.0,580.0,4311.0,651.0,Leucophaeus atricilla,0.8201306,Leucophaeus atricilla,,C6_L5_F884_T20260711_093115_701.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+1928.9999999999998,2034.0,1988.0,2151.0,Thalasseus maximus,0.8892575,Thalasseus maximus,,C7_L3_F166_T20260711_092111_800.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+5611.0,709.0000000000001,5657.0,777.0,Sterninae,0.71798277,Thalasseus maximus,,C7_L3_F203_T20260711_092140_304.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+2004.0,668.0,2063.0,761.0,Thalasseus maximus,0.8411516,Thalasseus maximus,,C7_L3_F240_T20260711_092208_794.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+3180.0,3100.0,3261.0,3158.0,Thalasseus maximus,0.8220817,Thalasseus maximus,,C7_L3_F480_T20260711_092500_947.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+4868.999999999999,3038.0,4942.0,3082.0000000000005,Sterninae,0.8602186,Thalasseus maximus,,C7_L5_F1011_T20260711_093246_551.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+2807.0,1574.0,2905.0,1625.0,Thalasseus maximus,0.86434364,Thalasseus maximus,,C7_L5_F1207_T20260711_093506_709.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+422.0,1191.0,558.0,1469.0,Tursiops truncatus,0.72558635,Larus delawarensis,,C7_L5_F1239_T20260711_093529_579.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+178.99999999999997,4015.0,240.0,4116.0,Sterninae,0.76335543,Tursiops truncatus,,C7_L5_F1291_T20260711_093606_779.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+5594.0,2075.0,5657.0,2125.0,Sterninae,0.86837614,Thalasseus maximus,,C7_L5_F884_T20260711_093115_748.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+1774.0,2274.0,1815.0,2340.0,Sterninae,0.8879523,Thalasseus maximus,,C7_L5_F931_T20260711_093149_347.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260711_090800
+5362.0,2607.0000000000005,5395.000000000001,2669.0000000000005,Sterninae,0.81574494,Thalasseus maximus,,C7_L6_F1976_T20260711_095421_284.jpg," sanacleto@ufl.edu, 24",JPG_20260711_090800
+3290.0,405.0,3339.0,488.0,Sterninae,0.90695745,Thalasseus maximus,,C7_L6_F1980_T20260711_095424_146.jpg," sanacleto@ufl.edu, 24",JPG_20260711_090800
+2062.0,4242.0,2109.0,4352.0,Sterninae,0.91028744,Thalasseus maximus,,C7_L6_F1981_T20260711_095424_849.jpg," sanacleto@ufl.edu, 24",JPG_20260711_090800

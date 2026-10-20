@@ -1,0 +1,19 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+3703.0,1416.0,3801.0,1532.0000000000002,Chelonioidea sp,0.72742325,Chelonioidea sp,,C1_L2_F1833_T20260712_091804_963.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+2304.0,4300.0,2539.9999999999995,4441.0,Fregata magnificens,0.8691838,Larus delawarensis,,C2_L1_F1239_T20260712_091100_373.jpg," benweinstein2010@gmail.com, 2",JPG_20260712_083900
+5287.0,3540.0,5386.0,3605.9999999999995,Thalasseus maximus,0.8966849,Thalasseus maximus,,C4_L1_F1827_T20260712_091800_562.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+6304.0,1042.0,6431.0,1236.0,Fregata magnificens,0.834393,Larus delawarensis,,C4_L1_F312_T20260712_085957_353.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+5102.0,3391.0000000000005,5185.999999999999,3471.0000000000005,Thalasseus maximus,0.8890995,Thalasseus maximus,,C5_L1_F1822_T20260712_091757_283.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+222.00000000000003,3493.0,323.0,3562.0,Thalasseus maximus,0.8099693,Somateria mollissima,,C5_L1_F1826_T20260712_091800_144.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+1246.0,1013.0,1364.0,1197.0,Fregata magnificens,0.77791476,Tursiops truncatus,,C5_L1_F311_T20260712_085956_931.jpg," benweinstein2010@gmail.com, 2",JPG_20260712_083900
+1528.0,4111.0,1616.0,4169.0,Thalasseus maximus,0.84769714,Somateria mollissima,,C6_L1_F1819_T20260712_091755_188.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+2057.0,1921.0,2165.0,1978.0,Sterninae,0.74475175,Larus delawarensis,,C6_L1_F1819_T20260712_091755_188.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+5197.0,40.0,5266.0,114.00000000000001,Thalasseus maximus,0.7046143,Thalasseus maximus,,C6_L1_F1820_T20260712_091755_902.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+5450.0,3773.9999999999995,5536.000000000001,3839.9999999999995,Thalasseus maximus,0.80052936,Thalasseus maximus,,C6_L1_F1821_T20260712_091756_611.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+65.0,3433.0,156.0,3518.0000000000005,Thalasseus maximus,0.81194186,Somateria mollissima,,C6_L1_F1822_T20260712_091757_330.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+1830.1590022908513,1148.6096105880947,2054.536192415101,1349.5578467802634,Fregata magnificens,0.7155344,Chelonioidea sp,,C6_L3_F1907_T20260712_092013_397.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+3895.0000000000005,2151.0,3985.0,2200.0,Thalasseus maximus,0.8999667,Thalasseus maximus,,C7_L1_F1817_T20260712_091753_787.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+2976.819574333014,1655.6364455490016,3068.000000000007,1710.000000000004,Thalasseus maximus,0.83610207,Thalasseus maximus,,C7_L1_F1817_T20260712_091753_787.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+3924.000000000016,173.00000000000085,4038.17952462798,240.27199005899308,Thalasseus maximus,0.85204715,Somateria mollissima,,C7_L1_F1819_T20260712_091755_219.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+3849.9999999999995,3689.0,3933.9999999999995,3742.0000000000005,Laridae,0.8382358,Somateria mollissima,,C7_L1_F1820_T20260712_091755_930.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900
+374.0,3757.0,461.99999999999994,3824.0000000000005,Thalasseus maximus,0.80982345,Thalasseus maximus,,C7_L1_F1821_T20260712_091756_642.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_083900

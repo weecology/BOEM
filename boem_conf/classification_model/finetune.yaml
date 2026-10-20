@@ -37,6 +37,11 @@ batch_size: 72
 workers: 5
 expand: 30
 balance_classes: false
+# Cap on train-set class balancing: each class is downsampled to at most
+# class_balance_factor * median(class_counts) crops (see gentle_class_balance in
+# scripts/USGS_classification.py). Override on the CLI to bracket its effect, e.g.
+# classification_model.class_balance_factor=2.0, or =null to disable downsampling entirely.
+class_balance_factor: 4.0
 use_metadata: false
 # metadata_dim/metadata_dropout are inert while use_metadata is false; kept so flipping
 # it back on does not need the values rediscovered.

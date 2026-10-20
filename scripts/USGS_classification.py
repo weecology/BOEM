@@ -83,7 +83,12 @@ def gentle_class_balance(df, factor=3.0, random_state=None):
     """
     Gently reduce majority-class dominance by capping each class at factor * median(class_counts).
     Not full balance: small classes are unchanged; only large classes are downsampled.
+
+    factor=None (or <= 0) disables downsampling entirely and returns df unchanged --
+    used to bracket how much this cap matters (see class_balance_factor below).
     """
+    if factor is None or factor <= 0:
+        return df
     counts = df.groupby("label").size()
     median_count = int(counts.median())
     cap = max(median_count, int(median_count * factor))
@@ -327,15 +332,24 @@ def main(cfg: DictConfig):
 
     # Gentle class balance: applied to train only after the split so test reflects the
     # natural distribution and rare classes are not starved of their test images.
+    # class_balance_factor is CLI-overridable (classification_model.class_balance_factor=X)
+    # to bracket how much this cap matters; None/<=0 disables downsampling entirely.
+    class_balance_factor = cfg.classification_model.get("class_balance_factor", 4.0)
+    if class_balance_factor is not None:
+        class_balance_factor = float(class_balance_factor)
+        if class_balance_factor <= 0:
+            class_balance_factor = None
     n_before = len(train_df)
-    train_df = gentle_class_balance(train_df, factor=4.0, random_state=42)
+    train_df = gentle_class_balance(train_df, factor=class_balance_factor, random_state=42)
     n_after = len(train_df)
     if n_before > n_after:
-        print(f"[class balance] train downsampled {n_before} -> {n_after} (cap = 4x median per class)")
+        print(f"[class balance] train downsampled {n_before} -> {n_after} (cap = {class_balance_factor}x median per class)")
+    else:
+        print(f"[class balance] no downsampling applied (class_balance_factor={class_balance_factor}); train pool size {n_after}")
 
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
-    comet_logger.experiment.log_parameter("class_balance_applied", True)
-    comet_logger.experiment.log_parameter("class_balance_cap_factor", 4.0)
+    comet_logger.experiment.log_parameter("class_balance_applied", class_balance_factor is not None)
+    comet_logger.experiment.log_parameter("class_balance_cap_factor", class_balance_factor)
     comet_logger.experiment.log_parameter("train_pool_size_after_balance", n_after)
     comet_logger.experiment.log_parameter("split_by_parent_image", True)
     comet_logger.experiment.log_parameter("split_n_classes_dropped", split_report["n_dropped_classes"])

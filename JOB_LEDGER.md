@@ -2883,3 +2883,53 @@ reports, then build the v4 zip.
 (40G/40G), so SLURM could not create /home/b.weinstein/logs/*.out. Cause: ~25.5 GB of Pylance crash core dumps in
 ~/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist/core.MainThread-* (Oct 6, 14, 16 x2); not deleted,
 waiting on Ben. Resubmitted as 46226882/46226883 with logs in /blue/ewhite/b.weinstein/BOEM/slurm_logs/.
+Result (46226882), checked 2026-10-16: COMPLETED 21m02s, exit 0:0. 10/10 July reports regenerated 2026-10-16 13:03-13:21
+(100400 .. 160300), no Traceback/FAILED lines, no "Error processing image" noise this time. Held frames per flight:
+100400 41, 113200 9, 125900 23, 132400 14, 142700 1, 145900 8, 101500 48, 121500 18, 141400 10, 160300 29. All 19 July
+reports now post-date the FalsePositive fix (9 from 2026-10-14, 10 from today).
+46226883 (JPG_20260201_134000, full, B200): RUNNING at check time (1h30m), predicting on 95,796 images (cache skipped,
+detector change). Log quiet since 13:02 (no progress bar in the log); report still the 2026-05-18 one.
+Result (46226883), checked 2026-10-19: COMPLETED 6h22m, exit 0:0. Re-detected all 95,796 frames on 1968e962/epoch29 @ 0.70:
+221 frames / 258 boxes. Report regenerated 2026-10-16 19:21 with report_provenance.json (git e00765d): 833 rows = 575 human +
+258 model; 0 frames held (annotations here are train/validation, not review, so nothing to hold). Rollup: 69.0% verified,
+8.8% species, 11.4% genus, 3.5% family, 7.3% unresolved. Not in Label Studio (all n=0). No Traceback.
+Noise, now visible in output: 64 "Error processing image" lines + 1 failed sample crop, all the "Larus delawarensis/argentatus"
+slash-in-filename bug; that class has no sample crop in the PDF. 26/26 reportable flights now post-date the FalsePositive fix.
+Next: per-flight verification over all 26 reports, then build the v4 zip; fix the slash in crop filenames (sanitize label).
+
+## (no job) — 2026-10-19 — per-flight verification of all 26 reports + July v4 zip
+Verified human rows in every report against the corrected annotations (newest download per frame, rejected box = FalsePositive;
+check = each human (image, label) is backed by a non-FalsePositive box, none sits on an all-FalsePositive frame). Scratch script:
+/tmp/claude-4736/-blue-ewhite-b-weinstein-src-BOEM/bc051c11-73b9-498c-a36c-6c83a8ed97d1/scratchpad/verify.py
+ - 19/19 July flights: CLEAN, human rows == non-FP boxes exactly, 0 orphans, 0 rows on rejected frames.
+ - 20260201_093500/_134000, 20260202_094800/_122400, 20241219_164400, 20241220_145900: 0 problems.
+ - **JPG_20241220_104800: 21 flagged of 1,912 human rows.** 4 are on frames whose newest annotation is FalsePositive but a
+   superseded review CSV (2025-05) still supplies a species ('Anas platyrhynchos', 'Larus argentatus', and numeric junk labels '16',
+   '35'). Cause: the pipeline reads train/validation/review dirs separately, so a stale review download is not superseded by a newer
+   train FalsePositive for the same frame. 17 more are label-normalisation differences ('Larus delawarensis/argentatus' vs
+   'Larus argentatus'), probably benign. NOT fixed; other flights unaffected by this check.
+Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261019_v4.zip — 19 July flights, no fullsize_example.png, 47.8 MB,
+integrity test passes. Deliberately July-only (matches v2/v3) so the 104800 rows are not shipped.
+Next: decide on 104800 (supersede across dirs in gather_data, or leave); sanitize '/' in crop filenames (select_sample_crops).
+
+## (no job) — 2026-10-19 — report crops: every box, named by box_id (src/report.py, uncommitted)
+Why: Ben wants all crops per flight (few enough to be cheap) and a filename that joins to the shapefile and CSV.
+select_sample_crops (5 picks, label-only names) replaced by export_crops: one crop per box in reports/<flight>/crops/,
+`<box_id:05d>_<label>.png` ('/' in labels -> '-', which also fixes the Larus delawarensis/argentatus crop failures).
+box_id (sorted by image, xmin, ymin; 0..n-1) is a column in observations_table.csv, observations_table_with_empty_frames.csv
+and predictions.shp. Dropped report.n_sample_crops / n_rare_species / rare_species_min_score and the unused crop_info
+plumbing in the PDF. Tested: report_only on JPG_20260712_092800 (7 boxes -> 7 crops, ids match CSV). Its report dir is now the
+new layout; the other 25 and the v4 zip still have sample_crops/. box_id is per regeneration, not stable across reruns.
+Next: regenerate reports (report_only for July) and rebuild the zip with crops/.
+
+## 46713226 — 2026-10-19 — submit_regenerate_reports.sh '*JPG_202607*' — SUBMITTED
+Why: regenerate all July reports with the new per-box crops/ + box_id (see the report-crops entry above). Report-only, one CPU
+job (4 cpu, 32 GB, 4 h), serial over the July flights; caches untouched. Annotations re-pulled first: review 425 rows / 336
+images / 20 flights, backup 20 new, 0 changed.
+Next: check log for FAILED lines; each report should have crops/ (count == rows in observations_table.csv) and no sample_crops/;
+then rebuild the zip as v5 (19 flights, no fullsize_example.png).
+Result (46713226), checked 2026-10-20: COMPLETED 43m53s, exit 0:0, no Traceback/FAILED. 19/19 July reports regenerated
+2026-10-19 15:30-16:11; each has crops/ with file count == observations_table.csv rows (504 total), no sample_crops/.
+Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261019_v5.zip — 19 flights, no fullsize_example.png, 69.7 MB,
+770 files, integrity test passes. Crops are per-box tight crops (e.g. ~200-320 px), not full frames.
+Next: send v5; v4 (sample_crops layout) is superseded.

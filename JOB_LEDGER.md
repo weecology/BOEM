@@ -2954,3 +2954,17 @@ One pre-existing error in the log: the Comet crops.zip writer (src/visualization
 'Larus delawarensis/argentatus' label ('/' in filename) -- fixed on the branch, not re-run.
 Next: PR human-reviewed-column; after merge, regenerate all flight reports (submit_regenerate_reports.sh).
 
+
+## 46887085 — 2026-10-20 — submit_regenerate_reports.sh '*JPG_202607*' (branch human-reviewed-column) — SUBMITTED
+Why: regenerate all July reports with the human_reviewed / final_label / crop-name / square-marker changes (see 46884306).
+Annotations re-pulled first: review 425 rows / 336 images / 20 flights; backup 20 new, 0 changed. First download with
+model_* columns: 361/425 boxes carry model_det_score + model_label (the rest hand-drawn); model_cls_score blank on all
+(tasks uploaded before the classifier score was stored). Of 309 captured non-FalsePositive boxes, the human kept the
+model's species on 142.
+Next: check log for FAILED; each report's crops/ count == observations_table.csv rows; human rows now show model
+det_score where captured.
+Result (46887085), checked 2026-10-20: COMPLETED 32m50s, exit 0:0, no Traceback/FAILED. 19/19 July reports regenerated
+in the new layout: 504 rows total (same as 46713226), 373 human-reviewed, 296 of those with a captured model det_score;
+every report has crops/ == rows, every crop_file exists, final_label == human_label on all human rows, no sample_crops/.
+JPG_20260711_131000 still has no report: no 20260711_131000_captures.csv in metadata_aflight_csvs (pre-existing).
+Next: merge human-reviewed-column; rebuild the July zip (v6) from the new layout if it is going out.

@@ -2968,3 +2968,12 @@ in the new layout: 504 rows total (same as 46713226), 373 human-reviewed, 296 of
 every report has crops/ == rows, every crop_file exists, final_label == human_label on all human rows, no sample_crops/.
 JPG_20260711_131000 still has no report: no 20260711_131000_captures.csv in metadata_aflight_csvs (pre-existing).
 Next: merge human-reviewed-column; rebuild the July zip (v6) from the new layout if it is going out.
+
+## 46895757 → 46895758 — 2026-10-20 — submit_prepare_USGS.sh, then submit_USGS_classification.sh (branch dolphin-species-fold-in) — SUBMITTED
+Why: fold the finished dolphin species review (LS 217, 2,033/2,033 crops, 4,267 boxes) into the classifier. Downloaded live to
+annotations/dolphin_review/crops/ and backed up (1 new, 0 changed). Labels: Tursiops 2,388, Delphinidae (left at family) 1,420,
+Delphinus 181, FalsePositive 144, other ~134. prepare_USGS.apply_dolphin_review overlays them onto family-rank crop-CSV rows by
+image_path + IoU>=0.5 (slash labels skipped); test on real CSVs: 3,698/9,644 family-rank rows relabelled (2,202 Tursiops,
+152 Delphinus, 141 FalsePositive). Crop CSVs themselves untouched. Pre-run train/test/zero_shot.csv saved to
+/blue/ewhite/b.weinstein/BOEM/training/pre_dolphin_fold_20261020/. Classification is afterok on prepare, use_metadata=False.
+Next: compare per-class dolphin accuracy and Delphinidae-sp size vs the flat/H-CAST baselines (2b27e044, a3dc30a0).

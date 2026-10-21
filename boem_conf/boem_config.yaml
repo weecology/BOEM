@@ -288,6 +288,12 @@ human_review:
   # them. Setting this false restores the pre-2026-08-26 band-only behaviour; it is also a
   # no-op when hierarchical.checkpoint is null, since there are no hcast_* columns to compare.
   review_on_disagreement: true
+  # A flight with fewer than this many detected frames (>= min_detection_score) is reviewed in
+  # full, whatever the classifier score or model agreement: when there is little to review it is
+  # quicker to do all of it than to track which frames were and were not looked at. The count
+  # includes frames already annotated, so it does not shrink as review proceeds. The detection
+  # floor still applies. 0 disables.
+  review_all_below: 25
 
 report:
   enabled: true

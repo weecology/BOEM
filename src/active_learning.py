@@ -148,6 +148,8 @@ def human_review(
     review_low=0.05,
     review_high=0.50,
     review_on_disagreement=True,
+    review_all_below=0,
+    n_flight_frames=None,
 ):
     """
     Split trusted detections into confident and uncertain by classifier confidence.
@@ -194,10 +196,20 @@ def human_review(
             H-CAST disagree on species. No-op when the hcast_* columns are absent
             (hierarchical.checkpoint: null), so this is safe with H-CAST disabled.
 
+        review_all_below (int): A flight with fewer than this many frames is reviewed in
+            full: every box at or above min_detection_score is uncertain whatever its
+            classifier score, so nothing is left to track as reviewed or not. The detection
+            floor still applies. 0 disables.
+        n_flight_frames (int, optional): Frames in the whole flight, for review_all_below.
+            Callers should pass a count that includes already-annotated frames so the rule
+            does not flip as review proceeds; defaults to the distinct detected frames in
+            ``predictions``.
+
     Returns:
         tuple: (confident_predictions, uncertain_predictions). uncertain_predictions carries
-        a ``review_reason`` column ("disagreement", "low_confidence", or "both") so the queue
-        can be ordered and the two triggers can be told apart downstream.
+        a ``review_reason`` column ("disagreement", "low_confidence", "both", or
+        "small_flight") so the queue can be ordered and the triggers can be told apart
+        downstream.
     """
     if review_low > review_high:
         raise ValueError(
@@ -221,6 +233,12 @@ def human_review(
         ["both", "disagreement", "low_confidence"],
         default="",
     )
+    if n_flight_frames is None:
+        n_flight_frames = detected["image_path"].nunique()
+    if n_flight_frames < review_all_below:
+        detected["review_reason"] = "small_flight"
+        return detected.iloc[0:0], detected
+
     uncertain_predictions = detected[in_band | disagrees]
 
     confident_predictions = detected[

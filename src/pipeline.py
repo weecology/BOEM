@@ -423,9 +423,18 @@ class Pipeline:
             )
         write_review_provenance(self.config.image_dir, detector, held_frames)
 
+    def _flight_frame_count(self, pool) -> int:
+        """Detected frames in the flight, counting those already annotated so the count never shrinks as review proceeds."""
+        min_score = getattr(self.config.human_review, "min_detection_score", self.config.predict.min_score)
+        pending = set(pool.loc[pool["score"] >= min_score, "image_path"].map(os.path.basename))
+        annotated = set(self.existing_images) & {os.path.basename(p) for p in self.all_images}
+        return len(pending | annotated)
+
     def _review_split(self, pool):
         """(confident, uncertain) predictions under the configured human_review gates."""
         return human_review(
+            review_all_below=getattr(self.config.human_review, "review_all_below", 0),
+            n_flight_frames=self._flight_frame_count(pool),
             min_detection_score=getattr(
                 self.config.human_review, "min_detection_score", self.config.predict.min_score),
             review_low=getattr(self.config.human_review, "review_low", 0.3),
@@ -962,7 +971,9 @@ class Pipeline:
             # After a detector change the whole queue goes up, except that n=0 still means
             # "touch no Label Studio project" (the fan-out recipe). Held frames stay out of the
             # report either way.
-            n = len(queue) if detector_changed and self.config.human_review.n > 0 else self.config.human_review.n
+            # A small flight is reviewed in full for the same reason (n=0 still wins).
+            small_flight = (queue.get("review_reason") == "small_flight").any()
+            n = len(queue) if (detector_changed or small_flight) and self.config.human_review.n > 0 else self.config.human_review.n
             review_images_to_annotate = queue.sort_values(
                 by=["_disagrees", "score"], ascending=[True, False]
             ).head(n)["image_path"].unique()

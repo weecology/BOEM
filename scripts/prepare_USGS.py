@@ -153,8 +153,9 @@ def parse_args():
     parser.add_argument(
         "--zero-shot-flights",
         type=str,
-        default="JPG_20260202_094800,JPG_2023_Dec14",
-        help="Comma-separated flight names to use as zero-shot holdout (overrides random selection).",
+        default="JPG_20260202_141900,JPG_20260201_134000",
+        help="Comma-separated flight names to use as zero-shot holdout (overrides random selection). "
+        "Default is the pinned holdout used by scripts/threshold_sweep.py.",
     )
     parser.add_argument(
         "--max-test-images",
@@ -777,8 +778,14 @@ def create_train_test_split(
     combined_test["_parent"] = combined_test["image_path"].apply(_parent_of)
 
     before_t, before_v = len(combined_train), len(combined_test)
-    combined_train = combined_train[~combined_train["_parent"].isin(zs_parents)]
-    combined_test = combined_test[~combined_test["_parent"].isin(zs_parents)]
+    # Parent names alone miss zero-shot rows (empty frames are named by
+    # timestamp), so also drop by the flight column.
+    combined_train = combined_train[
+        ~combined_train["_parent"].isin(zs_parents) & ~combined_train["flight"].isin(zero_shot_flights)
+    ]
+    combined_test = combined_test[
+        ~combined_test["_parent"].isin(zs_parents) & ~combined_test["flight"].isin(zero_shot_flights)
+    ]
     combined_train = combined_train[~combined_train["_parent"].isin(test_flight_parents)]
     combined_test = combined_test[~combined_test["_parent"].isin(train_flight_parents)]
     overlap_parents = set(combined_train["_parent"]) & set(combined_test["_parent"])

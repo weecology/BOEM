@@ -1,0 +1,4 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+3671.0,4625.0,3702.0,4665.0,FalsePositive,0.7284862,Larus delawarensis,0.18430506,C4_L1_F1922_T20260712_145446_440.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_142700
+1770.9999999999998,1358.0,1803.0,1383.9999999999998,Anatidae,0.7183683,Melanitta fusca,0.868399,C5_L1_F2008_T20260712_145548_218.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_142700
+4016.0,1871.0000000000002,4132.0,1983.0000000000002,Chelonioidea sp,0.87626046,Chelonioidea sp,0.88133895,C5_L1_F517_T20260712_143802_076.jpg," sanacleto@ufl.edu, 24",JPG_20260712_142700

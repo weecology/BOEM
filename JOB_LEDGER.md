@@ -2993,3 +2993,15 @@ maps them onto the family head. Other indeterminate classes (Chelonioidea sp, La
 unchanged. Same crops/prepare output as 46895757 (dolphin review overlay kept), use_metadata=False.
 Next: compare Tursiops/Delphinus/Stenella per-class accuracy and micro/macro vs 46895758 (0.7613/0.6141), 2b27e044 (0.7815)
 and a3dc30a0 (0.7564); val sets differ, so then score all on the pinned zero-shot set before any default change.
+
+## 49330546 — 2026-11-03 — report_sweeps/submit_sweep_hf_19022856.sh — SUBMITTED
+Why: Ben asked whether the public HF model weecology/deepforest-marine-biodiversity should be updated. The HF weights
+(main eb360dc, PR #2 merged 2026-06-18) are tensor-identical (max abs diff 0) to 19022856f861.pl, trained 2026-05-27/28
+(10 epochs, 400px patches, init deepforest-tree); production is 1968e962/epoch29 (max abs diff 0.077 vs HF). 19022856 was
+never swept on the pinned Feb holdout, so this runs the same threshold_sweep.py recipe as 41840299/41840640.
+Caveat: the holdout was only pinned in July; the May-25 train_max_empty_0_25.csv has 3,937 annotated rows from the two holdout
+flights, so 19022856 very likely trained on them and its numbers are biased UPWARD (1968e962's train_max_empty_0_10.csv has 0).
+Side finding: the CURRENT training/crops/train.csv (2026-10-20) has 22,941 holdout-flight rows (1,302 non-empty) by the
+`flight` column (image_path is a timestamp, so image_path filters miss them) — the next detection retrain would leak the holdout.
+Output: /blue/ewhite/b.weinstein/BOEM/threshold_sweep_hf_19022856.json.
+Next: compare with threshold_sweep_window_end_1968e962_e29.json at 0.70 and at matched precision.

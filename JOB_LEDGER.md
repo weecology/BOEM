@@ -2977,3 +2977,10 @@ image_path + IoU>=0.5 (slash labels skipped); test on real CSVs: 3,698/9,644 fam
 152 Delphinus, 141 FalsePositive). Crop CSVs themselves untouched. Pre-run train/test/zero_shot.csv saved to
 /blue/ewhite/b.weinstein/BOEM/training/pre_dolphin_fold_20261020/. Classification is afterok on prepare, use_metadata=False.
 Next: compare per-class dolphin accuracy and Delphinidae-sp size vs the flat/H-CAST baselines (2b27e044, a3dc30a0).
+
+## 49328441 — 2026-11-03 — submit_regenerate_reports.sh '*JPG_202607*' (download step skipped; branch review-all-small-flights) — SUBMITTED
+Why: bring July reports up to date with Label Studio. Annotations pulled and backed up first (review 427 rows / 381 images / 20
+flights, vs 425 / 336 on 2026-10-20; backup 20 new, 0 changed, commit 921d0dd). Report-only CPU job, 4 cpu / 32 GB / 4 h,
+serial over the July flights. Every July flight's review CSV got a new pull, so all were regenerated rather than diffing.
+Next: check log for FAILED lines; crops/ count == observations_table.csv rows; 20260711_131000 expected to lack a report
+(no captures csv). Then rebuild the July zip if it is going out.

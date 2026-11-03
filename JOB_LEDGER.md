@@ -3012,3 +3012,12 @@ Result (49330546), checked 2026-11-03: COMPLETED 14m14s, exit 0:0, no Traceback.
 At matched precision ~85%: 1968e962 @0.60 61.0% box / 98.2% img vs HF @0.60 56.9% / 93.6%. Production wins by ~5-7 points
 of recall at equal precision DESPITE HF likely having trained on these flights. Empty-water queue 1.0 img/1k for both at 0.70.
 Next: Ben's call on pushing 1968e962/epoch29 to HF (upload_detection_to_hf.py still points at 19022856; model card is empty).
+
+## (no job) — 2026-11-03 — HF PR #3: weecology/deepforest-marine-biodiversity -> 1968e962/epoch29
+Ben approved updating the public model after the 49330546 sweep. scripts/upload_detection_to_hf.py (7fb8956) now uploads
+1968e962/epoch29 with a model card (scripts/hf_model_card.md) and rewrites config.json label_dict {'Tree':0} -> {'Object':0}
+(save_pretrained still emits Tree). Opened as a PR, NOT merged: https://huggingface.co/weecology/deepforest-marine-biodiversity/discussions/3
+Verified: load_model(revision="refs/pr/3") gives label_dict {'Object':0} and weights identical (max diff 0) to the production
+ckpt; on holdout frame C3_L1_F14_T20260201_135714_760 the HF-format and ckpt models return the same 38 boxes at 0.70.
+Previous version stays reachable at revision eb360dc (documented in the card).
+Next: Ben to merge PR #3 on HF; tell downstream teams their 0.4/old-model thresholds will not transfer.

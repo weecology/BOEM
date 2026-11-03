@@ -2984,3 +2984,12 @@ flights, vs 425 / 336 on 2026-10-20; backup 20 new, 0 changed, commit 921d0dd). 
 serial over the July flights. Every July flight's review CSV got a new pull, so all were regenerated rather than diffing.
 Next: check log for FAILED lines; crops/ count == observations_table.csv rows; 20260711_131000 expected to lack a report
 (no captures csv). Then rebuild the July zip if it is going out.
+
+## 49329504 — 2026-11-03 — submit_USGS_classification.sh (branch flat-drop-delphinidae-sp) — SUBMITTED
+Why: "Delphinidae sp" is the parent of Tursiops/Delphinus/Stenella, so as a flat class it cannot be separated from its own
+children (46895758: Tursiops 0.12, Delphinus 0.17, Delphinidae sp 0.83). USGS_classification.py now DROPS family-rank dolphin
+boxes (DOLPHIN_FAMILY_LABELS) instead of mapping them to "Delphinidae sp"; they stay in the hierarchical model, which still
+maps them onto the family head. Other indeterminate classes (Chelonioidea sp, Larus sp, Sterna sp, Aythya sp, Calonectris sp)
+unchanged. Same crops/prepare output as 46895757 (dolphin review overlay kept), use_metadata=False.
+Next: compare Tursiops/Delphinus/Stenella per-class accuracy and micro/macro vs 46895758 (0.7613/0.6141), 2b27e044 (0.7815)
+and a3dc30a0 (0.7564); val sets differ, so then score all on the pinned zero-shot set before any default change.

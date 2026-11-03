@@ -30,11 +30,10 @@ import glob
 import comet_ml
 from pytorch_lightning.loggers import CometLogger
 from src.classification import (
-    DOLPHIN_FAMILY_CLASS,
+    DOLPHIN_FAMILY_LABELS,
     SLASH_NOT_A_TAXON,
     _slash_label_to_genus,
     map_ambiguous_slash_labels,
-    map_dolphin_family_labels,
     map_turtle_labels,
     preprocess_and_train,
 )
@@ -279,12 +278,12 @@ def main(cfg: DictConfig):
     n_turtle = int((crop_annotations["label"] == "Chelonioidea sp").sum())
     print(f"[turtles] {n_turtle - n_turtle_before} crops relabeled to 'Chelonioidea sp'")
 
-    # Family-rank dolphin annotations are one token, so the two-word filter below would drop
-    # them all; keep them as an indeterminate class instead (same fix as turtles above).
-    n_dolphin_before = int((crop_annotations["label"] == DOLPHIN_FAMILY_CLASS).sum())
-    crop_annotations["label"] = map_dolphin_family_labels(crop_annotations["label"])
-    n_dolphin = int((crop_annotations["label"] == DOLPHIN_FAMILY_CLASS).sum())
-    print(f"[dolphins] {n_dolphin - n_dolphin_before} crops relabeled to '{DOLPHIN_FAMILY_CLASS}'")
+    # Family-rank dolphin boxes ("Delphinidae") are the parent of Tursiops/Delphinus/Stenella, so as a
+    # flat class they cannot be separated from their own children. They belong only in the
+    # hierarchical model (USGS_hierarchical.py, which maps them onto the family head); drop them here.
+    is_dolphin_family = crop_annotations["label"].astype(str).str.strip().isin(DOLPHIN_FAMILY_LABELS)
+    print(f"[dolphins] dropping {int(is_dolphin_family.sum())} family-rank dolphin crops from the flat classifier")
+    crop_annotations = crop_annotations[~is_dolphin_family]
 
     # Resolve "A/B" annotator ambiguity to the genus BEFORE the class-count filter, so that
     # every slash variant of a genus merges into one class and is counted together.

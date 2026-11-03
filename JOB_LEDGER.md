@@ -3021,3 +3021,15 @@ Verified: load_model(revision="refs/pr/3") gives label_dict {'Object':0} and wei
 ckpt; on holdout frame C3_L1_F14_T20260201_135714_760 the HF-format and ckpt models return the same 38 boxes at 0.70.
 Previous version stays reachable at revision eb360dc (documented in the card).
 Next: Ben to merge PR #3 on HF; tell downstream teams their 0.4/old-model thresholds will not transfer.
+
+## 49349121 — 2026-11-03 — submit_prepare_annotations.sh (--mem=128GB, afterany:49329504, worktree @ b53cd2f) — SUBMITTED
+Why: the 2026-10-20 prepare (46895757, via submit_prepare_USGS.sh) used prepare_USGS's hardcoded default holdout
+JPG_20260202_094800 + JPG_2023_Dec14 (wrong since 56fb89b), so the pinned holdout JPG_20260202_141900 + JPG_20260201_134000
+leaked into training: 22,941 train rows (1,270 with boxes), 70 test rows. b53cd2f pins the default and also drops by flight
+column (parent-name matching misses timestamp-named empty frames). PR branch fix-zero-shot-holdout (8bbab20, off main).
+Runs from detached worktree /blue/ewhite/b.weinstein/src/BOEM-prep-holdout-b53cd2f (keeps dolphin-review overlay 84b0870)
+with UV_PROJECT_ENVIRONMENT=main .venv; waits on classifier 49329504 so its inputs don't change underneath it.
+Leaky 10-20 splits backed up to /blue/ewhite/b.weinstein/BOEM/training/pre_holdout_fix_20261103/.
+1968e962 (production) predates the leak; its holdout sweep (bd9f717) stands.
+Next: verify zero_shot.csv flights == pinned pair, 0 rows of either flight in train/test, totals vs 10-20 (train 666,203);
+then remove the worktree. Any detector trained on the 10-20 split has invalid zero-shot numbers (none known).

@@ -2994,7 +2994,7 @@ unchanged. Same crops/prepare output as 46895757 (dolphin review overlay kept), 
 Next: compare Tursiops/Delphinus/Stenella per-class accuracy and micro/macro vs 46895758 (0.7613/0.6141), 2b27e044 (0.7815)
 and a3dc30a0 (0.7564); val sets differ, so then score all on the pinned zero-shot set before any default change.
 
-## 49330546 — 2026-11-03 — report_sweeps/submit_sweep_hf_19022856.sh — SUBMITTED
+## 49330546 — 2026-11-03 — report_sweeps/submit_sweep_hf_19022856.sh — COMPLETED
 Why: Ben asked whether the public HF model weecology/deepforest-marine-biodiversity should be updated. The HF weights
 (main eb360dc, PR #2 merged 2026-06-18) are tensor-identical (max abs diff 0) to 19022856f861.pl, trained 2026-05-27/28
 (10 epochs, 400px patches, init deepforest-tree); production is 1968e962/epoch29 (max abs diff 0.077 vs HF). 19022856 was
@@ -3005,3 +3005,10 @@ Side finding: the CURRENT training/crops/train.csv (2026-10-20) has 22,941 holdo
 `flight` column (image_path is a timestamp, so image_path filters miss them) — the next detection retrain would leak the holdout.
 Output: /blue/ewhite/b.weinstein/BOEM/threshold_sweep_hf_19022856.json.
 Next: compare with threshold_sweep_window_end_1968e962_e29.json at 0.70 and at matched precision.
+Result (49330546), checked 2026-11-03: COMPLETED 14m14s, exit 0:0, no Traceback. Pinned Feb holdout, 648 frames / 1,229 objects:
+  @0.70            box recall  img recall  precision     ceiling (thr 0.05)   max score
+  1968e962/e29        57.9%       94.2%      86.6%            71.4%            0.993
+  HF 19022856         52.0%       87.2%      89.0%            70.2%            0.974
+At matched precision ~85%: 1968e962 @0.60 61.0% box / 98.2% img vs HF @0.60 56.9% / 93.6%. Production wins by ~5-7 points
+of recall at equal precision DESPITE HF likely having trained on these flights. Empty-water queue 1.0 img/1k for both at 0.70.
+Next: Ben's call on pushing 1968e962/epoch29 to HF (upload_detection_to_hf.py still points at 19022856; model card is empty).

@@ -2984,6 +2984,7 @@ flights, vs 425 / 336 on 2026-10-20; backup 20 new, 0 changed, commit 921d0dd). 
 serial over the July flights. Every July flight's review CSV got a new pull, so all were regenerated rather than diffing.
 Next: check log for FAILED lines; crops/ count == observations_table.csv rows; 20260711_131000 expected to lack a report
 (no captures csv). Then rebuild the July zip if it is going out.
+Result (49328441), checked 2026-11-04: COMPLETED 47m05s, exit 0:0, 0 FAILED lines, no Traceback; last report JPG_20260713_160300 uploaded to Comet.
 
 ## 49329504 — 2026-11-03 — submit_USGS_classification.sh (branch flat-drop-delphinidae-sp) — SUBMITTED
 Why: "Delphinidae sp" is the parent of Tursiops/Delphinus/Stenella, so as a flat class it cannot be separated from its own
@@ -2993,6 +2994,10 @@ maps them onto the family head. Other indeterminate classes (Chelonioidea sp, La
 unchanged. Same crops/prepare output as 46895757 (dolphin review overlay kept), use_metadata=False.
 Next: compare Tursiops/Delphinus/Stenella per-class accuracy and micro/macro vs 46895758 (0.7613/0.6141), 2b27e044 (0.7815)
 and a3dc30a0 (0.7564); val sets differ, so then score all on the pinned zero-shot set before any default change.
+Result (49329504), checked 2026-11-04: COMPLETED 3h40m, exit 0:0. Micro acc 0.7619, macro precision 0.6183, val_loss 2.98.
+  Tursiops 0.82, Delphinus 0.86, Stenella frontalis 0.60 (vs 0.12/0.17 in 46895758 -- expected from dropping the parent class).
+  Still 0.0: Mergus merganser, Oceanodroma leucorhoa, Pluvialis squatarola, Pterodroma hasitata, Sterna paradisaea,
+  Sternula antillarum, Eudocimus albus, Balaenoptera acutorostrata; Phoca vitulina 0.05. Zero-shot scoring NOT yet done.
 
 ## 49330546 — 2026-11-03 — report_sweeps/submit_sweep_hf_19022856.sh — COMPLETED
 Why: Ben asked whether the public HF model weecology/deepforest-marine-biodiversity should be updated. The HF weights
@@ -3033,3 +3038,20 @@ Leaky 10-20 splits backed up to /blue/ewhite/b.weinstein/BOEM/training/pre_holdo
 1968e962 (production) predates the leak; its holdout sweep (bd9f717) stands.
 Next: verify zero_shot.csv flights == pinned pair, 0 rows of either flight in train/test, totals vs 10-20 (train 666,203);
 then remove the worktree. Any detector trained on the 10-20 split has invalid zero-shot numbers (none known).
+Result (49349121), checked 2026-11-04: COMPLETED 21m, exit 0:0, clean stderr. zero_shot.csv (22,996 rows) holds only
+JPG_20260202_141900 (13,445) + JPG_20260201_134000 (9,551). train 671,944 rows (was 666,203), test 131,568.
+Not yet checked: 0 rows of either flight in train/test. Worktree BOEM-prep-holdout-b53cd2f still present.
+
+## 49355098 — 2026-11-03 — submit_new_camera.sh (hpg-b200, 1 GPU, 64GB, 1h) — SUBMITTED
+Why: Ben got a single frame from the upgraded camera hardware (Box share 564c8y290etbxnlqlke5tl6k41b90stp, "Gull Parent Image.jpg",
+13400x9528 vs the old ~6464x4852) and wants to see current detector 1968e962/epoch29 + classifier a3dc30a0 + H-CAST output on it.
+Image: /blue/ewhite/b.weinstein/BOEM/imagery/new_camera_gull_parent/Gull_Parent_Image.jpg (no EXIF, so no metadata lookup; use_metadata=false).
+scripts/predict_new_camera.py reuses Pipeline.run()'s loaders + generate_pool_predictions with the Hydra config; no Label Studio/Comet/cache writes.
+Detector run down to 0.30 so the new-camera score distribution is visible; `in_pipeline` marks rows >= predict.min_score 0.70.
+Output: /blue/ewhite/b.weinstein/BOEM/new_camera_test/ (predictions.csv, *_overlay.jpg).
+Caveat: patch_size 1000 px on a different GSD/optics, so object size in patches differs from training.
+Next: check result, look at overlay.
+Result (49355098), checked 2026-11-03: COMPLETED 1m04s, exit 0:0, no Traceback. One frame, 3 boxes >= 0.30, 1 >= 0.70.
+  Box 0 (score 0.849, 126x323 px, a flying gull seen in overlay): crop = Larus delawarensis 0.975 (calibrated); H-CAST species Larus marinus 0.224, genus Larus 0.265, family "Delphinidae" 0.515 (incoherent, low-confidence).
+  Boxes 1-2 (scores 0.42/0.33, 37x13 and 37x30 px, sub-floor): tiny features near a buoy; crop labels Ardea alba / Fulmarus glacialis at 0.14-0.22 are junk. The orange buoy itself was not detected.
+Next: Ben to judge; more frames from the new camera needed before saying anything about 0.70 or patch_size 1000 transferring.

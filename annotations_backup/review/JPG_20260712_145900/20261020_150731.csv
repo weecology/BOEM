@@ -1,0 +1,5 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+4814.999999999999,3221.0,4873.999999999999,3288.0000000000005,Thalasseus maximus,0.8108783,Thalasseus maximus,,C1_L2_F4092_T20260712_155729_338.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_145900
+4006.9999999999995,1836.0,4054.9999999999995,1863.9999999999998,FalsePositive,0.72975844,Larus delawarensis,,C4_L1_F174_T20260712_150420_500.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_145900
+1571.0,3822.9999999999995,1620.0,3850.999999999999,FalsePositive,0.7025994,Larus delawarensis,,C4_L1_F274_T20260712_150532_021.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_145900
+4403.500090103902,2947.0001802078004,4496.999459376595,3012.4988286492894,Thalasseus maximus,0.9069105,Larus delawarensis,,C7_L1_F173_T20260712_150420_169.jpg,"Brier Klossing b.klossing@ufl.edu, 20",JPG_20260712_145900

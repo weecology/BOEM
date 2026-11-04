@@ -383,3 +383,41 @@ def test_human_review_without_hcast_columns():
     confident, uncertain = human_review(df, min_detection_score=0.7)
     assert set(uncertain["image_path"]) == {"b.jpg"}
     assert set(confident["image_path"]) == {"a.jpg"}
+
+
+def test_review_holdout_follows_the_detector(tmp_path):
+    """A detector swap holds every uncertain frame out of the report until reviewed; the hold
+    persists (as pending) under the same detector, and a flight with no reviews is untouched."""
+    from src.active_learning import review_holdout, write_review_provenance
+
+    args = dict(image_dir=str(tmp_path), uncertain_images=["/x/a.jpg"], pool_images=["a.jpg", "b.jpg"])
+
+    assert review_holdout(detector="old", has_reviews=False, **args) == (False, set())
+    # reviews that predate the provenance file cannot be trusted for a new detector
+    assert review_holdout(detector="old", has_reviews=True, **args) == (True, {"a.jpg"})
+
+    write_review_provenance(str(tmp_path), "old", {"a.jpg"})
+    assert review_holdout(detector="old", has_reviews=True, **args) == (False, {"a.jpg"})
+    # once a.jpg is reviewed it leaves the pool and the hold lifts
+    assert review_holdout(detector="old", has_reviews=True, **{**args, "uncertain_images": [], "pool_images": ["b.jpg"]}) == (False, set())
+    assert review_holdout(detector="new", has_reviews=True, **{**args, "uncertain_images": ["b.jpg"]}) == (True, {"a.jpg", "b.jpg"})
+
+
+def test_human_review_small_flight_reviews_everything():
+    from src.active_learning import human_review
+
+    df = pd.DataFrame({
+        "image_path": ["a.jpg", "b.jpg", "c.jpg"],
+        "score": [0.9, 0.9, 0.5],               # c.jpg fails the detection floor
+        "cropmodel_score": [0.95, 0.35, 0.95],  # a.jpg is confident
+    })
+    confident, uncertain = human_review(df, review_all_below=25)
+    assert confident.empty
+    assert list(uncertain.image_path) == ["a.jpg", "b.jpg"]
+    assert set(uncertain.review_reason) == {"small_flight"}
+
+    # A flight at or above the threshold, or a count that includes annotated frames, is unchanged.
+    confident, uncertain = human_review(df, review_all_below=2)
+    assert list(confident.image_path) == ["a.jpg"]
+    confident, _ = human_review(df, review_all_below=25, n_flight_frames=40)
+    assert list(confident.image_path) == ["a.jpg"]

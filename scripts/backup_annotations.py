@@ -23,7 +23,7 @@ from pathlib import Path
 
 SOURCE = Path("/blue/ewhite/b.weinstein/BOEM/annotations")
 DEST = Path(__file__).resolve().parents[1] / "annotations_backup"
-SPLITS = ("train", "validation", "review")
+SPLITS = ("train", "validation", "review", "dolphin_review")
 
 
 def relative_csvs(split: str) -> set[Path]:

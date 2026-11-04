@@ -148,6 +148,8 @@ def human_review(
     review_low=0.05,
     review_high=0.50,
     review_on_disagreement=True,
+    review_all_below=0,
+    n_flight_frames=None,
 ):
     """
     Split trusted detections into confident and uncertain by classifier confidence.
@@ -194,10 +196,20 @@ def human_review(
             H-CAST disagree on species. No-op when the hcast_* columns are absent
             (hierarchical.checkpoint: null), so this is safe with H-CAST disabled.
 
+        review_all_below (int): A flight with fewer than this many frames is reviewed in
+            full: every box at or above min_detection_score is uncertain whatever its
+            classifier score, so nothing is left to track as reviewed or not. The detection
+            floor still applies. 0 disables.
+        n_flight_frames (int, optional): Frames in the whole flight, for review_all_below.
+            Callers should pass a count that includes already-annotated frames so the rule
+            does not flip as review proceeds; defaults to the distinct detected frames in
+            ``predictions``.
+
     Returns:
         tuple: (confident_predictions, uncertain_predictions). uncertain_predictions carries
-        a ``review_reason`` column ("disagreement", "low_confidence", or "both") so the queue
-        can be ordered and the two triggers can be told apart downstream.
+        a ``review_reason`` column ("disagreement", "low_confidence", "both", or
+        "small_flight") so the queue can be ordered and the triggers can be told apart
+        downstream.
     """
     if review_low > review_high:
         raise ValueError(
@@ -221,6 +233,12 @@ def human_review(
         ["both", "disagreement", "low_confidence"],
         default="",
     )
+    if n_flight_frames is None:
+        n_flight_frames = detected["image_path"].nunique()
+    if n_flight_frames < review_all_below:
+        detected["review_reason"] = "small_flight"
+        return detected.iloc[0:0], detected
+
     uncertain_predictions = detected[in_band | disagrees]
 
     confident_predictions = detected[
@@ -229,6 +247,42 @@ def human_review(
         ~detected["image_path"].isin(uncertain_predictions["image_path"])]
 
     return confident_predictions, uncertain_predictions
+
+
+def review_holdout(
+    image_dir: str,
+    detector: str,
+    uncertain_images,
+    pool_images,
+    has_reviews: bool,
+) -> tuple[bool, set[str]]:
+    """
+    Decide which frames must stay out of the report until a human has reviewed them.
+
+    Reviews are only valid for the detector that produced the boxes the human saw. The
+    flight records the detector of the last review queue in ``.review_provenance.json``; when
+    the current detector differs (or the flight has reviews but no record, i.e. they predate
+    this check), every uncertain frame is held out and must be queued in full, ignoring
+    human_review.n. Frames still pending from an earlier hold-out stay held until they are
+    reviewed -- reviewed frames leave the pool, so they drop out of ``pending`` on their own.
+
+    Returns:
+        tuple: (detector_changed, basenames to hold out of final predictions).
+    """
+    path = Path(image_dir) / ".review_provenance.json"
+    provenance = json.loads(path.read_text()) if path.exists() else None
+    changed = (provenance["detector"] != detector) if provenance else has_reviews
+    held = {os.path.basename(p) for p in uncertain_images} if changed else set()
+    if provenance:
+        held |= set(provenance["pending"]) & {os.path.basename(p) for p in pool_images}
+    return changed, held
+
+
+def write_review_provenance(image_dir: str, detector: str, pending) -> None:
+    """Record the detector behind the review queue just uploaded, and the frames still unreviewed."""
+    (Path(image_dir) / ".review_provenance.json").write_text(
+        json.dumps({"detector": detector, "pending": sorted(pending)}, indent=2)
+    )
 
 
 def generate_pool_predictions(

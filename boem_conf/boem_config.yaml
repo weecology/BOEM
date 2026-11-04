@@ -22,6 +22,9 @@ comet:
   workspace: bw4sz
 
 check_annotations: false
+# Rebuild the report from .prediction_cache and the annotations on disk: no models, no GPU,
+# no Label Studio upload. Use after labels change (scripts/download_annotations.py first).
+report_only: false
 # Force upload bypasses the pipeline, useful for debugging and starting a new project
 force_upload: False
 image_dir: /blue/ewhite/b.weinstein/BOEM/imagery/JPG_20241107_135800
@@ -33,9 +36,39 @@ flight_name: null
 predict:
   patch_size: 1000
   patch_overlap: 0
-  # CALIBRATED FOR a09c69331af8496380cbf99e3859d656/epoch16 — this value is meaningless
-  # without that pairing, which is precisely how it went wrong before. Re-derive with
-  # scripts/threshold_sweep.py whenever detection_model.checkpoint changes.
+  # PAIRING VERIFIED FOR THE CURRENT CHECKPOINT (job 41939457, 2026-09-13).
+  # The foam risk described below was measured and did NOT materialise — the opposite
+  # happened. On the two foam-heavy July flights (JPG_20260712_100400 + JPG_20260712_113200,
+  # 3,000-frame sample) 1968e962/epoch29 emits FEWER boxes at 0.70 than a09c6933 did on the
+  # same flights: 0.67 boxes/1k vs 2.08 boxes/1k (120 boxes over 57,657 frames). Across the
+  # band it is ~3.5x more conservative at 0.40 (126 boxes/1k vs the 0.40-era 25,280 boxes
+  # over those same 57,657 frames = 438/1k).
+  # That is the profile of a model that learned to REJECT foam while scoring real animals
+  # higher — consistent with its training corpus, which is the first to include the July
+  # review pass's 52 human-marked FalsePositives as hard negatives.
+  # CAVEAT, do not over-read: 0.67 boxes/1k on a 3,000-frame sample is TWO boxes. It is at
+  # the sample's resolution limit, so it supports "no foam excess" but cannot settle whether
+  # the new model is now too conservative on July imagery. The Feb zero-shot holdout says its
+  # recall is better (94.2% vs 75.8% image recall), but Feb and July imagery differ sharply
+  # (79.1% of Feb boxes sit above 0.85 vs 1.4% of July ones), so that does not fully transfer
+  # either. A July-imagery recall answer needs reviewed July ground truth, which does not
+  # exist outside the pinned Feb pair.
+  # Original (now-closed) risk statement kept below for the reasoning:
+  # 0.70 was calibrated for a09c69331af8496380cbf99e3859d656/epoch16 on JULY SURVEY imagery
+  # (see the derivation below). detection_model.checkpoint moved to 1968e962/epoch29 on
+  # 2026-09-13, and this value has NOT been re-derived on survey imagery for it.
+  # What IS known for 1968e962, on the pinned Feb ZERO-SHOT holdout (jobs 41840299/41840640):
+  # 0.70 gives image recall 94.2% / box precision 86.6%, comfortably better than a09c6933 at
+  # the same cut, so 0.70 is a SAFE-OR-BETTER starting point on that substrate and holding it
+  # cannot silently lose frames relative to the model being replaced.
+  # The open risk is the other direction: 1968e962 scores higher overall (max 0.993 on the
+  # holdout vs a09c6933's 0.931), so on July imagery it may push FOAM above 0.70 that
+  # a09c6933 kept below. The 0.70 value exists precisely to exclude that foam, and the
+  # lesson of 2026-08-20 is that a threshold does not transfer between checkpoints.
+  # The survey-imagery derivation called for here WAS run: job 41939457, result at the top
+  # of this comment. Remaining unmeasured piece is per-class share clearing the cut and an
+  # eyeball of the Morus crops, which needs a survey run on the new checkpoint to produce.
+  # Re-derive with scripts/threshold_sweep.py whenever detection_model.checkpoint changes.
   #
   # 0.70 chosen 2026-08-20, on SURVEY imagery. This supersedes the 0.30 set on 2026-08-13
   # from the Feb holdout sweep (job 39385379: img recall 97.8%, box recall 63.0%, prec
@@ -91,11 +124,25 @@ propagate:
 
 detection_model:
   force_train: False
-  # Comet a09c69331af8496380cbf99e3859d656, epoch16 (val_classification 0.0163) — chosen
-  # 2026-08-12 over d1248ed8/epoch09 (0.0144) for the JPG_202607* run.
-  # Ignore box_recall on the Comet run (~0.06): see deepforest_box_recall_issue.md, empty
-  # frames count in the denominator but never the numerator.
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/a09c69331af8496380cbf99e3859d656/epoch16-val_cls0.0163.ckpt
+  # Comet 1968e962113f4c57bc6bf5f07fae1b25, epoch29 (val_classification 0.0899) — job
+  # 40994172, trained 2026-09-03 on the corpus refreshed with the completed July review
+  # pass. PROMOTED 2026-09-13, replacing a09c6933/epoch16.
+  #
+  # Promoted on ZERO-SHOT holdout evidence (jobs 41840299 / 41840640, the pinned Feb pair
+  # JPG_20260201_134000 + JPG_20260202_141900 — 648 fully-reviewed frames, 1,229 objects).
+  # At the SAME predict.min_score 0.70, zero-shot:
+  #     1968e962/epoch29   image recall 94.2%  box recall 57.9%  box precision 86.6%
+  #     a09c6933/epoch16   image recall 75.8%  box recall 44.3%  box precision 90.2%
+  # +18.4 points of image recall for -3.6 of precision. The box-recall CEILING (lowest
+  # threshold, i.e. what no threshold choice can recover) also rose 67.8% -> 71.4%, so this
+  # is a better detector and not merely a better-calibrated one.
+  # These are ZERO-SHOT numbers. Do NOT quote them as validation recall, and do not compare
+  # them to the ~0.06-0.80 box_recall on any Comet training run: that metric is ceilinged by
+  # the empty-frame ratio of whatever split it was computed on and is not comparable across
+  # runs (deepforest_box_recall_issue.md). No trustworthy in-distribution validation box
+  # recall exists for either checkpoint.
+  # Ignore box_recall on the Comet run for the same reason.
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/1968e962113f4c57bc6bf5f07fae1b25/epoch29-val_cls0.0899.ckpt
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -194,7 +241,6 @@ human_review:
   #   human_review.review_low / review_high      (this block)
   #   active_learning.min_classification_score
   #   pipeline_evaluation.classification_threshold
-  #   report.rare_species_min_score
   #
   # History: 0.6 -> 0.99 (raw) on 2026-08-20, then -> 0.50 (calibrated) the same day.
   #
@@ -242,6 +288,12 @@ human_review:
   # them. Setting this false restores the pre-2026-08-26 band-only behaviour; it is also a
   # no-op when hierarchical.checkpoint is null, since there are no hcast_* columns to compare.
   review_on_disagreement: true
+  # A flight with fewer than this many detected frames (>= min_detection_score) is reviewed in
+  # full, whatever the classifier score or model agreement: when there is little to review it is
+  # quicker to do all of it than to track which frames were and were not looked at. The count
+  # includes frames already annotated, so it does not shrink as review proceeds. The detection
+  # floor still applies. 0 disables.
+  review_all_below: 25
 
 report:
   enabled: true
@@ -254,11 +306,6 @@ report:
   # a near-superset — the only file it lacks is 20211201_125800_captures.csv); until then
   # this points at the inner one.
   metadata_dir: /blue/ewhite/b.weinstein/BOEM/metadata_aflight_csvs/metadata_aflight_csvs
-  n_sample_crops: 5
-  n_rare_species: 2
-  # CALIBRATED SCALE (classification_model.temperature). 0.7 raw -> 0.21 by val quantile.
-  # Picks high-confidence rare-species crops for the report; see human_review.review_high.
-  rare_species_min_score: 0.21
 
   # Taxonomic rollup: report the FINEST rank at which the flat CropModel and
   # H-CAST agree, instead of trusting the CropModel species alone.

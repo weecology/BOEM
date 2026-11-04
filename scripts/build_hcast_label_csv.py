@@ -54,6 +54,8 @@ def main():
     # representative species; keep only the true species entries, one per species id.
     triples, _ = load_taxonomy(args.taxonomy)
     species_to_triple = {s: (f, g, s) for (f, g, s) in triples}
+    genus_to_family = {g: f for (f, g, _) in triples}
+    all_families = {f for (f, _, _) in triples}
 
     rows = {}
     for name, (fid, gid, sid) in name_to_ids.items():
@@ -62,7 +64,19 @@ def main():
                              family="Chelonioidea", genus_index=gid, family_index=fid)
             continue
         if name not in species_to_triple:
-            continue  # ancestor key, or a "Genus species" alias of a species already covered
+            # Indeterminate "X sp" classes (commit 9d2d68c) get their own species id
+            # from load_taxonomy_restricted_to_species but are not taxonomy species.
+            # "Larus sp" -> real genus Larus / its family; "Delphinidae sp" -> real
+            # family, synthetic genus id (keyed by the class name so it stays distinct
+            # from the real "Delphinidae" family row downstream).
+            stem, _, suffix = str(name).rpartition(" ")
+            if suffix == "sp" and stem in genus_to_family:
+                rows[sid] = dict(index=sid, species=name, genus=stem,
+                                 family=genus_to_family[stem], genus_index=gid, family_index=fid)
+            elif suffix == "sp" and stem in all_families:
+                rows[sid] = dict(index=sid, species=name, genus=name,
+                                 family=stem, genus_index=gid, family_index=fid)
+            continue  # otherwise: ancestor key, or a "Genus species" alias already covered
         family, genus, species = species_to_triple[name]
         rows[sid] = dict(index=sid, species=species, genus=genus, family=family,
                          genus_index=gid, family_index=fid)

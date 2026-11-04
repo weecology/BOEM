@@ -30,11 +30,10 @@ import glob
 import comet_ml
 from pytorch_lightning.loggers import CometLogger
 from src.classification import (
-    DOLPHIN_FAMILY_CLASS,
+    DOLPHIN_FAMILY_LABELS,
     SLASH_NOT_A_TAXON,
     _slash_label_to_genus,
     map_ambiguous_slash_labels,
-    map_dolphin_family_labels,
     map_turtle_labels,
     preprocess_and_train,
 )
@@ -83,7 +82,12 @@ def gentle_class_balance(df, factor=3.0, random_state=None):
     """
     Gently reduce majority-class dominance by capping each class at factor * median(class_counts).
     Not full balance: small classes are unchanged; only large classes are downsampled.
+
+    factor=None (or <= 0) disables downsampling entirely and returns df unchanged --
+    used to bracket how much this cap matters (see class_balance_factor below).
     """
+    if factor is None or factor <= 0:
+        return df
     counts = df.groupby("label").size()
     median_count = int(counts.median())
     cap = max(median_count, int(median_count * factor))
@@ -274,12 +278,12 @@ def main(cfg: DictConfig):
     n_turtle = int((crop_annotations["label"] == "Chelonioidea sp").sum())
     print(f"[turtles] {n_turtle - n_turtle_before} crops relabeled to 'Chelonioidea sp'")
 
-    # Family-rank dolphin annotations are one token, so the two-word filter below would drop
-    # them all; keep them as an indeterminate class instead (same fix as turtles above).
-    n_dolphin_before = int((crop_annotations["label"] == DOLPHIN_FAMILY_CLASS).sum())
-    crop_annotations["label"] = map_dolphin_family_labels(crop_annotations["label"])
-    n_dolphin = int((crop_annotations["label"] == DOLPHIN_FAMILY_CLASS).sum())
-    print(f"[dolphins] {n_dolphin - n_dolphin_before} crops relabeled to '{DOLPHIN_FAMILY_CLASS}'")
+    # Family-rank dolphin boxes ("Delphinidae") are the parent of Tursiops/Delphinus/Stenella, so as a
+    # flat class they cannot be separated from their own children. They belong only in the
+    # hierarchical model (USGS_hierarchical.py, which maps them onto the family head); drop them here.
+    is_dolphin_family = crop_annotations["label"].astype(str).str.strip().isin(DOLPHIN_FAMILY_LABELS)
+    print(f"[dolphins] dropping {int(is_dolphin_family.sum())} family-rank dolphin crops from the flat classifier")
+    crop_annotations = crop_annotations[~is_dolphin_family]
 
     # Resolve "A/B" annotator ambiguity to the genus BEFORE the class-count filter, so that
     # every slash variant of a genus merges into one class and is counted together.
@@ -327,15 +331,24 @@ def main(cfg: DictConfig):
 
     # Gentle class balance: applied to train only after the split so test reflects the
     # natural distribution and rare classes are not starved of their test images.
+    # class_balance_factor is CLI-overridable (classification_model.class_balance_factor=X)
+    # to bracket how much this cap matters; None/<=0 disables downsampling entirely.
+    class_balance_factor = cfg.classification_model.get("class_balance_factor", 4.0)
+    if class_balance_factor is not None:
+        class_balance_factor = float(class_balance_factor)
+        if class_balance_factor <= 0:
+            class_balance_factor = None
     n_before = len(train_df)
-    train_df = gentle_class_balance(train_df, factor=4.0, random_state=42)
+    train_df = gentle_class_balance(train_df, factor=class_balance_factor, random_state=42)
     n_after = len(train_df)
     if n_before > n_after:
-        print(f"[class balance] train downsampled {n_before} -> {n_after} (cap = 4x median per class)")
+        print(f"[class balance] train downsampled {n_before} -> {n_after} (cap = {class_balance_factor}x median per class)")
+    else:
+        print(f"[class balance] no downsampling applied (class_balance_factor={class_balance_factor}); train pool size {n_after}")
 
     comet_logger = CometLogger(project_name=cfg.comet.project, workspace=cfg.comet.workspace)
-    comet_logger.experiment.log_parameter("class_balance_applied", True)
-    comet_logger.experiment.log_parameter("class_balance_cap_factor", 4.0)
+    comet_logger.experiment.log_parameter("class_balance_applied", class_balance_factor is not None)
+    comet_logger.experiment.log_parameter("class_balance_cap_factor", class_balance_factor)
     comet_logger.experiment.log_parameter("train_pool_size_after_balance", n_after)
     comet_logger.experiment.log_parameter("split_by_parent_image", True)
     comet_logger.experiment.log_parameter("split_n_classes_dropped", split_report["n_dropped_classes"])

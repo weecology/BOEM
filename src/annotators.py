@@ -1,4 +1,5 @@
 import os
+import re
 import glob
 from typing import Dict, Iterable, List, Optional
 import pandas as pd
@@ -9,6 +10,35 @@ from src import label_studio as ls_mod
 from src import sagemaker_gt as sm_mod
 
 from deepforest.utilities import read_file as df_read_file
+
+def _download_stamp(csv_file: str) -> str:
+    """Sortable download time from a Label Studio CSV name (20260903_120646.csv, train_20250301_101500.csv)."""
+    return "_".join(re.findall(r"\d{6,8}", os.path.basename(csv_file)))
+
+
+def read_label_studio_csvs(csv_files: list[str]) -> pd.DataFrame:
+    """Read Label Studio annotation CSVs into the labels the annotators actually gave.
+
+    - Each download is the complete state of a task, so a frame's newest download replaces
+      its earlier rows. Unioning them keeps a relabelled box under both labels and
+      resurrects boxes the annotator deleted.
+    - A box the annotator rejected (rectangle label FalsePositive) is FalsePositive, whatever
+      the per-region species dropdown still says. Downloads made before the parser handled
+      this carry two rows for such a box at identical coordinates -- FalsePositive and the
+      model's prefilled species -- and the species row would otherwise survive as a human
+      label.
+    """
+    if not csv_files:
+        return pd.DataFrame()
+    df = pd.concat(
+        [pd.read_csv(f).assign(_downloaded=_download_stamp(f)) for f in csv_files], ignore_index=True
+    )
+    df = df[df["_downloaded"] == df.groupby("image_path")["_downloaded"].transform("max")]
+    box = ["image_path", "xmin", "ymin", "xmax", "ymax"]
+    rejected = df.groupby(box)["label"].transform(lambda s: (s == "FalsePositive").any())
+    df["label"] = df["label"].where(~rejected, "FalsePositive")
+    return df.drop(columns="_downloaded").drop_duplicates().reset_index(drop=True)
+
 
 def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     """
@@ -46,17 +76,8 @@ def gather_data(annotation_dir: str, image_dir: str) -> Optional[pd.DataFrame]:
     
     # Gather from LabelStudio if files are present
     if labelstudio_files:
-        csv_dfs = []
-        for csv_file in labelstudio_files:
-            try:
-                csv_dfs.append(pd.read_csv(csv_file))
-            except Exception as exc:
-                print(f"Warning: failed to parse CSV {csv_file}: {exc}")
-        
-        if csv_dfs:
-            labelstudio_df = pd.concat(csv_dfs, ignore_index=True)
-            labelstudio_df.drop_duplicates(inplace=True)
-            labelstudio_df.reset_index(drop=True, inplace=True)
+        labelstudio_df = read_label_studio_csvs(labelstudio_files)
+        if not labelstudio_df.empty:
             labelstudio_df = df_read_file(labelstudio_df, image_dir)
             if labelstudio_df is not None and not labelstudio_df.empty:
                 parts.append(labelstudio_df)

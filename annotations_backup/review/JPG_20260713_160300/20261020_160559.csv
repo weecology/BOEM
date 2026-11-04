@@ -1,0 +1,3 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+2800.0,2711.9999999999995,2882.0,2809.9999999999995,Chelonioidea sp,0.9295211,Chelonioidea sp,0.67288166,C1_L5_F3145_T20260713_165838_393.jpg," benweinstein2010@gmail.com, 2",JPG_20260713_160300
+5274.0,1305.0,5456.000000000001,1442.0,Chelonioidea sp,0.8411028,Chelonioidea sp,0.8329056,C3_L3_F2489_T20260713_164235_947.jpg," benweinstein2010@gmail.com, 2",JPG_20260713_160300

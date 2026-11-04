@@ -2153,7 +2153,7 @@ Result: FAILED (0:53) at 05:00:52 with ZERO elapsed -- killed the same second it
   on hpg-b200, not the wall.
 Next: superseded by 40306075 (--time 72h, under the cap either way).
 
-## 40306075 — 2026-08-26 13:0x — submit_USGS_hierarchical.sh — SUBMITTED
+## 40306075 — 2026-08-26 14:05 — submit_USGS_hierarchical.sh — COMPLETED
 Why: third attempt at the H-CAST retrain on the 2b27e044 split (40263761 crashed at epoch 7,
   40272359 was killed at 0s). Now also the ONLY way back to a working H-CAST at all, since
   40263761 destroyed the 39614374 checkpoint and every surviving fallback is worse than the
@@ -2166,18 +2166,72 @@ Why: third attempt at the H-CAST retrain on the 2b27e044 split (40263761 crashed
        output/usgs_hier/ is now a manual step after a run finishes and its accuracy checks out.
   hierarchical.yaml is deliberately LEFT pointing at the broken checkpoint (user's call,
   2026-08-26) rather than nulled, with a loud warning comment naming this job.
-Result: pending
-Next: on completion (expect Species@1 ~76 and hierarchy sizes 72/50/18):
-  1. Promote: copy output/usgs_hier/run_40306075/best_checkpoint.pth to
-     output/usgs_hier/best_checkpoint.pth.
-  2. Regenerate output/usgs_hier/species.csv with scripts/build_hcast_label_csv.py off
-     buffer_30/2b27e044 -- the checked-in one is the stale 68-class vocabulary and WILL
-     mismatch the 72-head checkpoint. Never hand-edit it.
-  3. Delete the BROKEN warning block from boem_conf/hierarchical/hierarchical.yaml.
-  4. Rerun scripts/compare_flat_vs_hcast.py --comet-id 2b27e0442e51469c9cce3fa51927d741
-     --hcast-checkpoint/--hcast-label-csv at this run's output, to decide whether the product
-     ensemble still buys ~3 points now that the flat model's cetacean failure is fixed.
+Result: **COMPLETED 2026-08-28T04:06, 1d 14h01m, all 100 epochs, exit 0:0.** Best Species@1
+  **77.56** (Species@5 ~94, Genus@1 ~84, Family@1 ~91), reached late (epochs 91-99 all 77.1-77.6).
+  Hierarchy sizes species=72 genus=50 family=18, with the synthetic 'Chelonioidea sp'
+  (species_id=71) as designed. This BEATS the 76.72 of the 39614374 checkpoint that 40263761
+  destroyed, so H-CAST is fully recovered, not merely restored. MaxRSS 15.9G of 60G. No Comet
+  (USGS_hierarchical.py still doesn't log). Checkpoint at
+  output/usgs_hier/run_40306075/best_checkpoint.pth (run-scoped dir, so it could not overwrite
+  production this time).
+Next: DONE 2026-08-31 — see the "H-CAST promotion" entry below. Step 4 (compare) is job 40700993.
   Leave expand=30/square=true/eval_crop_ratio=0.875 pinned; that geometry is worth +14 points.
+
+## (no job) — 2026-08-31 — H-CAST promotion: 40306075 wired into production, label-CSV builder fixed
+Why: 40306075 finished 2026-08-28 but nothing had been promoted, so production H-CAST
+  (boem_conf/hierarchical/hierarchical.yaml) was still serving 40263761's broken epoch-5
+  weights (Species@1 26.91, 72 heads against a 68-label CSV). Ran the 4 "Next" steps above.
+Changes:
+  1. **Checkpoint promoted.** output/usgs_hier/run_40306075/best_checkpoint.pth ->
+     output/usgs_hier/best_checkpoint.pth (md5 b4a78942…, verified identical). The broken
+     one is preserved as output/usgs_hier/best_checkpoint.broken_40263761_ep5.pth rather than
+     deleted. Old 68-class species.csv kept as output/usgs_hier/species.stale68.csv.
+     (output/ is gitignored, so none of this is a repo change.)
+  2. **scripts/build_hcast_label_csv.py FIXED (uncommitted, tracked).** It could not emit a
+     CSV for this checkpoint: the 5 indeterminate "X sp" classes commit 9d2d68c added
+     (Aythya/Calonectris/Larus/Sterna sp + Delphinidae sp) get real species ids from
+     load_taxonomy_restricted_to_species but are not taxonomy species, so the builder skipped
+     them and aborted with "No label for species indices [66,67,68,69,70]". 9d2d68c updated
+     USGS_hierarchical.py / taxonomy_hier.py / classification.py but never this script. Added a
+     branch: "Larus sp" -> real genus Larus + its family; "Delphinidae sp" -> real family,
+     synthetic genus id keyed by the class name so it stays distinct from the real
+     "Delphinidae" family row downstream. Turtle path unchanged.
+  3. **species.csv regenerated**, off buffer_30/2b27e0442e51469c9cce3fa51927d741's
+     usgs_train_split.csv / usgs_val_split.csv (the same split 40306075 trained on). 72 rows,
+     genus_index covers 50, family_index covers 18 — matches the checkpoint heads.
+  4. **hierarchical.yaml**: BROKEN warning block removed, header comment rewritten to describe
+     40306075 (77.56, 72/50/18, promoted 08-31) and keep the 39614374 / 40263761 / Dec-2025
+     history as context. checkpoint/label_csv paths unchanged (defaults already correct).
+Verified: load_hcast_model(promoted ckpt, new species.csv, expand=30/square=true/crop=0.875)
+  loads clean, heads 72/50/18, species_71 = 'Chelonioidea sp', forward on a dummy batch
+  returns (B,72)/(B,50)/(B,18). tests/ not run (no H-CAST test module).
+Next: commit build_hcast_label_csv.py + hierarchical.yaml (working tree also carries the
+  land-filter branch's changes — commit selectively). Job 40700993 (step 4) is done — see below.
+
+## 40700993 — 2026-08-31 — submit_cmp_2b27e044.sh (scratchpad) — SUBMITTED
+Why: JOB_LEDGER 40306075 "Next" step 4 — rerun scripts/compare_flat_vs_hcast.py against the
+  2b27e044 flat model (matching split) and the promoted 40306075 H-CAST, to decide whether the
+  product ensemble still buys ~3 points now that the flat model's cetacean failure is fixed
+  (per the 40263760 confusion run, T=4.4613, val acc 0.7815). Uses the existing
+  classifier_confusion_2b27e044_* logits on /blue. Scratchpad submit copy so the tracked
+  submit_compare_flat_hcast.sh (still targets a3dc30a0) is untouched; output ->
+  output/usgs_hier/flat_vs_hcast_val_2b27e044_40306075.csv.
+Result: **COMPLETED 2026-08-31T13:47, 38s, exit 0:0.** Sanity check PASSES: H-CAST Species@1
+  76.74% on the shared val split (3,964 crops), reproducing the 77.56 the training run logged —
+  so the promoted checkpoint, regenerated species.csv and crop geometry are all correct.
+  Accuracy (Species@1 / Genus@1 / Family@1): flat CropModel 78.15 / 82.14 / 91.57 (genus/family
+  are softmax rollups); H-CAST 76.74 / 80.73 / 90.51 (native heads).
+  **Ensembles still earn their keep**: product/log-average 80.34 Species@1, 93.76 Family@1 —
+  +2.2 over flat alone (78.14) and +3.2 over H-CAST alone (77.15) on the shared subset. Mean of
+  probs 79.76. H-CAST-family × flat-species 79.08.
+  Head-to-head: agree on 3,030 crops (90.3% right when they agree); of 934 disagreements flat
+  wins 363, H-CAST 307, both wrong 264. 66% of all flat errors sit in the disagree bucket.
+  Delphinidae vs Laridae (the motivation): flat alone is now clean — 142/155 cetacean right,
+  1→Laridae; ensemble 143/155. The label fixes in 9d2d68c did most of that work; the ensemble
+  adds species-rank accuracy on top.
+  Output: output/usgs_hier/flat_vs_hcast_val_2b27e044_40306075.csv.
+Next: decision for Ben — wire the product ensemble (still ~+3 Species@1) or run H-CAST/flat
+  standalone. All four promotion steps are now done and verified; H-CAST is live and correct.
 
 ## (no job) — 2026-08-26 — land filter: dialled to zero measured water loss on collaborator request
 
@@ -2241,3 +2295,763 @@ Tests: 10 passed, unchanged.
 Next: same as above, plus (4) don't trust a "checked Label Studio, nothing new" read as durable --
 annotation is ongoing and live; re-pull immediately before reporting counts, not from memory of an
 earlier pull in the same session.
+
+## (no job) — 2026-08-26 (later same day) — Label Studio projects retired, and the boundary is uglier than the numbers suggested
+
+Ben asked to back up and delete both Label Studio land projects now that annotation is done with,
+then look at actual images around the new 0.910 threshold to judge whether it matches what the
+collaborators want.
+
+**Backup before delete:** pulled full raw task JSON (not just image+label) for both projects to
+`/blue/ewhite/b.weinstein/BOEM/annotations/land_screen/label_studio_full_backup_20260826.json`
+(914 KB) -- `Bureau of Ocean Energy Management - Land Screen` (id 213, 250 tasks, 63 annotated) and
+`BOEM - Land Screen Validation` (id 214, 400 tasks, 2 annotated). Verified the annotated counts in
+the backup match the live counts before deleting. Both projects deleted via
+`label_studio_sdk.Client.delete_project` (204 response, confirmed gone from `get_projects()`).
+Nothing in the repo or on /blue depended on the projects existing -- `annotations.csv` and the
+scored-frame pools already had everything extracted.
+
+**Added `scripts/viz_land_boundary.py`**: rescoring only needs the four cached features
+(struct/fine_edge/chroma/bg_frac) already sitting in `manifest.csv` / `scored_frames.csv` /
+`new_flight_scores*.csv` run back through the *current* `land_model.json` -- no need to reopen any
+JPEG to get an up-to-date probability. Pulled all four pools (321,963 frames deduped, 20 flights),
+rescored with the 0.910 model, and rendered 5 contact sheets (10 frames each, thinned by
+`mine_land_examples.round_robin` so no flight/moment dominates) spanning confident-water ->
+water-side -> just-below-threshold (kept) -> just-above (cut) -> confident-land (cut). Sent to Ben
+as PNGs.
+
+**Two things visible in the images that the threshold number alone did not show:**
+
+1. **The "confident land" tail (p>0.95) is not suburban houses -- it is beach/shoreline, all 4
+   frames available in that band (wanted 10, only 4 existed) from a single flight,
+   `JPG_20241220_104800`.** Bright sand against a dark waterline, exactly the "beachhead that
+   could hold birds" shape collaborators said must stay in, not the houses/trees/suburban target
+   this band is supposed to represent. Structurally the model can't tell "sand next to water" from
+   "the thing we actually want to cut" -- both produce high struct / low chroma / low bg_frac.
+2. **A parking lot with visible cars (`JPG_20260710_155800`, one specific frame) scored p=0.672 --
+   comfortably in the "water_side" band, nowhere near the threshold.** That is unambiguous
+   suburban development by the collaborators' own definition, and the model is confident it is
+   NOT land. This is not a threshold-tuning problem -- moving the operating point cannot fix a
+   frame that scores 0.672 when the cut is at 0.910.
+
+**Reading on these two:** the four features (coarse structure, fine edge ratio, colour spread,
+background-colour fraction) were built to separate "one material" (water) from "many materials"
+(land), and that distinction does not line up with the collaborators' actual criterion (presence of
+human development vs. natural water/shoreline/beach). Sand is structurally land-like but is exactly
+what should stay in; a parking lot at a certain angle/lighting can look texturally like water. No
+threshold choice resolves this -- it is a feature/model limitation, not an operating-point one.
+
+Next: (1) Ben to review the 5 PNGs and confirm whether this is acceptable given nothing currently
+in the pipeline calls the land filter (still true), or whether it blocks deployment; (2) if it
+blocks deployment, the fix is likely a different feature set or model (e.g. something that can
+distinguish built structure from natural texture), not further threshold tuning -- the parking-lot
+miss is a hard counterexample to "just raise the threshold"; (3) the flight-level clustering in the
+confident-land band (4/4 frames one flight) means that band's "confidence" may just be reporting a
+flight-specific sea state/sand type rather than a general land signature -- worth checking whether
+that flight is systematically miscalibrated relative to the rest.
+
+## 40994108 — 2026-09-03 — prepare_USGS: fold the completed July review pass into the training corpus
+
+Ben asked for a full refresh now that annotation of the July 2026 surveys is finished:
+pull the annotations, retrain detection + flat classification + H-CAST on the new corpus,
+and re-measure recall / precision / classification accuracy for the "Refined Model" column
+of the survey metrics table
+(https://docs.google.com/document/d/11vW9WByJ0qh3brrYqEVHI_5yaMX2_Fx48kEG-LtrFc0).
+
+**Pulled first, live, before anything else** (`scripts/download_annotations.py`), because
+annotators work in real time and an earlier pull is never durable. Live project state:
+  197 Bureau of Ocean Energy Management - Review        336 tasks, 336 annotated  (100%)
+  195 Bureau of Ocean Energy Management - Validation      0 tasks
+   65 Bureau of Ocean Energy Management - Training         0 tasks
+  217 BOEM - Dolphin Species Review                    2033 tasks, 698 annotated  (34.3%)
+Only 197 had anything new. Downloaded 426 boxes over 336 images across all 20 July flights
+to `annotations/review/<flight>/20260903_120646.csv`: **374 real / 52 FalsePositive**.
+All 336 images resolve under `BOEM/imagery/<flight>/` — nothing missing.
+
+Project 217 (the dolphin one-off) is deliberately NOT in this refresh. It is a separate
+species-review of existing boxes, it is only a third done, and it is not one of the three
+instances in `boem_conf/annotation/label_studio.yaml`, so nothing reads it.
+
+Backup: 20 new files, **0 changed** (`scripts/backup_annotations.py`), committed on branch
+`retrain-july-2026`. A "changed" here would have meant an overwritten annotation; there were none.
+
+This job: `sbatch submit_prepare_annotations.sh`, 32 CPUs, no GPU. Regenerates detection
+crops for the 336 images whose annotation CSVs are now newer, copies them into
+`training/crops`, and rewrites train/test/zero_shot. Zero-shot flights held at
+JPG_20260202_141900 + JPG_20260201_134000 (unchanged from the initial-model run) so the
+refined numbers land on the same held-out flights and stay comparable.
+
+Note on where the new data lands: `create_train_test_split` groups `annotations/review`
+with `annotations/train`, so the July review boxes become TRAINING data. The refined
+metrics are still measured on the same held-out test + zero-shot split, not on these.
+
+Next: on completion, (1) `submit_USGS_classification.sh` (flat, writes the split dir),
+(2) `submit_USGS_detection_combined.sh` (detection, independent), then (3)
+`submit_USGS_hierarchical.sh` off the flat run's split for direct comparability.
+GPU QOS is currently saturated by MillionTrees jobs, so the GPU stages will queue.
+
+### 40994108 result — COMPLETED, 45m25s
+
+Corpus after the refresh: **train 656,990 rows / test 133,272 / zero_shot 22,996** (942 object
+images + 21,738 empty). All 20 July flights recropped (368 images; the extra 32 over the 336
+just-annotated are images carried from earlier pulls whose CSVs were also touched).
+
+Verified the new labels actually reached the classification corpus rather than only the
+detection side: all 336 review images have a per-image CSV under `training/crops`, carrying
+**419 real boxes** (374 annotation boxes, +45 from boxes straddling a patch boundary — normal
+`split_raster` duplication) — Thalasseus maximus 156, Sterninae 71, Phalacrocorax auritus 53,
+Tursiops truncatus 17, Chelonioidea sp 5, and so on. The 52 FalsePositive boxes do not appear
+as positives; they go to the hard-negative bucket, which is where they are useful.
+
+### Where the Google Doc's "Initial Model" numbers actually come from
+
+Established before retraining, so the Refined column is measured the same way rather than by
+a different definition that happens to look better. `reports/summer_2026_aerial_survey.html`
+names each metric and `scripts/threshold_sweep.py --report
+/blue/ewhite/b.weinstein/BOEM/threshold_sweep_a09c6933_e16.json` reproduces the detection row
+exactly at threshold 0.700:
+
+  Detection Recall     75.8%  = **image** recall (share of frames holding an animal that surface)
+  Detection Precision  90.2%  = box precision
+  (box recall — "individuals" — is 44.3% at the same point, and is NOT the doc's recall row)
+  Empty Frame Accuracy 99.9%  = detection training log
+  Species/Genus/Family 76.7 / 82.2 / 89.1 = H-CAST job 39614374 val log
+  Number of Species    68     = H-CAST species head count (the report's "70" is the flat
+                                CropModel's class count — different model, don't mix them)
+
+**The doc's two blank rows already have initial-model answers**, from
+`scripts/survey_metrics.py a3dc30a085f5442393736ecd96b564c5` against the pre-July
+`output/corpus_abundance.csv` (preserved as `corpus_abundance.pre_july.csv` before the refresh
+invalidated it):
+  Rank 10 Abundance : **79.9%** (10 species = 76.1% of individuals)
+  90% Abundance     : **79.5%** (22 species = 90.5% of individuals)
+  long tail: the other 46 species are 9.5% of individuals at 49.9% macro accuracy.
+
+Also measured the same way for 2b27e044 (the flat CropModel trained 2026-08-26 and paired to
+H-CAST 40306075, but never promoted into boem_config — that still points at a3dc30a0):
+overall val 0.7815 vs 0.7564, rank-10 81.2%, 90% abundance 80.7%.
+
+Next: GPU stages are queued behind `QOSGrpGRES` (MillionTrees is holding the group GPU limit).
+
+## 41098248 — 2026-09-04 — submit_USGS_classification_balance_factor2.sh — SUBMITTED
+Why: Bracket the class-balance downsampling cap (`gentle_class_balance` in
+scripts/USGS_classification.py) around the 40994173 baseline. That factor was
+hardcoded (4.0) and unlogged; made it a CLI-overridable hydra param
+(`classification_model.class_balance_factor`, default 4.0, `null` disables
+downsampling) so this run and 41098249 aren't one-off patches.
+This run: `class_balance_factor=2.0` (tighter cap, closer to full per-class
+balance — expect a smaller train pool than 40994173's 59,492 and likely
+higher macro precision / lower micro accuracy).
+Result: pending.
+Next: compare micro accuracy, macro precision, and per-class zeros against
+40994173 (factor=4.0, micro 0.7651/macro 0.6530) and 41098249 (no cap).
+
+## 41098249 — 2026-09-04 — submit_USGS_classification_balance_none.sh — SUBMITTED
+Why: Other end of the same bracket — `class_balance_factor=null`, i.e. no
+downsampling at all (full ~176,847-row train pool, natural class imbalance).
+Same code/config change as 41098248. Expect longer wall clock than the
+4x-cap run (pool is ~3x larger) and likely higher micro accuracy but worse
+performance on rare classes (majority-class dominance unchecked).
+Result: pending.
+Next: same comparison as above; if none of the three arms clearly wins on
+both micro and macro, that's itself the answer — the cap factor isn't the
+lever to pull and effort should go elsewhere (e.g. more data for the
+zero-recall classes listed in 40994173's entry).
+
+## 41840299 — 2026-09-12 11:43 — submit_window_sweep.sh — SUBMITTED
+Why: The Year-2 annual report needs detection recall / precision / empty-frame rate at BOTH
+ends of the window (2025-09-16 .. 2026-09-15) and **no such measurement exists**. Checked
+Comet directly: 1,233 BOEM experiments ran in the window, only 82 log any eval metric, and
+the earliest logging box_precision / box_recall / empty_frame_accuracy is 2026-05-27
+(0b6c36df). Everything from 2025-09 to 2026-05 logged training losses only
+(val_classification / val_bbox_regression). This is a measurement gap, not a data gap — the
+weights survive, so it is fixable retroactively.
+
+Two checkpoints, one job, same pinned holdout (648 reviewed frames / 1,229 animals,
+JPG_20260201_134000 + JPG_20260202_141900), same script and settings as 39385379 so the
+curves are directly comparable to the existing a09c6933 / 55d29b2c JSONs:
+  START  detection/checkpoints/JPG_20241219_165600/ee7ba70a6bdf47ae99eab2b8f3024bce.ckpt
+         trained 2025-09-18, Comet ee7ba70a, val_classification 0.0523. Best of the 52
+         detection checkpoints written 2025-09-16..10-15.
+  END    training/checkpoints/1968e962113f4c57bc6bf5f07fae1b25/epoch29-val_cls0.0899.ckpt
+         job 40994172, 2026-09-03, best of 30 epochs.
+
+**Both holdouts are clean by construction, which is the point of these two picks:**
+ee7ba70a predates the Feb-2026 holdout flights entirely (they did not exist when it trained);
+1968e962 was trained after the 2026-08-06 pinning that explicitly excludes them.
+
+CAVEAT ON THE START CHECKPOINT: this is a *contemporaneous* pipeline-trained model, NOT the
+one boem_config.yaml actually pointed at on 2025-09-30. That was
+`UBFAI Images with Detection Data/checkpoints/f3c687c8824f4b9fafa4bafbbe3fad8b.pl`, which
+**no longer exists on /blue**. So the start row characterises "a detector of that vintage",
+not "the deployed detector", and the report must say so.
+
+**a09c6933/epoch16 is deliberately NOT re-run** — threshold_sweep_a09c6933_e16.json
+(2026-08-13) already holds it. It is the contamination control: it was trained 2026-07-07,
+a month BEFORE the holdout was pinned, when prepare drew holdout flights at random, and its
+July split was overwritten by later prepare runs so it cannot be recovered. The ledger vouches
+that the two flights were excluded for 38834235/55d29b2c (see the 39385379 entry) but says
+nothing equivalent for a09c6933. **This matters beyond this job: the 75.8% frame recall /
+90.2% precision currently in reports/summer_2026_aerial_survey.html and the survey metrics
+Google Doc come from a09c6933 and may be measured partly on flights it trained on.** If the
+two clean checkpoints bracket it sensibly and a09c6933 sits anomalously high, that is the
+signal. It is not proof either way, but it is the only test available without the lost split.
+
+Result: pending.
+Next: read all four JSONs with `scripts/threshold_sweep.py --report`; fill the start/end row
+of the annual report (reports/annual_report_year2_highlights.md) and the still-blank "Refined
+Model" column of the survey metrics doc from the END sweep.
+
+### 41840299 interim — sweep 1 of 2 FAILED, sweep 2 running; and the deployed start-of-window
+### checkpoint is confirmed LOST (but its metrics survive in Comet)
+
+**Sweep 2 (END, 1968e962/epoch29) is running normally.** Sweep 1 (START, ee7ba70a) died
+instantly: `_pickle.UnpicklingError` — the 2025-vintage checkpoint pickles its
+hyper_parameters as an omegaconf DictConfig, and torch's default `weights_only=True` refuses
+it. Newer checkpoints are unaffected.
+
+**Behind that was a second, real problem: library drift.** Forcing weights_only=False gets
+past the unpickle and then hits `ConfigAttributeError: Missing key detections_per_img`. The
+2025 config is structurally older than what the installed deepforest expects — it carries a
+nested `retinanet: {score_thresh: 0.3}` block and lacks SEVEN keys the current default config
+has: detections_per_img, topk_candidates, precision, matmul_precision, log_root, cropmodel,
+point. Same class of failure as 33084407 (stale checkpoint vs installed deepforest).
+Resolved by injecting the current library defaults, verified loading clean
+(label_dict {'Object': 0}, detections_per_img 300, topk_candidates 1000 — the last two are
+torchvision RetinaNet defaults, so they almost certainly match what the 2025 model actually
+ran with rather than being invented). Patched copy written to the session scratchpad; the
+original on /blue is untouched. Wrapper + submit kept OUT of the tracked tree (scratchpad),
+per the 40700993 precedent — this is a one-off report measurement, not a production path.
+
+**The checkpoint boem_config.yaml actually pointed at on 2025-09-30 no longer exists.**
+`UBFAI Images with Detection Data/checkpoints/f3c687c8824f4b9fafa4bafbbe3fad8b.pl` — a
+filesystem-wide search of /blue/ewhite/b.weinstein and /orange/ewhite/b.weinstein returns
+nothing, and the entire `UBFAI Images with Detection Data` directory is gone (only
+`UBFAI Data Collection` remains). The oldest surviving final `.pl` is 9a203c4f (2025-06-13).
+
+**But Comet preserved that lost model's identity and metrics**, which partly answers the
+report question from the record alone:
+  f3c687c8 "famous_honeyberry_6397" — **trained 2025-06-11**, i.e. the detector deployed at
+  the start of Year 2 was already three months old when the window opened.
+  box_precision 0.8135 · box_recall 0.1578 · val_classification 0.1269
+  (DeepForest training-set eval on that run's own split, with the ceilinged box_recall — NOT
+  comparable to the holdout sweep, but it fixes the vintage.)
+  9a203c4f (2025-06-13) is a degenerate run — box_precision 0.0020 — and is not a usable
+  substitute.
+
+**Consequence for the report, to state rather than paper over:** the START row will describe
+ee7ba70a, a per-flight pipeline fine-tune from 2025-09-18, whereas the END row describes a
+corpus-wide retrain. Those are different KINDS of artifact, not just different vintages, and
+the deployed-at-the-time model cannot be measured because its weights are gone.
+
+Next: 41840299 sweep 2 gives the END row; the scratchpad retry gives the START row.
+
+### Metric taxonomy — "zero-shot" and "validation" box recall are two different numbers, and today's 44.3% / 75.8% are BOTH zero-shot
+
+Ben's correction, 2026-09-12: a gallery of "missed individuals" was built off
+`threshold_sweep_a09c6933_e16.json` and presented alongside a claim that 44.3% box recall was
+low. Both **44.3% box recall** and **75.8% recall** (the number already in
+`reports/summer_2026_aerial_survey.html`) come from that SAME sweep, on the SAME two pinned
+zero-shot holdout flights (JPG_20260202_141900, JPG_20260201_134000). They differ only in
+unit — 44.3% is box-level (individuals matched by IoU 0.4 at score>=0.70), 75.8% is
+frame-level (share of frames with ground truth that surfaced any detection). **Neither is a
+validation number**, and the 75.8% is not "secretly the validation figure" — that was a
+reasonable guess but wrong.
+
+What "validation box recall" should mean: the same clean IoU-matching method
+(`deepforest.evaluate.evaluate_boxes`, no empty-frame denominator — i.e. the same approach
+`threshold_sweep.py` already uses), applied instead to held-out images from flights that WERE
+in the detector's training corpus (in-distribution). This is the number Ben actually wants
+tracked going forward — "in no situation are we going to ask [the detector] to do this
+zero-shot," and zero-shot recall always carries some baked-in annotator-vs-detector gap no
+matter how good the model gets.
+
+**We do not currently have a trustworthy validation box recall for a09c6933** (the production
+checkpoint). Checked two candidates, both unusable:
+  1. `annotations/validation/` (189 flight folders, the in-distribution tier
+     `src/pipeline.py`'s `PipelineEvaluation.evaluate_detection()` is built to consume) is the
+     right INPUT, but nothing in Comet shows that clean evaluation was ever run and logged for
+     a09c6933's training job specifically.
+  2. Comet experiment `a09c69331af8496380cbf99e3859d656` ("detection_posfrac0.5") does log its
+     own `box_recall` (0.799 current), `box_precision` (0.928), `empty_frame_accuracy` (0.998)
+     — but that's DeepForest's built-in training-time `RecallPrecision` callback, the metric
+     `deepforest_box_recall_issue.md` documents as ceilinged by empty-frame count and already
+     flagged three times elsewhere in this ledger as **not comparable across runs**. It also
+     ran on that job's own internal "posfrac0.5" resample, not the `annotations/validation/`
+     tier. It is a third, differently-biased number — do not relabel it as "the validation
+     recall." (A fourth number, `zero_shot_pretraining_box_recall` = 0.459 on the same
+     experiment at step 0, is yet another quantity — logged before this run's fine-tuning
+     started, close to but not equal to 44.3%. Not investigated further; noted so it isn't
+     mistaken for either real number.)
+  3. a09c6933's exact train/val split is unrecoverable (see the 41840299 entry above), so a
+     clean validation number can't even be reconstructed retroactively for this checkpoint.
+
+**Standard going forward: every detection checkpoint gets two numbers, both via the clean
+IoU-matching method, both against a split that is pinned to disk and never overwritten:**
+  - **validation box recall** — held out from that run's own training flights (in-distribution)
+  - **zero-shot box recall** — the permanent pinned holdout flights (out-of-distribution)
+Always label which is which; never report one number called just "recall."
+
+### 41840299 + 41840640 result — BOTH COMPLETED (15m25s / 14m07s), exit 0:0
+
+Four checkpoints now measured on the identical pinned holdout (648 reviewed frames, 1,229
+objects, 2,000-frame queue sample, IoU 0.4). JSONs in /blue/ewhite/b.weinstein/BOEM/
+threshold_sweep_{window_start_ee7ba70a,window_end_1968e962_e29,a09c6933_e16,55d29b2c_e08}.json.
+
+**RECALL CEILING ROSE MONOTONICALLY ACROSS YEAR 2 — the cleanest single result:**
+  START ee7ba70a (2025-09-18)  64.2%   score range 0.010-0.997
+  MID   a09c6933 (2026-07-07)  67.8%   score range 0.010-0.931
+  END   1968e962 (2026-09-03)  71.4%   score range 0.010-0.993
+This is the metric min_score cannot touch (a third of objects were invisible at ANY
+threshold), so +7.2 points of ceiling is real detector improvement, not calibration.
+
+**At MATCHED PRECISION ~85% (the fairest cross-model point, since score distributions differ):**
+                              thr  boxRec   prec  imgRec  queue img/1k
+  START ee7ba70a             0.70   51.5%  85.4%   87.5%          2.0
+  MID   a09c6933             0.50   57.9%  84.4%   94.1%          1.0
+  END   1968e962             0.60   61.0%  84.7%   98.2%          1.0
+  -> +9.5 pts box recall, +10.7 pts image recall across the window at equal precision.
+
+**At MATCHED IMAGE RECALL >=97%, the annotator cost collapsed 40x:**
+  START 0.35 -> 97.6% img recall for 40.0 queue img/1k
+  END   0.60 -> 98.2% img recall for  1.0 queue img/1k
+  Better recall for a fortieth of the review burden.
+
+**Empty-water pass rate at 0.70, measured on unscreened survey frames (not a training log):**
+  START 99.80% · MID 99.90% · END 99.90% (1-2 of every 1,000 frames flagged).
+
+**THE CONTAMINATION HYPOTHESIS IS NOT SUPPORTED — and the reason is the opposite of what was
+feared.** a09c6933 does not sit anomalously HIGH between the two clean checkpoints; at the
+adopted 0.70 cut it is the WORST of the three (44.3% box recall / 75.8% image recall, vs
+51.5%/87.5% for a 2025 model and 57.9%/94.2% for the Sept 2026 one). A checkpoint that had
+memorised these flights could not underperform a model that has never seen them. So the
+75.8% / 90.2% in reports/summer_2026_aerial_survey.html and the survey metrics doc is NOT
+inflated by leakage. The undocumented July split remains undocumented, but it no longer
+threatens the reported numbers.
+
+**What it IS, is score compression.** a09c6933 never exceeds 0.931 on this holdout while both
+other checkpoints reach ~0.995, so a fixed 0.70 cut bites far deeper into its distribution.
+That is why it looks bad at 0.70 and fine at 0.50 — a calibration artifact of that
+checkpoint, which is exactly the portability trap the 39385379 entry documented.
+
+**ACTIONABLE: boem_config.yaml still points at a09c6933, and 1968e962 beats it decisively at
+the SAME 0.70 threshold — image recall 94.2% vs 75.8% (+18.4 points), box recall 57.9% vs
+44.3%, precision 86.6% vs 90.2% (-3.6).** Promoting it would recover roughly a fifth of all
+occupied frames currently being passed over, at a small precision cost. Not done here: a
+promotion invalidates every prediction cache (see the 08-12 entry) and is Ben's call.
+
+**"Refined Model" column of the survey metrics doc can now be filled** from END at 0.70:
+detection recall (frames) 94.2%, detection recall (individuals) 57.9%, detection precision
+86.6%, empty-frame 99.9%.
+
+CAVEAT to carry into the report: START is a per-flight pipeline fine-tune, END a corpus-wide
+retrain — different KINDS of artifact. The genuinely deployed 2025-09 model (f3c687c8,
+trained 2025-06-11) cannot be measured; its weights are gone.
+Next: Ben to decide on promoting 1968e962; update reports/annual_report_year2_highlights.md
+(done) and the Google Doc's Refined column.
+
+## (no job) — 2026-09-13 — detection promotion: 1968e962/epoch29 wired into production
+
+Ben's call, acting on the 41840299/41840640 result. `boem_conf/boem_config.yaml`
+detection_model.checkpoint: a09c6933/epoch16 -> 1968e962/epoch29 (job 40994172).
+Committed 1e09fe5 on branch `retrain-july-2026`.
+
+Justification (ZERO-SHOT, pinned Feb holdout — NOT validation): at the same 0.70 cut,
+image recall 94.2% vs 75.8%, box recall 57.9% vs 44.3%, precision 86.6% vs 90.2%; box-recall
+ceiling 71.4% vs 67.8%. Recorded next to the checkpoint path, per the pairing rule.
+
+**Verified rather than assumed — cache safety.** The worry was that promoting a checkpoint
+while leaving predict.min_score unchanged would leave every `.prediction_cache` looking valid
+and silently serve a09c6933 boxes. It does not: `src/pipeline.py:505` gates reuse on
+`cached_ckpt == actual_detection_checkpoint` AND min_score, so the swap forces a full
+re-predict of any flight. Cost is a re-run, not a correctness risk.
+
+**Verified — the live floor.** 1968e962 carries the same baked-in `score_thresh: 0.4` as the
+a09c6933 family, and `detection.load()` pushes predict.min_score into it, so the live model
+reports score_thresh 0.70. Config resolves with all three gates (predict.min_score,
+human_review.min_detection_score, active_learning.min_detection_score) at 0.70 and
+label_dict {'Object': 0}.
+
+**LEFT OPEN AND FLAGGED IN THE CONFIG: 0.70 is not re-derived for this checkpoint.** It was
+fitted to a09c6933 on JULY SURVEY imagery (the Feb-derived 0.30 famously did not transfer),
+whereas the promotion evidence is the Feb holdout. 1968e962 scores higher overall (holdout max
+0.993 vs 0.931), so it may push foam above 0.70 that a09c6933 kept below — and excluding foam
+is the whole purpose of this gate. Holding 0.70 cannot lose frames relative to the model being
+replaced, so the promotion is safe in the recall direction; the risk is precision on survey
+imagery. Job 41939457 (below) measures it. **Until that lands, treat survey species counts
+from this pairing as unverified.**
+
+**PRE-EXISTING BREAK, unrelated to this change but worth knowing:** `tests/` is 86 passed /
+1 failed / 1 skipped, and the failure is
+`tests/test_detection.py::test_detection_preprocess_and_train` ->
+`TypeError: deepforest.__init__() got an unexpected keyword argument 'label_dict'` at
+`src/detection.py:275`. Confirmed pre-existing by stashing the config change and re-running.
+It is in the from-scratch branch of `preprocess_and_train` (no checkpoint), NOT the
+`load(checkpoint)` path production uses — so it does not affect this promotion, but **the
+next detection retrain from scratch will fail** until `main.deepforest(label_dict=...)` is
+updated for the installed deepforest. Same class of drift as the 2025-checkpoint config gap.
+
+## 41939457 — 2026-09-13 — submit_july_floor_check.sh — SUBMITTED
+Why: close the open risk above. Measures 1968e962/epoch29's score distribution on JULY survey
+imagery — the substrate 0.70 was actually derived on — using threshold_sweep.py's QUEUE half
+(boxes and images per 1,000 unscreened frames at each threshold). Two flights chosen because
+they carried 25,280 of the 41,694 boxes in the 0.40-era survey and are the known foam-heavy
+pair (small ~20-25px detections on bright specks in chop).
+The RECALL half of the output is meaningless here — these flights have no fully-reviewed
+ground truth, only the pinned Feb pair does — and must be ignored; recall is already answered
+by 41840299/41840640. Script lives in /blue/ewhite/b.weinstein/BOEM/report_sweeps/ rather than
+the tracked tree (one-off verification, and /tmp is node-local so it cannot go in a scratchpad).
+Result: pending.
+Next: compare boxes/1k at 0.70 against what a09c6933 produced on the same flights (388 boxes
+across 533,876 frames survey-wide). A large excess is the foam signal and means min_score must
+be re-derived upward for this checkpoint before any survey run; a comparable number means 0.70
+transfers and the pairing can be marked verified in boem_config.yaml.
+
+### 41939457 result — COMPLETED 26m56s, exit 0:0 — THE FOAM RISK DID NOT MATERIALISE
+
+1968e962/epoch29 on the two foam-heavy July flights (JPG_20260712_100400 +
+JPG_20260712_113200), 3,000-frame queue sample, score range 0.0100-0.9903 over 149,995 raw
+boxes:
+    thresh   images/1k   boxes/1k
+      0.40      99.3       126.3
+      0.50      31.7        36.3
+      0.60       6.3         6.3
+      0.70       0.67        0.67
+      0.85       0.33        0.33
+
+**It emits FEWER boxes than a09c6933, not more — the opposite of the stated risk.** Measured
+a09c6933 on the SAME two flights off their 0.70 caches: 120 boxes over 119 images in 57,657
+frames = **2.08 boxes/1k vs the new model's 0.67**, about a third as many. The gap is wider
+lower down: at 0.40 the new model gives 126 boxes/1k where the 0.40-era run gave 25,280 boxes
+over those same 57,657 frames = **438/1k, ~3.5x more**.
+
+**Reading: this is a model that learned to reject foam while scoring real animals higher.**
+Its training corpus (job 40994108) is the first to carry the July review pass's 52
+human-marked FalsePositives as hard negatives, which is exactly the foam. Simultaneously
+higher zero-shot recall on reviewed frames (94.2% vs 75.8% image recall) and ~3x fewer
+detections on unreviewed foam-heavy survey frames is the signature you would want.
+
+**DO NOT OVER-READ — 0.67 boxes/1k on 3,000 frames is TWO boxes.** That is the sample's
+resolution floor, the same limit flagged in the 39385379 entry. It supports "no foam excess"
+and nothing finer. It CANNOT settle the opposite question — whether the new model is now too
+conservative on July imagery and dropping real animals. The Feb zero-shot holdout says recall
+improved, but Feb and July differ sharply (79.1% of Feb boxes above 0.85 vs 1.4% of July), so
+that does not simply transfer. **A July-imagery recall answer requires reviewed July ground
+truth, which does not exist outside the pinned Feb pair** — the LS 197 review pass labelled
+detections, not every animal in each frame, so it cannot measure what was missed.
+
+Config updated: predict.min_score 0.70 pairing marked VERIFIED for 1968e962/epoch29, with the
+numbers and the two-box caveat inline. Survey species counts from this pairing are no longer
+blocked on this check, though they remain machine output pending species-level review.
+Next: (1) the per-class share clearing the cut, and the Morus crop eyeball, still need a survey
+run on the new checkpoint to produce; (2) if July recall ever needs answering, it needs a
+fully-reviewed July frame set, which is a new annotation ask, not a measurement.
+
+## 44961750-44961790 (20 jobs) — 2026-10-06 — submit_all_flights.sh --b200 --time 06:00:00 — SUBMITTED
+Why: Ben asked for the July survey rerun so annotations, predictions and reports are all current.
+Annotations first: `scripts/download_annotations.py` (train/validation: none new; review: the same 426
+boxes / 336 images / 20 flights re-pulled, tasks are left on the server by this script). Backup sync:
+0 changed, 20 new timestamped files, committed c12ad88. check_annotations=False in the fan-out.
+**This is NOT cache-only.** All 20 July caches carry detection_checkpoint.txt = a09c6933/epoch16, but
+production is now 1968e962/epoch29, so the cache is invalid and every flight re-detects ALL its frames:
+533,876 images total (largest 61,900), ~36 GPU-h on B200 per the benchmark in submit_all_flights.sh.
+Config: 1968e962/epoch29, predict.min_score 0.70, extra overrides = the documented n=0 gates +
+flythrough off (no Label Studio upload). Rewrites each flight's `.prediction_cache` and reports.
+Known: JPG_20260711_131000 has no capture CSV, expect 19/20 reports.
+Result: all 20 COMPLETED exit 0 (23m-4h35m each, none cache-reused, as expected), BUT 17/20 reports regenerated:
+ - **JPG_20260710_155800 (44961750) and JPG_20260712_125900 (44961775) CRASHED** with `KeyError: 'label'` at
+   src/pipeline_evaluation.py:126 (`_evaluate_hierarchical_metrics`), in `pipeline_monitor.evaluate()` BEFORE the
+   report step. SLURM still says exit 0 because the batch script continues (throughput.csv rc=1). Their
+   predictions were rewritten but their reports under imagery/reports/ are STALE (08-20). Likely cause: every
+   annotation on these flights is filtered out before the 2-word-label filter, leaving an empty frame that
+   `ann[ann["label"].apply(...)]` then column-selects to no columns. Needs an early `if ann.empty` return.
+ - JPG_20260711_131000 produced no report (no capture CSV), as predicted.
+ - Frigatebirds: Fregata magnificens now in observations_table.csv: 083900=4, 092800=2, 100400=3, 101500=4 (13/13).
+Pool sizes at 0.70 on 1968e962: 3-77 boxes per flight, 459 boxes total.
+Next: confirm 20/20 completed with `^Pool: [0-9]+ images with` in logs (not `>=0.7 detections`), check
+reports/<flight>/taxonomic_summary.csv, then compare boxes/1k against the 0.67/1k floor-check figure.
+
+## 45711962 (JPG_20260710_155800), 45711965 (JPG_20260712_125900) — 2026-10-12 — submit_all_flights.sh --b200 --time 01:00:00 — SUBMITTED
+Why: the two flights whose reports were stale after 44961750-44961790 (evaluation crashed `KeyError: 'label'`).
+Root cause reproduced in pandas: in `_evaluate_hierarchical_metrics` (src/pipeline_evaluation.py), when the
+label filters leave `ann` empty, `ann["label"].apply(...)` returns an empty object Series, and `ann[<that>]` is
+treated as a column selection, dropping every column, so the next `ann["label"]` raises. Fix: return early on
+empty `ann` before the `.apply` lines (uncommitted at submit time).
+Config: cache-only recipe (caches already 1968e962/epoch29 @ 0.70, so no re-detection) with check_annotations=False,
+n=0 gates, flythrough off.
+Result: both COMPLETED exit 0 (2m40s, 2m58s); reports regenerated 2026-10-12, KeyError fix confirmed. 19/20 flights now have
+current reports (131000 has no capture CSV).
+Follow-up: sample_crops/ was never cleared, so Aug 20 crops lingered under outdated labels (e.g. Tursiops_truncatus_000.png was
+the human-verified Fregata box on C5_L1_F311). select_sample_crops now rmtree's the folder; 77 stale PNGs deleted across the 19 flights.
+Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261012_v2.zip (19 flights, no fullsize_example.png).
+(old Next, done:) confirm reports under imagery/reports/<flight>/ are dated today, then build the zip with all 19 flights
+(131000 has no capture CSV, no report).
+
+## 45773425 (1968e962/epoch29), 45773426 (a09c6933/epoch16) — 2026-10-13 — report_sweeps/submit_paired_compare.sh — SUBMITTED
+Why: Ben asked whether the new detector "ranks everything higher" vs the old one and whether to go back to a09c6933.
+Prior evidence is Feb-holdout and 2 foam flights only; there is no PAIRED raw-score comparison on July frames, and the
+cache comparison is confounded (reviewed frames are excluded from the new pool, and the 82 loon/scoter/eider boxes were
+selected on new>=0.70, which biases any "old scored lower" reading). Both checkpoints are run on the IDENTICAL frame set
+at floor 0.01 with all raw boxes saved: (labelled) every July frame with human annotations, GT = those boxes;
+(random) seeded 2,000 unscreened July frames; (group) the frames carrying a current Gavia/Melanitta/Somateria box.
+Script + submit file: /blue/ewhite/b.weinstein/BOEM/report_sweeps/{paired_detector_compare.py,submit_paired_compare.sh}
+(not in the repo, one-off). Outputs: /blue/ewhite/b.weinstein/BOEM/paired_{new_1968e962,old_a09c6933}/.
+Caveat built in: July GT is the REVIEW pass (queued boxes only, picked by a09c6933 >=0.70) so recall there is "found what
+the old detector found and a human confirmed", biased toward the old model; it cannot show new-model extra recall.
+Result: both COMPLETED exit 0 (17m34s / 17m10s). Frames: 389 labelled, 2,000 random, 80 group (2 of the 82 share a frame).
+ - NOT a uniform upward shift. Matched box pairs (n=2,077, Spearman 0.63): old 0.45->new 0.43, 0.54->0.52, 0.64->0.64; they
+   diverge only at the top (old 0.80->new 0.87). Old is COMPRESSED: raw max on the 2,000 random frames 0.646 vs new 0.898.
+ - Random unscreened frames, boxes/1k at 0.5/0.6/0.7: new 16.5/4.0/1.0, old 7.0/1.0/0.0. At 0.70 that is 2 vs 0 boxes: no resolution.
+ - July labelled frames at 0.70: confirmed animals found old 315/468 vs new 312/468 (305 shared); human-FalsePositive foam still
+   firing old 54/175 vs new 9/175; at >=0.80 confirmed animals old 188 vs new 300. CONTAMINATED FOR NEW: 1968e962 trained on the July
+   review pass (animals + 52 FalsePositives), a09c6933 did not, so this favours new and is NOT clean evidence; the Feb holdout
+   (94.2% vs 75.8% image recall at 0.70) and the random-frame pairing are the clean tests. 67% ceiling for both = box-edit/IoU matching.
+ - Top boxes on random frames for BOTH models are dominated by chromatically-fringed glint pairs (the Fratercula/eider artifact);
+   new's top box (0.90) is a sea turtle. Going back to a09c6933 would not remove these.
+Outputs: /blue/ewhite/b.weinstein/BOEM/paired_{new_1968e962,old_a09c6933}/*_boxes.csv.
+Next (done): paired box matching (IoU>0.3) -> score shift per matched box, box counts per threshold, recall on confirmed July
+animals, and eyeball the new-only / old-only boxes in the loon/scoter/eider group.
+
+## 45790634 — 2026-10-13 — submit_regenerate_reports.sh '*JPG_202607*' — SUBMITTED
+Why: Ben asked to regenerate the July reports through the new report-only path (branch
+review-holdout-on-detector-change, 93e4035) instead of re-running detection. Goal: reports that carry the
+current Label Studio labels, hold unreviewed uncertain frames out (detector changed a09c6933 -> 1968e962 after
+the Aug 22 review queue), and ship report_provenance.json + a human/model `source` column.
+Annotations first: scripts/download_annotations.py re-pulled review = 426 boxes / 336 images / 20 flights
+(train/validation: none); backup sync 20 new, 0 changed.
+Config: ONE CPU job (4 cpu, 32 GB, 4 h), serial over the 20 flights, main.py report_only=True
+check_annotations=False flythrough_video.enabled=False. No model loaded, no Label Studio upload, caches untouched.
+OVERWRITES /blue/ewhite/b.weinstein/BOEM/imagery/reports/<flight>/ (the 2026-10-12 reports in
+July2026_flight_reports_20261012_v2.zip are preserved in that zip).
+Expect: 19 reports (131000 has no capture CSV); human rows unchanged; model rows on held frames removed
+(dry run on JPG_20260712_100400: 187 -> 145 rows, 42 model rows on 41 frames held).
+Next: check log for FAILED lines, compare row counts per flight against the v2 zip, then decide on a v3 zip.
+Result (45790634): COMPLETED 33m07s, exit 0:0, no FAILED lines. 19/19 reports regenerated 2026-10-13 (131000: no capture
+CSV, as expected). Checked against July2026_flight_reports_20261012_v2.zip, per flight: human rows identical in all 19;
+model rows identical apart from held frames in all 19. Totals 994 -> 606 rows = 475 human + 131 model; 388 model rows
+on held frames removed (top: Chelonioidea sp 56, Tursiops truncatus 43, Larus delawarensis 32, Somateria mollissima 30,
+Clangula hyemalis 28). 382 frames held across the 20 flights. Loon/scoter/eider now: Gavia 6 (5 human), Melanitta 4
+(1 human), Somateria 68 (48 human) -- 24 model rows remain because classifier and H-CAST agree confidently.
+Known noise: two "Error processing image" crop lines for the label "Larus delawarensis/argentatus" (slash in filename);
+same error is in the 2026-10-06 logs, not new.
+Next: the 382 held frames are NOT in Label Studio -- report_only never uploads. Queue them (full pipeline upload or a
+one-off upload from the caches) before the held rows can return; no v3 zip built yet.
+
+## 45924470-45924495 — 2026-10-14 — regenerate EVERY reportable flight after the FalsePositive-label fix — SUBMITTED
+Why: Ben found a FalsePositive crop (JPG_20260712_113200 C3_L1_F118, "Chroicocephalus philadelphia") shipped as a
+human-verified row. Root cause: a box rejected in Label Studio keeps the model's prefilled species in the per-region
+taxonomy; convert_json_to_dataframe emitted both rows, the pipeline dropped the FalsePositive one and kept the species.
+1,027 boxes / 220 frames / 65 flights in the newest downloads; July: 103 boxes / 10 frames, incl. all 48 human eiders.
+prepare_USGS read the same CSVs, so these were training positives too. Fixed in 18f5ab3 (parser by region id;
+read_label_studio_csvs for existing CSVs, shared by gather_data and prepare_USGS). Ben: "regenerate all reports for
+any flight we have, this is serious."
+Annotations first: download_annotations.py -> review 425 rows / 336 images / 20 flights (426 yesterday: the 1-row drop
+is the fix collapsing a FalsePositive+Sterninae box on JPG_20260711_131000 C7_L2_F1307, not an edit). Backup 20 new, 0 changed.
+Scope: 32 flights with imagery; 27 have a capture CSV (the 5 without -- 20241219_120500/131500/150200,
+20260202_141900, 20260711_131000 -- cannot produce a report).
+ (a) 19 July flights: caches are 1968e962 + a3dc30a0 -> report-only, one CPU job.
+ (b) 8 older flights (20241219_160100, _164400, 20241220_104800, _145900, 20260201_093500, _134000, 20260202_094800,
+     _122400; 320,081 images): caches are detector a1c56496 with no classifier stamp, so report-only refuses ->
+     full pipeline on B200, one job each, --time 12:00:00. Overrides: human_review.n=0 active_learning.n_images=0
+     active_testing.n_images=0 flythrough_video.enabled=False (no Label Studio upload; n=0 is honoured after a detector
+     change as of 18f5ab3) and pipeline_evaluation.detection_true_positive_threshold=1.01 -- without it a flight whose
+     validation recall > 0.8 exits at check_success() BEFORE the report step and silently keeps its stale report.
+     Detector changes a1c56496 -> 1968e962 on flights with reviews, so uncertain frames are held out of these reports.
+     Overwrites their .prediction_cache (old caches are disposable per project_detection_band_070_final).
+Job IDs: (a) 45924470 report-only, 19 July flights. (b) 45924471 JPG_20241219_160100, 45924472 JPG_20241219_164400,
+45924474 JPG_20241220_104800, 45924480 JPG_20241220_145900, 45924482 JPG_20260201_093500, 45924493 JPG_20260201_134000,
+45924494 JPG_20260202_094800, 45924495 JPG_20260202_122400.
+Next: per flight, confirm report dated 2026-10-14 with report_provenance.json; no human row may sit on a box whose
+newest annotation is FalsePositive; then build a v4 zip of all 27.
+Result (45924470-45924495), checked 2026-10-16: all 9 COMPLETED exit 0:0, but exit 0 hides two failures, both from the
+cluster network outage on 2026-10-14 ~14:40-15:00 (NameResolutionError, SLURM controller unreachable):
+ - 45924470 report-only: 9/19 July reports regenerated (155800 .. 092800); the last 10 (100400 .. 160300) FAILED at startup
+   connecting to Label Studio/Comet. Those 10 reports are still the 2026-10-13 versions WITH the FalsePositive bug.
+ - 45924493 JPG_20260201_134000: failed after 50 s in create_sftp_client (throughput rc=1); report still from 2026-05-18.
+ - 45924471 JPG_20241219_160100: ran, 0 boxes >= 0.70 on 865 frames and no surviving human species rows -> "No
+   predictions", no report (it never had one).
+ - 45924472/74/80/82/94/95: reports regenerated 2026-10-14. 104800 held 29 frames after the detector change.
+Next: resubmit the 10 July flights (report-only) and 134000 (full, B200).
+
+## 46226882 + 46226883 (were 46226469 + 46226476) — 2026-10-16 — resubmit the outage casualties of 45924470/45924493 — SUBMITTED
+Why: finish the all-flights regeneration after the FalsePositive-label fix (see 45924470-45924495).
+46226882: report-only for the 10 July flights listed above (one CPU job). 46226883: JPG_20260201_134000 full pipeline on B200,
+same overrides as 45924493. Annotations re-pulled and backed up just before submitting.
+Next: run the per-flight verification (human rows == corrected annotations, nothing from a rejected box) over all 26
+reports, then build the v4 zip.
+46226469 FAILED at launch (exit 0:53, no log) and 46226476 was cancelled before it ran: /home/b.weinstein is 100% full
+(40G/40G), so SLURM could not create /home/b.weinstein/logs/*.out. Cause: ~25.5 GB of Pylance crash core dumps in
+~/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist/core.MainThread-* (Oct 6, 14, 16 x2); not deleted,
+waiting on Ben. Resubmitted as 46226882/46226883 with logs in /blue/ewhite/b.weinstein/BOEM/slurm_logs/.
+Result (46226882), checked 2026-10-16: COMPLETED 21m02s, exit 0:0. 10/10 July reports regenerated 2026-10-16 13:03-13:21
+(100400 .. 160300), no Traceback/FAILED lines, no "Error processing image" noise this time. Held frames per flight:
+100400 41, 113200 9, 125900 23, 132400 14, 142700 1, 145900 8, 101500 48, 121500 18, 141400 10, 160300 29. All 19 July
+reports now post-date the FalsePositive fix (9 from 2026-10-14, 10 from today).
+46226883 (JPG_20260201_134000, full, B200): RUNNING at check time (1h30m), predicting on 95,796 images (cache skipped,
+detector change). Log quiet since 13:02 (no progress bar in the log); report still the 2026-05-18 one.
+Result (46226883), checked 2026-10-19: COMPLETED 6h22m, exit 0:0. Re-detected all 95,796 frames on 1968e962/epoch29 @ 0.70:
+221 frames / 258 boxes. Report regenerated 2026-10-16 19:21 with report_provenance.json (git e00765d): 833 rows = 575 human +
+258 model; 0 frames held (annotations here are train/validation, not review, so nothing to hold). Rollup: 69.0% verified,
+8.8% species, 11.4% genus, 3.5% family, 7.3% unresolved. Not in Label Studio (all n=0). No Traceback.
+Noise, now visible in output: 64 "Error processing image" lines + 1 failed sample crop, all the "Larus delawarensis/argentatus"
+slash-in-filename bug; that class has no sample crop in the PDF. 26/26 reportable flights now post-date the FalsePositive fix.
+Next: per-flight verification over all 26 reports, then build the v4 zip; fix the slash in crop filenames (sanitize label).
+
+## (no job) — 2026-10-19 — per-flight verification of all 26 reports + July v4 zip
+Verified human rows in every report against the corrected annotations (newest download per frame, rejected box = FalsePositive;
+check = each human (image, label) is backed by a non-FalsePositive box, none sits on an all-FalsePositive frame). Scratch script:
+/tmp/claude-4736/-blue-ewhite-b-weinstein-src-BOEM/bc051c11-73b9-498c-a36c-6c83a8ed97d1/scratchpad/verify.py
+ - 19/19 July flights: CLEAN, human rows == non-FP boxes exactly, 0 orphans, 0 rows on rejected frames.
+ - 20260201_093500/_134000, 20260202_094800/_122400, 20241219_164400, 20241220_145900: 0 problems.
+ - **JPG_20241220_104800: 21 flagged of 1,912 human rows.** 4 are on frames whose newest annotation is FalsePositive but a
+   superseded review CSV (2025-05) still supplies a species ('Anas platyrhynchos', 'Larus argentatus', and numeric junk labels '16',
+   '35'). Cause: the pipeline reads train/validation/review dirs separately, so a stale review download is not superseded by a newer
+   train FalsePositive for the same frame. 17 more are label-normalisation differences ('Larus delawarensis/argentatus' vs
+   'Larus argentatus'), probably benign. NOT fixed; other flights unaffected by this check.
+Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261019_v4.zip — 19 July flights, no fullsize_example.png, 47.8 MB,
+integrity test passes. Deliberately July-only (matches v2/v3) so the 104800 rows are not shipped.
+Next: decide on 104800 (supersede across dirs in gather_data, or leave); sanitize '/' in crop filenames (select_sample_crops).
+
+## (no job) — 2026-10-19 — report crops: every box, named by box_id (src/report.py, uncommitted)
+Why: Ben wants all crops per flight (few enough to be cheap) and a filename that joins to the shapefile and CSV.
+select_sample_crops (5 picks, label-only names) replaced by export_crops: one crop per box in reports/<flight>/crops/,
+`<box_id:05d>_<label>.png` ('/' in labels -> '-', which also fixes the Larus delawarensis/argentatus crop failures).
+box_id (sorted by image, xmin, ymin; 0..n-1) is a column in observations_table.csv, observations_table_with_empty_frames.csv
+and predictions.shp. Dropped report.n_sample_crops / n_rare_species / rare_species_min_score and the unused crop_info
+plumbing in the PDF. Tested: report_only on JPG_20260712_092800 (7 boxes -> 7 crops, ids match CSV). Its report dir is now the
+new layout; the other 25 and the v4 zip still have sample_crops/. box_id is per regeneration, not stable across reruns.
+Next: regenerate reports (report_only for July) and rebuild the zip with crops/.
+
+## 46713226 — 2026-10-19 — submit_regenerate_reports.sh '*JPG_202607*' — SUBMITTED
+Why: regenerate all July reports with the new per-box crops/ + box_id (see the report-crops entry above). Report-only, one CPU
+job (4 cpu, 32 GB, 4 h), serial over the July flights; caches untouched. Annotations re-pulled first: review 425 rows / 336
+images / 20 flights, backup 20 new, 0 changed.
+Next: check log for FAILED lines; each report should have crops/ (count == rows in observations_table.csv) and no sample_crops/;
+then rebuild the zip as v5 (19 flights, no fullsize_example.png).
+Result (46713226), checked 2026-10-20: COMPLETED 43m53s, exit 0:0, no Traceback/FAILED. 19/19 July reports regenerated
+2026-10-19 15:30-16:11; each has crops/ with file count == observations_table.csv rows (504 total), no sample_crops/.
+Zip: /blue/ewhite/b.weinstein/BOEM/July2026_flight_reports_20261019_v5.zip — 19 flights, no fullsize_example.png, 69.7 MB,
+770 files, integrity test passes. Crops are per-box tight crops (e.g. ~200-320 px), not full frames.
+Next: send v5; v4 (sample_crops layout) is superseded.
+
+## 46884306 — 2026-10-20 — report_only on JPG_20260712_100400 + JPG_20260713_101500 (branch human-reviewed-column) — SUBMITTED
+Why: end-to-end test of dropping the score=2.0 sentinel for human rows. Human rows now carry human_reviewed=True and
+human_label; their model columns are the model's view captured at Label Studio download (blank for all existing CSVs).
+Report score floors apply to model rows only. CSV/shapefile lead with final_label/final_rank/final_score/human_reviewed;
+predicted_label -> model_label, source dropped, crop_file added; crops named <image stem>__<box_id>_<final_label>.png;
+map draws human rows as squares. 100400 has train+validation+review rows. Baselines (2026-10-19 regen, job 46713226)
+copied to the session scratchpad before overwrite. One CPU job, 4 cpu / 32 GB / 1 h.
+Next: diff before/after — same row count and human-row count, model-row scores unchanged, final_label == human_label on
+every human row, crops count == rows, every crop_file exists.
+Result (46884306), checked 2026-10-20: COMPLETED, both flights reported, no Traceback/FAILED. Before/after (baselines from
+46713226), keyed on box_id (row set and sort unchanged, so ids align):
+ - JPG_20260712_100400: 112 rows before/after, 95 human / 17 model both; model det/cls/label identical; final_label ==
+   old consensus on model rows; final_label == human_label == old label on 95/95 human rows, all verified, det/cls blank;
+   112 crops == rows, every crop_file exists, crop stem == image stem; shapefile 112 rows; map 95 squares + 17 circles.
+ - JPG_20260713_101500: 64 rows, 45 human / 19 model; same checks all pass (45/45).
+ - with-empty-frames tables: identical row counts (43,099 / 48,576).
+One pre-existing error in the log: the Comet crops.zip writer (src/visualization.py:write_crops) failed on the
+'Larus delawarensis/argentatus' label ('/' in filename) -- fixed on the branch, not re-run.
+Next: PR human-reviewed-column; after merge, regenerate all flight reports (submit_regenerate_reports.sh).
+
+
+## 46887085 — 2026-10-20 — submit_regenerate_reports.sh '*JPG_202607*' (branch human-reviewed-column) — SUBMITTED
+Why: regenerate all July reports with the human_reviewed / final_label / crop-name / square-marker changes (see 46884306).
+Annotations re-pulled first: review 425 rows / 336 images / 20 flights; backup 20 new, 0 changed. First download with
+model_* columns: 361/425 boxes carry model_det_score + model_label (the rest hand-drawn); model_cls_score blank on all
+(tasks uploaded before the classifier score was stored). Of 309 captured non-FalsePositive boxes, the human kept the
+model's species on 142.
+Next: check log for FAILED; each report's crops/ count == observations_table.csv rows; human rows now show model
+det_score where captured.
+Result (46887085), checked 2026-10-20: COMPLETED 32m50s, exit 0:0, no Traceback/FAILED. 19/19 July reports regenerated
+in the new layout: 504 rows total (same as 46713226), 373 human-reviewed, 296 of those with a captured model det_score;
+every report has crops/ == rows, every crop_file exists, final_label == human_label on all human rows, no sample_crops/.
+JPG_20260711_131000 still has no report: no 20260711_131000_captures.csv in metadata_aflight_csvs (pre-existing).
+Next: merge human-reviewed-column; rebuild the July zip (v6) from the new layout if it is going out.
+
+## 46895757 → 46895758 — 2026-10-20 — submit_prepare_USGS.sh, then submit_USGS_classification.sh (branch dolphin-species-fold-in) — SUBMITTED
+Why: fold the finished dolphin species review (LS 217, 2,033/2,033 crops, 4,267 boxes) into the classifier. Downloaded live to
+annotations/dolphin_review/crops/ and backed up (1 new, 0 changed). Labels: Tursiops 2,388, Delphinidae (left at family) 1,420,
+Delphinus 181, FalsePositive 144, other ~134. prepare_USGS.apply_dolphin_review overlays them onto family-rank crop-CSV rows by
+image_path + IoU>=0.5 (slash labels skipped); test on real CSVs: 3,698/9,644 family-rank rows relabelled (2,202 Tursiops,
+152 Delphinus, 141 FalsePositive). Crop CSVs themselves untouched. Pre-run train/test/zero_shot.csv saved to
+/blue/ewhite/b.weinstein/BOEM/training/pre_dolphin_fold_20261020/. Classification is afterok on prepare, use_metadata=False.
+Next: compare per-class dolphin accuracy and Delphinidae-sp size vs the flat/H-CAST baselines (2b27e044, a3dc30a0).
+
+## 49328441 — 2026-11-03 — submit_regenerate_reports.sh '*JPG_202607*' (download step skipped; branch review-all-small-flights) — SUBMITTED
+Why: bring July reports up to date with Label Studio. Annotations pulled and backed up first (review 427 rows / 381 images / 20
+flights, vs 425 / 336 on 2026-10-20; backup 20 new, 0 changed, commit 921d0dd). Report-only CPU job, 4 cpu / 32 GB / 4 h,
+serial over the July flights. Every July flight's review CSV got a new pull, so all were regenerated rather than diffing.
+Next: check log for FAILED lines; crops/ count == observations_table.csv rows; 20260711_131000 expected to lack a report
+(no captures csv). Then rebuild the July zip if it is going out.
+Result (49328441), checked 2026-11-04: COMPLETED 47m05s, exit 0:0, 0 FAILED lines, no Traceback; last report JPG_20260713_160300 uploaded to Comet.
+
+## 49329504 — 2026-11-03 — submit_USGS_classification.sh (branch flat-drop-delphinidae-sp) — SUBMITTED
+Why: "Delphinidae sp" is the parent of Tursiops/Delphinus/Stenella, so as a flat class it cannot be separated from its own
+children (46895758: Tursiops 0.12, Delphinus 0.17, Delphinidae sp 0.83). USGS_classification.py now DROPS family-rank dolphin
+boxes (DOLPHIN_FAMILY_LABELS) instead of mapping them to "Delphinidae sp"; they stay in the hierarchical model, which still
+maps them onto the family head. Other indeterminate classes (Chelonioidea sp, Larus sp, Sterna sp, Aythya sp, Calonectris sp)
+unchanged. Same crops/prepare output as 46895757 (dolphin review overlay kept), use_metadata=False.
+Next: compare Tursiops/Delphinus/Stenella per-class accuracy and micro/macro vs 46895758 (0.7613/0.6141), 2b27e044 (0.7815)
+and a3dc30a0 (0.7564); val sets differ, so then score all on the pinned zero-shot set before any default change.
+Result (49329504), checked 2026-11-04: COMPLETED 3h40m, exit 0:0. Micro acc 0.7619, macro precision 0.6183, val_loss 2.98.
+  Tursiops 0.82, Delphinus 0.86, Stenella frontalis 0.60 (vs 0.12/0.17 in 46895758 -- expected from dropping the parent class).
+  Still 0.0: Mergus merganser, Oceanodroma leucorhoa, Pluvialis squatarola, Pterodroma hasitata, Sterna paradisaea,
+  Sternula antillarum, Eudocimus albus, Balaenoptera acutorostrata; Phoca vitulina 0.05. Zero-shot scoring NOT yet done.
+
+## 49330546 — 2026-11-03 — report_sweeps/submit_sweep_hf_19022856.sh — COMPLETED
+Why: Ben asked whether the public HF model weecology/deepforest-marine-biodiversity should be updated. The HF weights
+(main eb360dc, PR #2 merged 2026-06-18) are tensor-identical (max abs diff 0) to 19022856f861.pl, trained 2026-05-27/28
+(10 epochs, 400px patches, init deepforest-tree); production is 1968e962/epoch29 (max abs diff 0.077 vs HF). 19022856 was
+never swept on the pinned Feb holdout, so this runs the same threshold_sweep.py recipe as 41840299/41840640.
+Caveat: the holdout was only pinned in July; the May-25 train_max_empty_0_25.csv has 3,937 annotated rows from the two holdout
+flights, so 19022856 very likely trained on them and its numbers are biased UPWARD (1968e962's train_max_empty_0_10.csv has 0).
+Side finding: the CURRENT training/crops/train.csv (2026-10-20) has 22,941 holdout-flight rows (1,302 non-empty) by the
+`flight` column (image_path is a timestamp, so image_path filters miss them) — the next detection retrain would leak the holdout.
+Output: /blue/ewhite/b.weinstein/BOEM/threshold_sweep_hf_19022856.json.
+Next: compare with threshold_sweep_window_end_1968e962_e29.json at 0.70 and at matched precision.
+Result (49330546), checked 2026-11-03: COMPLETED 14m14s, exit 0:0, no Traceback. Pinned Feb holdout, 648 frames / 1,229 objects:
+  @0.70            box recall  img recall  precision     ceiling (thr 0.05)   max score
+  1968e962/e29        57.9%       94.2%      86.6%            71.4%            0.993
+  HF 19022856         52.0%       87.2%      89.0%            70.2%            0.974
+At matched precision ~85%: 1968e962 @0.60 61.0% box / 98.2% img vs HF @0.60 56.9% / 93.6%. Production wins by ~5-7 points
+of recall at equal precision DESPITE HF likely having trained on these flights. Empty-water queue 1.0 img/1k for both at 0.70.
+Next: Ben's call on pushing 1968e962/epoch29 to HF (upload_detection_to_hf.py still points at 19022856; model card is empty).
+
+## (no job) — 2026-11-03 — HF PR #3: weecology/deepforest-marine-biodiversity -> 1968e962/epoch29
+Ben approved updating the public model after the 49330546 sweep. scripts/upload_detection_to_hf.py (7fb8956) now uploads
+1968e962/epoch29 with a model card (scripts/hf_model_card.md) and rewrites config.json label_dict {'Tree':0} -> {'Object':0}
+(save_pretrained still emits Tree). Opened as a PR, NOT merged: https://huggingface.co/weecology/deepforest-marine-biodiversity/discussions/3
+Verified: load_model(revision="refs/pr/3") gives label_dict {'Object':0} and weights identical (max diff 0) to the production
+ckpt; on holdout frame C3_L1_F14_T20260201_135714_760 the HF-format and ckpt models return the same 38 boxes at 0.70.
+Previous version stays reachable at revision eb360dc (documented in the card).
+Next: Ben to merge PR #3 on HF; tell downstream teams their 0.4/old-model thresholds will not transfer.
+
+## 49349121 — 2026-11-03 — submit_prepare_annotations.sh (--mem=128GB, afterany:49329504, worktree @ b53cd2f) — SUBMITTED
+Why: the 2026-10-20 prepare (46895757, via submit_prepare_USGS.sh) used prepare_USGS's hardcoded default holdout
+JPG_20260202_094800 + JPG_2023_Dec14 (wrong since 56fb89b), so the pinned holdout JPG_20260202_141900 + JPG_20260201_134000
+leaked into training: 22,941 train rows (1,270 with boxes), 70 test rows. b53cd2f pins the default and also drops by flight
+column (parent-name matching misses timestamp-named empty frames). PR branch fix-zero-shot-holdout (8bbab20, off main).
+Runs from detached worktree /blue/ewhite/b.weinstein/src/BOEM-prep-holdout-b53cd2f (keeps dolphin-review overlay 84b0870)
+with UV_PROJECT_ENVIRONMENT=main .venv; waits on classifier 49329504 so its inputs don't change underneath it.
+Leaky 10-20 splits backed up to /blue/ewhite/b.weinstein/BOEM/training/pre_holdout_fix_20261103/.
+1968e962 (production) predates the leak; its holdout sweep (bd9f717) stands.
+Next: verify zero_shot.csv flights == pinned pair, 0 rows of either flight in train/test, totals vs 10-20 (train 666,203);
+then remove the worktree. Any detector trained on the 10-20 split has invalid zero-shot numbers (none known).
+Result (49349121), checked 2026-11-04: COMPLETED 21m, exit 0:0, clean stderr. zero_shot.csv (22,996 rows) holds only
+JPG_20260202_141900 (13,445) + JPG_20260201_134000 (9,551). train 671,944 rows (was 666,203), test 131,568.
+Not yet checked: 0 rows of either flight in train/test. Worktree BOEM-prep-holdout-b53cd2f still present.
+
+## 49355098 — 2026-11-03 — submit_new_camera.sh (hpg-b200, 1 GPU, 64GB, 1h) — SUBMITTED
+Why: Ben got a single frame from the upgraded camera hardware (Box share 564c8y290etbxnlqlke5tl6k41b90stp, "Gull Parent Image.jpg",
+13400x9528 vs the old ~6464x4852) and wants to see current detector 1968e962/epoch29 + classifier a3dc30a0 + H-CAST output on it.
+Image: /blue/ewhite/b.weinstein/BOEM/imagery/new_camera_gull_parent/Gull_Parent_Image.jpg (no EXIF, so no metadata lookup; use_metadata=false).
+scripts/predict_new_camera.py reuses Pipeline.run()'s loaders + generate_pool_predictions with the Hydra config; no Label Studio/Comet/cache writes.
+Detector run down to 0.30 so the new-camera score distribution is visible; `in_pipeline` marks rows >= predict.min_score 0.70.
+Output: /blue/ewhite/b.weinstein/BOEM/new_camera_test/ (predictions.csv, *_overlay.jpg).
+Caveat: patch_size 1000 px on a different GSD/optics, so object size in patches differs from training.
+Next: check result, look at overlay.
+Result (49355098), checked 2026-11-03: COMPLETED 1m04s, exit 0:0, no Traceback. One frame, 3 boxes >= 0.30, 1 >= 0.70.
+  Box 0 (score 0.849, 126x323 px, a flying gull seen in overlay): crop = Larus delawarensis 0.975 (calibrated); H-CAST species Larus marinus 0.224, genus Larus 0.265, family "Delphinidae" 0.515 (incoherent, low-confidence).
+  Boxes 1-2 (scores 0.42/0.33, 37x13 and 37x30 px, sub-floor): tiny features near a buoy; crop labels Ardea alba / Fulmarus glacialis at 0.14-0.22 are junk. The orange buoy itself was not detected.
+Next: Ben to judge; more frames from the new camera needed before saying anything about 0.70 or patch_size 1000 transferring.

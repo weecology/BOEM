@@ -127,10 +127,13 @@ def _zoomed_crop(frame, preds, orig_w, orig_h,
 
         det_s = float(row.get("score", 0))
         cls_s = row.get("cropmodel_score", np.nan)
-        cls_l = (str(row.get("cropmodel_label", ""))[:24]
-                 if pd.notna(row.get("cropmodel_label")) else "")
-        txt1 = (f"det:{det_s:.2f} cls:{float(cls_s):.2f}"
-                if pd.notna(cls_s) else f"det:{det_s:.2f}")
+        label = row.get("human_label") if row.get("human_reviewed", False) else row.get("cropmodel_label")
+        cls_l = str(label)[:24] if pd.notna(label) else ""
+        if row.get("human_reviewed", False):
+            txt1 = "human reviewed"
+        else:
+            txt1 = (f"det:{det_s:.2f} cls:{float(cls_s):.2f}"
+                    if pd.notna(cls_s) else f"det:{det_s:.2f}")
         txt2 = cls_l
 
         (_, th1), _ = cv2.getTextSize(txt1, font, 0.55, 1)
@@ -243,9 +246,13 @@ def generate_flythrough(
         pred_df = pd.read_csv(pred_path)
         pred_df["_bn"] = pred_df["image_path"].astype(str).apply(os.path.basename)
 
-    above = pred_df[pred_df["score"].astype(float) >= min_score]
-    total_boxes = len(above)
-    det_bns = set(above["_bn"])
+    # Human-reviewed boxes (pipeline predictions only) have no detection score to threshold.
+    keep = pred_df["score"].astype(float) >= min_score
+    if "human_reviewed" in pred_df.columns:
+        keep |= pred_df["human_reviewed"].astype(bool)
+    pred_df = pred_df[keep]
+    total_boxes = len(pred_df)
+    det_bns = set(pred_df["_bn"])
     n_images_with_det = len(det_bns)
     if predictions is not None:
         print(f"Pipeline: {total_boxes} boxes in {n_images_with_det} unique images (across all cameras).")
@@ -331,10 +338,7 @@ def generate_flythrough(
             scale, lx, ly = _letterbox(fw, fh, out_w, out_h)
             resized = _resize_frame(frame, out_w, out_h)
 
-            preds = pred_df[
-                (pred_df["_bn"] == img_path.name)
-                & (pred_df["score"].astype(float) >= min_score)
-            ]
+            preds = pred_df[pred_df["_bn"] == img_path.name]
 
             if preds.empty:
                 writer.write(resized)

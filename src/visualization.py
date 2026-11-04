@@ -149,7 +149,7 @@ def write_crops(root_dir, images, boxes, labels, experiment, expand=30):
                     xmax = max(0, xmax + expand)
                     ymax = max(0, ymax + expand)
 
-                    label = labels[index]
+                    label = str(labels[index]).replace("/", "-")  # e.g. 'Larus delawarensis/argentatus'
                     image = images[index]
                     basename = os.path.splitext(os.path.basename(image))[0]
                     img_path = os.path.join(tmpdir, f"{basename}_{label}_{index}.png")

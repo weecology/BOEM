@@ -1,22 +1,22 @@
 # H-CAST hierarchical taxonomy model (optional)
 # Set checkpoint to null to disable; pipeline skips loading when null
 #
-# Trained in-repo by submit_USGS_hierarchical.sh (job 39614374, 2026-08-20), 68/49/18 heads,
-# best Species@1 76.72 at epoch 96 on the buffer_30/a3dc30a0 val split.
-# Replaced output/usgs_hvit_c2f_b128/best_checkpoint.pth (Dec 2025), which was trained OUTSIDE
-# this repo (args.data_path=/scratch/user/u.sp270400/USGS_crops) and measured 12.81% species
-# accuracy at the geometry the pipeline was feeding it -- see JOB_LEDGER.md 39811016+39811745.
+# Trained in-repo by submit_USGS_hierarchical.sh (job 40306075, 2026-08-26 -> 2026-08-28),
+# 72/50/18 heads, best Species@1 77.56 over 100 epochs on the buffer_30/2b27e044 val split
+# (the same split CropModel 2b27e0442e51469c9cce3fa51927d741 trained on). Promoted by hand
+# on 2026-08-31 from output/usgs_hier/run_40306075/best_checkpoint.pth; the superseded broken
+# checkpoint is kept alongside as best_checkpoint.broken_40263761_ep5.pth.
 #
-# !! BROKEN AS OF 2026-08-26 -- DO NOT TRUST H-CAST OUTPUT FROM THIS PATH !!
-# Job 40263761 (H-CAST retrain on the 2b27e044 split) crashed at epoch 7, but not before
-# saving its epoch-5 weights over this file: the 39614374 checkpoint described above is
-# GONE, with no backup on disk and no Comet copy (USGS_hierarchical.py doesn't log to
-# Comet). What sits here now is 72/50/18 heads at Species@1 26.91 -- and label_csv below
-# is still the 68-class vocabulary, so the heads do not even match the labels.
-# The pre-39614374 fallbacks are worse (Dec 2025 usgs_hvit_c2f_b128 measured 12.81%).
-# Left pointing here deliberately rather than nulled; job 40306075 is retraining a
-# replacement. On completion: promote that run's checkpoint, regenerate species.csv with
-# scripts/build_hcast_label_csv.py off buffer_30/2b27e044, and delete this warning.
+# The 72 species heads include five indeterminate "X sp" classes (Aythya/Calonectris/Larus/
+# Sterna sp with real genus+family ids, Delphinidae sp with a synthetic genus id) plus the
+# turtle class Chelonioidea sp -- see commit 9d2d68c. species.csv below was regenerated for
+# this checkpoint with scripts/build_hcast_label_csv.py off the same split.
+#
+# History: job 39614374 (2026-08-20) trained the previous 68/49/18 / 76.72 checkpoint on the
+# a3dc30a0 split; job 40263761 (2026-08-26) crashed at epoch 7 and overwrote it in place with
+# no backup, which is why the retrain path now writes to output/usgs_hier/run_<jobid>/ and
+# promotion is manual. The Dec 2025 out-of-repo usgs_hvit_c2f_b128 checkpoint measured 12.81%
+# species accuracy at the pipeline's geometry -- see JOB_LEDGER.md 39811016+39811745.
 checkpoint: /blue/ewhite/b.weinstein/src/BOEM/output/usgs_hier/best_checkpoint.pth
 # CSV with columns: species, genus, family (optional "index" = species class index,
 # optional "genus_index"/"family_index" = genus/family class indices). If null, numeric labels are used.

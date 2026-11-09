@@ -3055,3 +3055,10 @@ Result (49355098), checked 2026-11-03: COMPLETED 1m04s, exit 0:0, no Traceback. 
   Box 0 (score 0.849, 126x323 px, a flying gull seen in overlay): crop = Larus delawarensis 0.975 (calibrated); H-CAST species Larus marinus 0.224, genus Larus 0.265, family "Delphinidae" 0.515 (incoherent, low-confidence).
   Boxes 1-2 (scores 0.42/0.33, 37x13 and 37x30 px, sub-floor): tiny features near a buoy; crop labels Ardea alba / Fulmarus glacialis at 0.14-0.22 are junk. The orange buoy itself was not detected.
 Next: Ben to judge; more frames from the new camera needed before saying anything about 0.70 or patch_size 1000 transferring.
+
+## 50448840 — 2026-11-09 — submit_regenerate_reports.sh '*JPG_202607*' (branch main) — SUBMITTED
+Why: Ben's annotator reports the next round of review annotations is complete in Label Studio. Pulled first: review 592 new
+rows / 511 images / 20 flights (was 427 / 381 on 2026-11-03); backup 20 new, 0 changed, committed as 120e6da. Report-only CPU
+job, 4 cpu / 32 GB / 4 h, serial over the July flights (same as 49328441).
+Next: check log for FAILED lines; crops/ count == observations_table.csv rows per report; 20260711_131000 expected to lack a
+report (no captures csv). Then rebuild the July zip if it is going out.

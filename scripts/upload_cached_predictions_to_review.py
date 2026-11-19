@@ -21,6 +21,8 @@ Usage:
     uv run python scripts/upload_cached_predictions_to_review.py
     uv run python scripts/upload_cached_predictions_to_review.py --flights JPG_20241219_120500 JPG_20241220_145900
     uv run python scripts/upload_cached_predictions_to_review.py --dry-run
+    # Targeted campaign: only frames with a box the classifier called one of these labels
+    uv run python scripts/upload_cached_predictions_to_review.py --labels "Pelecanus occidentalis" "Ardea alba" --include-gulls
 """
 from __future__ import annotations
 
@@ -80,6 +82,13 @@ def _parse_args() -> argparse.Namespace:
         "--include-gulls",
         action="store_true",
         help="Keep gull detections in the upload (default: drop gull detections, drop images with only gulls).",
+    )
+    p.add_argument(
+        "--labels",
+        nargs="+",
+        default=None,
+        help="Only upload frames with at least one gated box whose cropmodel_label is in this list. "
+             "Every other gated box on those frames is kept, so the frame is fully preannotated.",
     )
     p.add_argument(
         "--min-score",
@@ -228,6 +237,16 @@ def main() -> None:
                 f"all already annotated -- skipping"
             )
             continue
+
+        if args.labels:
+            hit = unannotated_predictions["cropmodel_label"].isin(args.labels)
+            keep = set(unannotated_predictions.loc[hit, "image_path"])
+            unannotated_predictions = unannotated_predictions[
+                unannotated_predictions["image_path"].isin(keep)
+            ].copy()
+            if unannotated_predictions.empty:
+                print(f"[{flight_name}] no unannotated frames with {args.labels} -- skipping")
+                continue
 
         n_gull_rows = 0
         if not args.include_gulls and "cropmodel_label" in unannotated_predictions.columns:

@@ -3062,3 +3062,15 @@ rows / 511 images / 20 flights (was 427 / 381 on 2026-11-03); backup 20 new, 0 c
 job, 4 cpu / 32 GB / 4 h, serial over the July flights (same as 49328441).
 Next: check log for FAILED lines; crops/ count == observations_table.csv rows per report; 20260711_131000 expected to lack a
 report (no captures csv). Then rebuild the July zip if it is going out.
+
+## (no job) — 2026-11-19 — pelican / great egret campaign uploaded to Review (LS 197)
+Why: a3dc30a0's worst well-sampled confusion: Pelecanus occidentalis val recall 0.24, 54/100 -> Ardea alba (6 val crops,
+63 predicted); July field recall 9/37. Ben chose predictions + val crops, zero-shot holdout flights excluded.
+Uploaded (run on c0709a-s9, not sbatch): 9 survey frames via `upload_cached_predictions_to_review.py --labels
+"Pelecanus occidentalis" "Ardea alba" --include-gulls --exclude-flights JPG_20241220_104800 JPG_20260202_141900
+JPG_20260201_134000` (July pelican/egret frames were already reviewed, so skipped; holdout skip drops 71 boxes / 67 on 141900);
+56 UBFAI crop tiles / 485 USGS boxes via new `upload_confusion_crops_to_review.py` on
+classifier_confusion_a3dc30a0_predictions.csv (116 val crops touching either class; whole tile uploaded, comet_id
+confusion_qc_a3dc30a0). LS 197 live: 511 -> 576 tasks, 65 unlabeled, all preannotated.
+Next: when annotated, download + backup_annotations.py; compare human labels vs USGS labels on the 56 tiles (label noise?)
+and vs a3dc30a0 calls; then decide whether the pelican/egret fix is labels or more crops.

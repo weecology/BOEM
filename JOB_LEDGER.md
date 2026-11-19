@@ -3062,3 +3062,16 @@ rows / 511 images / 20 flights (was 427 / 381 on 2026-11-03); backup 20 new, 0 c
 job, 4 cpu / 32 GB / 4 h, serial over the July flights (same as 49328441).
 Next: check log for FAILED lines; crops/ count == observations_table.csv rows per report; 20260711_131000 expected to lack a
 report (no captures csv). Then rebuild the July zip if it is going out.
+
+## 52028210 — 2026-11-19 — submit_USGS_classification.sh (branch flat-drop-genus-sp @ c0527d1) — SUBMITTED
+Why: Ben: the flat classifier must not predict Larus sp / Sterna sp / Aythya sp / Calonectris sp — those are parents of
+their own species classes (same defect as Delphinidae sp, fixed in 49329504) and belong only in the hierarchical model.
+Chelonioidea sp is the one allowed indeterminate class. USGS_classification.py now DROPS every "A/B" label instead of
+mapping it to "Genus sp", and asserts no " sp" class other than Chelonioidea sp survives. Prompted by a report that
+Royal Terns were being conflated with a generic tern class. NB: "Sterninae"/"Sterna"/"Thalasseus" single-token labels
+(~26k raw rows) were already dropped by the two-word filter and still are; Sterninae was never a flat class.
+Inputs identical to 49329504 (same training/crops from 49349121, use_metadata=False), so the only change is the label set.
+Expected 74 -> 70 classes (d522a098 minus the four Genus sp).
+Next: confirm class list in log; compare per-class acc vs 49329504/d522a098 (micro 0.7619, macro prec 0.6183), esp.
+Thalasseus maximus, Sterna hirundo/forsteri, Larus spp., Aythya affinis; then pinned zero-shot before any production swap
+(production finetune.yaml is still a3dc30a0). Don't switch branches in the repo dir until the job starts.

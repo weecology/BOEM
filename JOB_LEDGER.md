@@ -3131,3 +3131,13 @@ Chain: prep 52121223 -> detection 52121224 (afterok) + flat 52121225 (afterok, u
 Don't switch branches in the repo dir until all four have started.
 Next: verify train/test/zero_shot totals vs 11-03 (train 671,944 / test 131,568 / zero_shot 22,996), stale CSVs
 regenerated with the new boxes, 0 rows of holdout flights in train/test. Nothing promoted automatically.
+
+## 52121265 — 2026-11-20 — submit_compare_yolo26_refresh.sh, afterok:52121224 (hpg-b200, 1 GPU) — SUBMITTED
+Why: Ben: when the 11-20 refresh detector (52121224) finishes, redo the YOLO26s comparison (51996709/51998927, branch
+yolo26-comparison). YOLO26s and 1968e962 JSONs in /blue/ewhite/b.weinstein/BOEM/yolo26_comparison/ are reused as-is
+(same pinned holdout JPG_20260202_141900 + JPG_20260201_134000, IoU 0.4, 2000-frame queue sample); only the new
+detector is swept, same threshold_sweep.py args as 1968e962. Job locates the run's checkpoint dir as the single
+training/checkpoints/<id>/ with epoch ckpts newer than the det job's start (exits if not exactly 1), picks min
+val_cls epoch (dry-run on 1968e962 reproduces epoch29), then --report on all three.
+Not redone: per_object_hits.csv / disagreement_examples/ (ad hoc in the other chat, no committed script).
+Next: compare new vs 1968e962 vs YOLO at 0.70 and matched precision; zero-shot holdout numbers only (not validation).

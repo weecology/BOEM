@@ -1,0 +1,2 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+3386.0,2692.0,3427.0000000000005,2748.0,Pelecanus occidentalis,0.72072273,Pelecanus occidentalis,0.1021604,C5_L2_F1667_T20241220_153935_948.jpg," sanacleto@ufl.edu, 24",JPG_20241220_145900

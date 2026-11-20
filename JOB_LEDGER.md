@@ -3131,6 +3131,14 @@ Chain: prep 52121223 -> detection 52121224 (afterok) + flat 52121225 (afterok, u
 Don't switch branches in the repo dir until all four have started.
 Next: verify train/test/zero_shot totals vs 11-03 (train 671,944 / test 131,568 / zero_shot 22,996), stale CSVs
 regenerated with the new boxes, 0 rows of holdout flights in train/test. Nothing promoted automatically.
+Result (52121223), checked 2026-11-20: COMPLETED 43m37s, exit 0:0. 507,657 human rows / 76,922 imgs, 0 missing images.
+  Cropped 14,559 images: 14,519 ok, 40 failed -- 39 "no overlapping annotations" (1-3 boxes each, ~50 boxes, fall in no
+  tile; mostly single Artificial/Unknown/Morus boxes) + 1 truncated JPG 331855-0525182117098-CAM3 (from the 2026-05-04
+  delivery, not this one; 1 Cheloniidae box lost). 1,233 stale re-cuts: 27,163 -> 38,389 boxes (new labels landed).
+  train 758,336 rows / 484,640 boxes / 490,266 tiles (216,572 w/ boxes, 273,694 empty)   [11-03: 671,944 / 406,232 / 443,008]
+  test  134,176 rows /  22,278 boxes / 122,917 tiles ( 11,019 w/ boxes, 111,898 empty)   [11-03: 131,568 / 19,753 / 120,843]
+  zero_shot 22,996 / 1,258 / 22,680 -- unchanged, only the two pinned flights; 0 holdout rows in train/test (flight + path).
+  Downstream 52121224 / 52121225 now pending on Priority (GPU queue).
 
 ## 52121265 — 2026-11-20 — submit_compare_yolo26_refresh.sh, afterok:52121224 (hpg-b200, 1 GPU) — SUBMITTED
 Why: Ben: when the 11-20 refresh detector (52121224) finishes, redo the YOLO26s comparison (51996709/51998927, branch

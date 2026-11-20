@@ -3096,3 +3096,19 @@ Larus delawarensis 0.08 (!), L. argentatus 0.78, L. marinus 0.82. REGRESSION: Tu
 gone from ~/logs, so per-class deltas other than the ones recorded above can't be checked.
 Next: confusion matrix on a1d526df val (submit_classifier_confusion.sh) to see where dolphins and L. delawarensis go; pinned
 zero-shot vs a3dc30a0/d522a098 before any production change.
+
+## 52095705 — 2026-11-20 — submit_classifier_confusion.sh a1d526df310a488599abd78aa43ef8ba — SUBMITTED
+Why: Ben asked to put a1d526df into the pipeline. classification_model.temperature (5.6136) is a3dc30a0-only and the
+review thresholds sit on the calibrated scale, so the checkpoint and its own fitted T must change together. Also gives
+the val confusion matrix needed to see where Tursiops/Delphinus/Stenella and Larus delawarensis go (52028210 regression).
+Next: copy fitted T into finetune.yaml with the checkpoint; check whether the val-quantile thresholds in boem_config.yaml
+need re-deriving.
+Result (52095705), checked 2026-11-20: COMPLETED, exit 0:0. Fitted T = 5.1651 (ECE 0.204 -> 0.071, NLL 3.104 -> 1.111,
+acc 0.7610; AUROC 0.784 raw -> 0.768 scaled). Confusion: Larus delawarensis 85/100 val -> Chroicocephalus philadelphia
+(dropping the 'delawarensis/argentatus' crops gutted the class); Tursiops 27 val crops (-> Morus bassanus x6, Bucephala x4),
+Delphinus 20 (-> Balaenoptera physalus x6), Stenella 6 -- small val counts, so the dolphin drop is noisy.
+PROMOTED at Ben's request: finetune.yaml -> a1d526df + T 5.1651. Calibrated thresholds (0.12 / 0.07 / review band) kept:
+calibration is what makes them portable, ECE matches a3dc30a0's. Loaded via Hydra config: 72 classes, only Chelonioidea sp.
+Full-flight caches are stamped by classifier+T, so every flight re-predicts on its next run.
+Next: pinned zero-shot vs a3dc30a0; decide whether to restore L. delawarensis crops (e.g. keep 'A/B' crops only when
+both halves share a species class we keep -- not possible for a genus pair) or accept it.

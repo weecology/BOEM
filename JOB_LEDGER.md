@@ -3112,3 +3112,22 @@ calibration is what makes them portable, ECE matches a3dc30a0's. Loaded via Hydr
 Full-flight caches are stamped by classifier+T, so every flight re-predicts on its next run.
 Next: pinned zero-shot vs a3dc30a0; decide whether to restore L. delawarensis crops (e.g. keep 'A/B' crops only when
 both halves share a species class we keep -- not possible for a genus pair) or accept it.
+
+## 52121223 → 52121224 / 52121225 → 52121226 — 2026-11-20 — USGS 11-20 manifest refresh: prepare, then detection + flat + H-CAST (branch flat-drop-genus-sp) — SUBMITTED
+Why: Ben: new USGS annotations delivered; full detection + classification retrain. USGS re-delivered all 15
+`UBFAI Data Collection/annotation_aws/*_annotation_manifest.csv` on 2026-11-20 15:47 (prepare_USGS reads only this top
+level; the nested annotation_aws/annotation_aws/ is the 07-28 copy). Human (private.*) rows 441,542 / 71,798 imgs (07-28)
+-> 507,657 / 76,922 imgs; key-diff +41,674 boxes on 6,421 images, 0 removed, created 2026-06..2026-11-02 (202108 18.7k,
+202202 9.0k, 202306 5.1k, 202501 3.5k, nyserda 2.9k). All labeled images resolve in the flattened imagery dir (107,385).
+LS review pull 93b7567 already backed up (--check: 0 new, 0 changed).
+Gap fixed before submit: submit_prepare_annotations.sh never passed --regenerate-crops (now does; mem 64->128GB per
+49349121), and _regenerate_ubfai_crops skips images with an existing crop CSV, so new boxes on already-cropped images
+would be lost. 1,233 such stale crop CSVs MOVED (not deleted) to
+/blue/ewhite/b.weinstein/BOEM/training/pre_usgs_refresh_20261120/stale_crop_csvs/ (+ stem list), so they re-cut.
+13,326 labeled images had no crop CSV (5,188 new + 8,138 July-labeled never cropped). Pre-run train/test/zero_shot.csv
+copied to the same dir. Zero-shot pinned JPG_20260202_141900 + JPG_20260201_134000.
+Chain: prep 52121223 -> detection 52121224 (afterok) + flat 52121225 (afterok, use_metadata=False, drops A/B labels)
+-> H-CAST 52121226 (afterok flat; auto-picks the newest usgs_train_split.csv = flat run's split, writes run_<jobid>).
+Don't switch branches in the repo dir until all four have started.
+Next: verify train/test/zero_shot totals vs 11-03 (train 671,944 / test 131,568 / zero_shot 22,996), stale CSVs
+regenerated with the new boxes, 0 rows of holdout flights in train/test. Nothing promoted automatically.

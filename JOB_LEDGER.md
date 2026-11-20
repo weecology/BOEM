@@ -3087,3 +3087,12 @@ classifier_confusion_a3dc30a0_predictions.csv (116 val crops touching either cla
 confusion_qc_a3dc30a0). LS 197 live: 511 -> 576 tasks, 65 unlabeled, all preannotated.
 Next: when annotated, download + backup_annotations.py; compare human labels vs USGS labels on the 56 tiles (label noise?)
 and vs a3dc30a0 calls; then decide whether the pelican/egret fix is labels or more crops.
+Result (52028210), checked 2026-11-19: COMPLETED 3h14m, exit 0:0. Checkpoint a1d526df310a488599abd78aa43ef8ba (buffer_30),
+72 classes; only indeterminate class is Chelonioidea sp. vs d522a098: removed Aythya/Calonectris/Larus/Sterna sp, added
+Egretta thula + Haliaeetus leucocephalus (split-threshold churn). 35,727 'A/B' crops dropped. Micro acc 0.7610 (was 0.7619),
+macro precision 0.6357 (was 0.6183), val_loss 3.69 (was 2.98). Thalasseus maximus 0.92, Sterna hirundo 0.80, S. forsteri 0.95,
+Larus delawarensis 0.08 (!), L. argentatus 0.78, L. marinus 0.82. REGRESSION: Tursiops 0.30 / Delphinus 0.45 / Stenella 0.33
+(49329504: 0.82 / 0.86 / 0.60). Val sets differ (the dropped crops reshuffle the parent-image split), and 49329504's log is
+gone from ~/logs, so per-class deltas other than the ones recorded above can't be checked.
+Next: confusion matrix on a1d526df val (submit_classifier_confusion.sh) to see where dolphins and L. delawarensis go; pinned
+zero-shot vs a3dc30a0/d522a098 before any production change.

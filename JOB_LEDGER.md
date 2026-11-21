@@ -3160,6 +3160,12 @@ training/checkpoints/<id>/ with epoch ckpts newer than the det job's start (exit
 val_cls epoch (dry-run on 1968e962 reproduces epoch29), then --report on all three.
 Not redone: per_object_hits.csv / disagreement_examples/ (ad hoc in the other chat, no committed script).
 Next: compare new vs 1968e962 vs YOLO at 0.70 and matched precision; zero-shot holdout numbers only (not validation).
+Update 2026-11-21 09:15: detection 52121224 at epoch18 (val_cls 0.0902, still improving 0.001/epoch, ~47.5 min/epoch) ->
+  epoch29 ends ~17:10, then post-fit validation images + full zero-shot validate, vs the 24h limit at 17:23 -> TIMEOUT
+  near-certain. `scontrol update TimeLimit` denied (user). Dependency changed afterok -> afterany:52121224 so the compare
+  still runs on the saved per-epoch ckpts (min val_cls); it exits if it can't find exactly one new ckpt dir.
+  Consequence: the detection job's own post-training zero-shot metrics will likely be missing from its log/Comet;
+  the threshold_sweep in 52121265 is the zero-shot number of record anyway.
 
 ## 52155608 — 2026-11-20 — submit_classifier_confusion.sh 0139af8cad264f569519cd06074acd66 — SUBMITTED
 Why: Ben: promote the 11-20 refresh flat classifier 0139af8c (52121225) into the pipeline. Checkpoint and its own fitted

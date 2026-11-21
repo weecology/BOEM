@@ -3160,3 +3160,16 @@ training/checkpoints/<id>/ with epoch ckpts newer than the det job's start (exit
 val_cls epoch (dry-run on 1968e962 reproduces epoch29), then --report on all three.
 Not redone: per_object_hits.csv / disagreement_examples/ (ad hoc in the other chat, no committed script).
 Next: compare new vs 1968e962 vs YOLO at 0.70 and matched precision; zero-shot holdout numbers only (not validation).
+
+## 52155608 — 2026-11-20 — submit_classifier_confusion.sh 0139af8cad264f569519cd06074acd66 — SUBMITTED
+Why: Ben: promote the 11-20 refresh flat classifier 0139af8c (52121225) into the pipeline. Checkpoint and its own fitted
+temperature must change together (calibrated review thresholds), same procedure as a1d526df / 52095705.
+Next: copy fitted T + checkpoint into finetune.yaml and the T comment in boem_config.yaml; verify Hydra load.
+Result (52155608), checked 2026-11-20: COMPLETED 56s, exit 0:0. Fitted T = 4.4675 (ECE 0.178 -> 0.048, NLL 2.321 -> 0.914,
+  acc 0.7822 unchanged; AUROC 0.826 raw -> 0.806 scaled). Outputs classifier_confusion_0139af8c_{matrix,predictions}.csv + logits.npy.
+PROMOTED at Ben's request: finetune.yaml -> 0139af8c + T 4.4675; boem_config.yaml T comment updated. Calibrated thresholds
+  kept (same rationale as a1d526df; ECE now lower). Verified via Hydra compose + load: 73 classes, only Chelonioidea sp,
+  temperature active. Full-flight caches are stamped by classifier+T, so every flight re-predicts on its next run.
+  Production H-CAST (run_40306075 species.csv) cannot name 6 flat classes: Calidris maritima, Columba livia, Eudocimus albus,
+  Fregata magnificens, Haliaeetus leucocephalus, Sterna dougallii -> read as "H-CAST does not support" until 52121226 lands.
+Next: pinned zero-shot classifier comparison vs a1d526df (val splits differ); promote H-CAST 52121226 when it finishes.

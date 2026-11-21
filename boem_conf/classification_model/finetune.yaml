@@ -1,27 +1,29 @@
 force_train: False
-# Metadata-free flat classifier (Comet a1d526df310a488599abd78aa43ef8ba, job 52028210,
-# 2026-11-19): 72 classes, micro acc 0.761, macro precision 0.636 on its own val split.
-# Chelonioidea sp is its ONLY indeterminate class: "A/B" labels are dropped rather than
-# trained as Larus/Sterna/Aythya/Calonectris sp, and family-rank dolphins are dropped too
-# (those parents of their own species classes belong only in the hierarchical model).
-# Known weaknesses (job 52095705): Larus delawarensis 0.08 (85/100 val crops -> Chroicocephalus
-# philadelphia); Tursiops/Delphinus/Stenella 0.30/0.45/0.33 on small val counts (27/20/6).
+# Metadata-free flat classifier (Comet 0139af8cad264f569519cd06074acd66, job 52121225,
+# 2026-11-20): 73 classes, micro acc 0.782, macro precision 0.641 on its own val split.
+# Same recipe as a1d526df (Chelonioidea sp is the ONLY indeterminate class; "A/B" labels and
+# family-rank dolphins dropped -- those belong only in the hierarchical model), retrained on
+# the 2026-11-20 USGS manifest refresh (+41,674 human boxes; crop pool 187k -> 226k).
+# vs a1d526df (different val splits): Larus delawarensis 0.08 -> 0.68, Delphinus 0.45 -> 0.90,
+# Tursiops 0.30 -> 0.38, Stenella frontalis 0.33 -> 0.20 (small val counts). Calidris maritima
+# added, Egretta thula dropped (split threshold). Columba livia has no taxonomy.json entry.
 # Large whales remain unusable (NEAQ excluded since a3dc30a0). Must be paired with
 # use_metadata: false below.
 #
-# Previous: a3dc30a085f5442393736ecd96b564c5 (job 39613239, 70 classes, T 5.6136).
-checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/buffer_30/a1d526df310a488599abd78aa43ef8ba.ckpt
+# Previous: a1d526df310a488599abd78aa43ef8ba (job 52028210, 72 classes, T 5.1651);
+#           a3dc30a085f5442393736ecd96b564c5 (job 39613239, 70 classes, T 5.6136).
+checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/buffer_30/0139af8cad264f569519cd06074acd66.ckpt
 # Post-hoc temperature scaling (Guo et al. 2017). src/classification.apply_temperature()
 # divides the logits by this before DeepForest's softmax, so cropmodel_score is a calibrated
 # probability instead of a raw max-softmax. Fit by minimising NLL on THIS checkpoint's val
-# split (job 52095705): ECE 0.204 -> 0.071, NLL 3.104 -> 1.111, accuracy unchanged at 0.7610.
+# split (job 52155608): ECE 0.178 -> 0.048, NLL 2.321 -> 0.914, accuracy unchanged at 0.7822.
 # PAIRED WITH THE CHECKPOINT ABOVE AND NOTHING ELSE. It does not transfer. Re-fit with
 #   sbatch submit_classifier_confusion.sh <comet_id>
 # whenever `checkpoint` moves, and move the cropmodel_score thresholds with it (see
 # human_review.review_high in boem_config.yaml for the list). Set to null to disable
 # scaling and return every threshold to the raw scale.
 # Labels are unaffected -- dividing by a positive scalar cannot move an argmax.
-temperature: 5.1651
+temperature: 4.4675
 checkpoint_train_dir: /blue/ewhite/b.weinstein/BOEM/training/classification/crops/train
 checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/classification/checkpoints
 train_crop_image_dir: /blue/ewhite/b.weinstein/BOEM/classification/crops/train

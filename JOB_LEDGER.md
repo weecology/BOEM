@@ -3139,6 +3139,17 @@ Result (52121223), checked 2026-11-20: COMPLETED 43m37s, exit 0:0. 507,657 human
   test  134,176 rows /  22,278 boxes / 122,917 tiles ( 11,019 w/ boxes, 111,898 empty)   [11-03: 131,568 / 19,753 / 120,843]
   zero_shot 22,996 / 1,258 / 22,680 -- unchanged, only the two pinned flights; 0 holdout rows in train/test (flight + path).
   Downstream 52121224 / 52121225 now pending on Priority (GPU queue).
+Result (52121225, flat), checked 2026-11-20: COMPLETED 3h21m, exit 0:0, clean stderr. Checkpoint
+  buffer_30/0139af8cad264f569519cd06074acd66.ckpt (+ split CSVs). Pool 225,959 crops (a1d526df: 187,420), 41,693 parents,
+  38,750 A/B dropped, 73 classes (+Calidris maritima, -Egretta thula vs a1d526df). Train balanced to 47,600, val 3,972.
+  Micro acc 0.7822 (a1d526df 0.7610), macro prec 0.6411 (0.6357), val_loss 2.59 (3.69). VAL SETS DIFFER -- not comparable
+  until scored on a common set. Larus delawarensis 0.68 (a1d526df 0.08: the new USGS gull labels restored it), Delphinus 0.90
+  (0.45), Tursiops 0.38 (0.30), Stenella frontalis 0.20 (0.33). Still 0.0: Anas strepera, Ardea herodias, B. acutorostrata,
+  Branta bernicla, Haliaeetus, Pluvialis squatarola, Pterodroma hasitata, Sterna dougallii. Not promoted.
+  H-CAST 52121226 started 20:50 on this split: 72/51/21 heads (Columba livia not in taxonomy.json -- known since 08-20,
+  21 train / 13 val rows), ~29 min/epoch -> ~48h for 100 epochs, inside 72h.
+  Detection 52121224 at 20:45: epoch03 val_cls 0.1131, ~47 min/epoch -> all 30 epochs would end ~17:10 on 11-21 vs the
+  24h limit at 17:23. TIMEOUT would fail afterok and leave YOLO compare 52121265 never starting.
 
 ## 52121265 — 2026-11-20 — submit_compare_yolo26_refresh.sh, afterok:52121224 (hpg-b200, 1 GPU) — SUBMITTED
 Why: Ben: when the 11-20 refresh detector (52121224) finishes, redo the YOLO26s comparison (51996709/51998927, branch

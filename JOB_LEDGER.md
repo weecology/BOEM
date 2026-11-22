@@ -3199,6 +3199,10 @@ DeepForest validate() (training-time definition, score_thresh 0.4) + box recall/
 Not zero-shot (that's 52121265). 1968e962 deliberately NOT scored on it: the 11-20 split reshuffled parents, so its training
 images can sit in this test set (leaky).
 Next: record validation box recall @0.70 next to zero-shot 59.0% -- two labelled numbers, never merged.
+Result (52339590), checked 2026-11-22: COMPLETED 9m38s, exit 0:0. validate() (pooled, score_thresh 0.4): VALIDATION box recall
+  0.680, box precision 0.953, empty-frame acc 0.996, val_classification 0.0867 (matches the training log, so same file/model).
+  The per-threshold table was WRONG METRIC: evaluate_boxes' box_recall is a mean of per-tile recall (one-bird tiles outvote
+  flocks), e.g. 90.7% at 0.4 vs pooled 68.0%. Discarded; script fixed to pooled TP/GT and resubmitted (below).
 
 ## 52339591 — 2026-11-22 — submit_benchmark_detection_training.sh (hpg-b200, 1 GPU, 32 CPU) — SUBMITTED
 Why: Ben: optimization review -- 52121224 ran 1 B200 / 8 CPU at ~48 min/epoch (240,635 tiles -> ~84 img/s) and timed out.
@@ -3207,3 +3211,12 @@ augs; DeepForest loader has no pin_memory / persistent_workers). New scripts/ben
 loader alone at 8/16/24/32 workers and (B) GPU-only train steps on resident batches, fp32/TF32 vs fp16 autocast.
 Quota context: ewhite QOS = 10 GPUs / 152 CPUs group-wide, MaxWall 31d (ewhite-b burst has gpu=0); the 24h limit was ours.
 Next: pick GPUs x workers so loader >= GPU rate; then multi-GPU DDP via the existing devices>1 path in USGS_backbone.py.
+Result (52339591), checked 2026-11-22: CANCELLED by SIGTERM at 1h20m (not by me, Reason None, before the 32-worker point).
+  B200 GPU-only train step (batch 64, resident data): fp32/TF32 197.3 img/s (20.3 min/epoch), fp16 autocast 192.4 (no gain).
+  DataLoader only: 8 workers 107.5 img/s (37.3 min/epoch), 16 -> 238.8, 24 -> 383.7 (~15-16 img/s per worker, ~linear).
+  => 52121224 (8 workers, ~84 img/s end-to-end) was LOADER-BOUND; the GPU sat ~55% idle. One B200 needs ~14 workers to stay fed.
+
+## 52344877 — 2026-11-22 — submit_eval_detection.sh c6ecec12/epoch27, pooled metrics — SUBMITTED
+Why: rerun of 52339590 with the per-threshold table fixed to POOLED box recall/precision (matched GT / all GT), the
+definition threshold_sweep.py's zero-shot numbers use; also saves the predictions CSV next to the checkpoint.
+Next: report VALIDATION recall @0.70 beside ZERO-SHOT 59.0% (52121265), labelled separately.

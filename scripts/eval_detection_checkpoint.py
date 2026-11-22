@@ -55,13 +55,22 @@ def main_(ckpt: str, val_csv: Path) -> None:
     box_tiles = set(boxes.image_path)
     empty_tiles = set(gt.image_path.map(lambda p: Path(p).name)) - box_tiles
 
-    print("\n=== Box recall / precision by score threshold (IoU 0.4, tiles with boxes) ===")
-    print(" thresh   recall    prec   empty-tile FP rate")
+    out = Path(ckpt).with_suffix(f".{val_csv.stem}_predictions.csv")
+    preds.to_csv(out, index=False)
+    print(f"\nwrote {out}")
+
+    # POOLED box recall = matched GT boxes / all GT boxes, the definition validate() and
+    # threshold_sweep.py use. evaluate_boxes' own box_recall is a MEAN OF PER-TILE recall,
+    # which lets one-bird tiles outvote dense flocks -- not comparable, so not reported.
+    print("\n=== Pooled box recall / precision by score threshold (IoU 0.4) ===")
+    print(" thresh   recall    prec      TP      FP   empty-tile FP rate")
     for t in THRESHOLDS:
         p = preds[preds.score >= t]
-        r = evaluate.evaluate_boxes(p[p.image_path.isin(box_tiles)], boxes, iou_threshold=0.4)
+        res = evaluate.evaluate_boxes(p[p.image_path.isin(box_tiles)], boxes, iou_threshold=0.4)["results"]
+        tp = int(res.match.sum())
+        fp = len(p) - tp
         fp_empty = p[p.image_path.isin(empty_tiles)].image_path.nunique() / max(len(empty_tiles), 1)
-        print(f"  {t:.2f}   {r['box_recall']:6.1%}  {r['box_precision']:6.1%}   {fp_empty:6.1%}")
+        print(f"  {t:.2f}   {tp / len(boxes):6.1%}  {tp / max(len(p), 1):6.1%}  {tp:6,}  {fp:6,}   {fp_empty:6.1%}")
 
 
 if __name__ == "__main__":

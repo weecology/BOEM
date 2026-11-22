@@ -3237,3 +3237,17 @@ batch 64 -> 256 and need lr re-tuning). Mem 80 -> 120GB: 52121224 peaked 70GB at
 Next: on the next detection run, confirm epoch time ~22 min and MaxRSS < 120GB.
 Upstream (2026-11-22): filed weecology/DeepForest#1479 (as Claude, no PR, at Ben's request). Empty-frame denominator
 already fixed on DeepForest main (d32560f1) but not in v2.1.0, our pin; per-image mean (vs pooled) still on main.
+
+## (no job) — 2026-11-22 — three-way zero-shot comparison c6ecec12 vs 1968e962 vs YOLO26s (CPU, local)
+Why: Ben: update the YOLO26 comparison (51996709/51998927, 52121265) with the 11-20 refresh detector, and replace the
+ad hoc per_object_hits.csv / disagreement_examples/ with a committed script. New scripts/compare_detectors_holdout.py
+re-matches the three saved *_labelled_boxes.csv (no inference) and reproduces each sweep JSON's TP/FP exactly at all 21
+thresholds before writing. Outputs: /blue/ewhite/b.weinstein/BOEM/yolo26_comparison/three_way/ (old ad hoc files kept;
+note the old per_object_hits.csv "prod" column was 1968e962 @0.55, not 0.70).
+Result: ZERO-SHOT pooled recall/precision @0.70: c6ecec12 59.0/85.4, 1968e962 57.9/86.6, YOLO26s 38.0/83.4. At matched
+  precision c6ecec12 ~= 1968e962 within 1.5 recall pts (both ~20-35 pts over YOLO), with 2-9x fewer unscreened-queue
+  frames at 70-83% precision. c6ecec12 gain is non-birds (38.7 vs 28.4% hit, mostly Delphinidae) and >90px objects;
+  dense flocks (>20/frame) 12-15% for all. Of the 59% recall gap, much is box fit: a >=0.70 box centred inside the GT
+  box exists for 79.3% (c6ecec12) / 74.9% / 47.5% of objects (sensitivity only). 151 GT objects overlap another GT box
+  at IoU>0.5 (184 same-annotator pairs) -- not resolved whether duplicates or packed animals.
+Next: decide whether to promote c6ecec12; consider re-scoring GT box fit (loose boxes) before trusting absolute recall.

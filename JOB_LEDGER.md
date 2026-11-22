@@ -3191,3 +3191,19 @@ PROMOTED at Ben's request: finetune.yaml -> 0139af8c + T 4.4675; boem_config.yam
   Production H-CAST (run_40306075 species.csv) cannot name 6 flat classes: Calidris maritima, Columba livia, Eudocimus albus,
   Fregata magnificens, Haliaeetus leucocephalus, Sterna dougallii -> read as "H-CAST does not support" until 52121226 lands.
 Next: pinned zero-shot classifier comparison vs a1d526df (val splits differ); promote H-CAST 52121226 when it finishes.
+
+## 52339590 — 2026-11-22 — submit_eval_detection.sh c6ecec12/epoch27 (hpg-b200, 1 GPU) — SUBMITTED
+Why: Ben: run the validation the detection job (52121224) never reached before TIMEOUT. New scripts/eval_detection_checkpoint.py:
+VALIDATION (in-distribution) on test_max_empty_0_25.csv -- the exact file the run monitored (14,692 tiles) -- via
+DeepForest validate() (training-time definition, score_thresh 0.4) + box recall/precision at 0.4-0.9 from one predict pass.
+Not zero-shot (that's 52121265). 1968e962 deliberately NOT scored on it: the 11-20 split reshuffled parents, so its training
+images can sit in this test set (leaky).
+Next: record validation box recall @0.70 next to zero-shot 59.0% -- two labelled numbers, never merged.
+
+## 52339591 — 2026-11-22 — submit_benchmark_detection_training.sh (hpg-b200, 1 GPU, 32 CPU) — SUBMITTED
+Why: Ben: optimization review -- 52121224 ran 1 B200 / 8 CPU at ~48 min/epoch (240,635 tiles -> ~84 img/s) and timed out.
+sacct: TotalCPU 7d12h over 24h on 8 cores = CPUs ~94% busy -> suspected DataLoader-bound (1000px PNG decode + CPU kornia
+augs; DeepForest loader has no pin_memory / persistent_workers). New scripts/benchmark_detection_training.py times (A) the
+loader alone at 8/16/24/32 workers and (B) GPU-only train steps on resident batches, fp32/TF32 vs fp16 autocast.
+Quota context: ewhite QOS = 10 GPUs / 152 CPUs group-wide, MaxWall 31d (ewhite-b burst has gpu=0); the 24h limit was ours.
+Next: pick GPUs x workers so loader >= GPU rate; then multi-GPU DDP via the existing devices>1 path in USGS_backbone.py.

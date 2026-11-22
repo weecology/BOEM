@@ -3251,3 +3251,14 @@ Result: ZERO-SHOT pooled recall/precision @0.70: c6ecec12 59.0/85.4, 1968e962 57
   box exists for 79.3% (c6ecec12) / 74.9% / 47.5% of objects (sensitivity only). 151 GT objects overlap another GT box
   at IoU>0.5 (184 same-annotator pairs) -- not resolved whether duplicates or packed animals.
 Next: decide whether to promote c6ecec12; consider re-scoring GT box fit (loose boxes) before trusting absolute recall.
+
+## 52348607 — 2026-11-22 — submit_review_load.sh (hpg-b200, 1 GPU, 16 CPU, 12h) — SUBMITTED
+Why: Ben asked what dropping the detection threshold 0.70 -> 0.40 would cost reviewers (his intuition: 0.60). Validation
+empties can't answer it (1000px tiles not frames; human-empty LS tiles, capped at 25%; older USGS surveys), and the July
+caches are cut at 0.70. New scripts/review_load_by_threshold.py: 250 random frames per July 2026 flight (5,000 of 533,876,
+seed 0), re-predicted at a 0.40 floor with 1968e962/e29 (production) and c6ecec12/e27 through the pipeline's own
+generate_pool_predictions (production CropModel 0139af8c + T 4.4675 + H-CAST run_40306075), then human_review() at
+0.40..0.70: review frames/boxes, auto-annotated, ignored, scaled x106.8 to the survey. Outputs in
+/blue/ewhite/b.weinstein/BOEM/review_load_by_threshold/. Prior anchor (a09c6933, Aug): July 0.40 -> 19,008 frames /
+41,739 boxes vs 0.70 -> 360 / 388.
+Next: report review frames at 0.60 vs 0.70 for both detectors; spot-check what the 0.60-0.70 band holds (real vs foam).

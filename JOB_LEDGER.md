@@ -3235,3 +3235,5 @@ Why: Ben chose the 1-GPU/16-CPU option from the 52339591 review for future detec
 results stay comparable with c6ecec12; expected ~22 min/epoch (was ~48). 4-GPU DDP not adopted (would change effective
 batch 64 -> 256 and need lr re-tuning). Mem 80 -> 120GB: 52121224 peaked 70GB at 8 workers.
 Next: on the next detection run, confirm epoch time ~22 min and MaxRSS < 120GB.
+Upstream (2026-11-22): filed weecology/DeepForest#1479 (as Claude, no PR, at Ben's request). Empty-frame denominator
+already fixed on DeepForest main (d32560f1) but not in v2.1.0, our pin; per-image mean (vs pooled) still on main.

@@ -3229,3 +3229,9 @@ Result (52344877), checked 2026-11-22: COMPLETED, exit 0:0. VALIDATION (in-distr
   WHY validate() said 0.680: DeepForest RecallPrecision.compute = sum(per-tile recall over tiles WITH boxes) / ALL tiles, so
   empty tiles count as recall 0 -> 0.907 (per-tile mean) x 11,019/14,692 = 0.680. Every training-log "box_recall" is capped
   at (1 - empty fraction) and is not box recall. Use threshold_sweep.py / eval_detection_checkpoint.py pooled numbers only.
+
+## (no job) — 2026-11-22 — detection submit script resized: 1 B200 / 16 CPU / 16 workers / 120GB / 48h
+Why: Ben chose the 1-GPU/16-CPU option from the 52339591 review for future detection runs. Same model/batch/lr/epochs, so
+results stay comparable with c6ecec12; expected ~22 min/epoch (was ~48). 4-GPU DDP not adopted (would change effective
+batch 64 -> 256 and need lr re-tuning). Mem 80 -> 120GB: 52121224 peaked 70GB at 8 workers.
+Next: on the next detection run, confirm epoch time ~22 min and MaxRSS < 120GB.

@@ -3220,3 +3220,12 @@ Result (52339591), checked 2026-11-22: CANCELLED by SIGTERM at 1h20m (not by me,
 Why: rerun of 52339590 with the per-threshold table fixed to POOLED box recall/precision (matched GT / all GT), the
 definition threshold_sweep.py's zero-shot numbers use; also saves the predictions CSV next to the checkpoint.
 Next: report VALIDATION recall @0.70 beside ZERO-SHOT 59.0% (52121265), labelled separately.
+Result (52344877), checked 2026-11-22: COMPLETED, exit 0:0. VALIDATION (in-distribution, test_max_empty_0_25.csv: 14,692 tiles,
+  11,019 with boxes, 22,278 boxes), POOLED box recall / precision, IoU 0.4:
+    0.40 84.0 / 92.0   0.50 74.8 / 94.5   0.60 61.6 / 96.4   0.70 45.7 / 97.9   0.80 30.7 / 99.1   0.90 18.3 / 99.4
+  vs ZERO-SHOT @0.70 (52121265): 59.0 / 85.4. Validation recall is LOWER: val tiles are dense USGS flocks (2.0 boxes/tile),
+  where low-score crowding bites; precision is higher because those labels are exhaustive.
+  Predictions: .../c6ecec12e078416c9fe645c89bc418cf/epoch27-val_cls0.0867.test_max_empty_0_25_predictions.csv
+  WHY validate() said 0.680: DeepForest RecallPrecision.compute = sum(per-tile recall over tiles WITH boxes) / ALL tiles, so
+  empty tiles count as recall 0 -> 0.907 (per-tile mean) x 11,019/14,692 = 0.680. Every training-log "box_recall" is capped
+  at (1 - empty fraction) and is not box recall. Use threshold_sweep.py / eval_detection_checkpoint.py pooled numbers only.

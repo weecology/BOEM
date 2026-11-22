@@ -3166,6 +3166,18 @@ Update 2026-11-21 09:15: detection 52121224 at epoch18 (val_cls 0.0902, still im
   still runs on the saved per-epoch ckpts (min val_cls); it exits if it can't find exactly one new ckpt dir.
   Consequence: the detection job's own post-training zero-shot metrics will likely be missing from its log/Comet;
   the threshold_sweep in 52121265 is the zero-shot number of record anyway.
+Result (52121224, detection), checked 2026-11-22: TIMEOUT at 24h as predicted, after all 30 epochs were saved (epoch29
+  at 17:19). Comet c6ecec12e078416c9fe645c89bc418cf. Best val_cls epoch27 0.0867 (1968e962 e29 0.0899, different test sets).
+  Post-fit zero-shot validate in the job's own log never ran (killed). ~48 min/epoch: next detection run needs >24h or
+  fewer epochs / a resume -- the ewhite-b QOS allows up to 4 days.
+Result (52121265, YOLO compare), checked 2026-11-22: COMPLETED 18m50s, exit 0:0. Swept c6ecec12/epoch27 on the same
+  648 frames / 1,229 objects, IoU 0.4, 2000-frame queue. ZERO-SHOT (pinned holdout) box recall / precision / image recall / queue img per 1k:
+    @0.70  c6ecec12 59.0 / 85.4 / 96.2 / 1.5   1968e962 57.9 / 86.6 / 94.2 / 1.0   YOLO26s 38.0 / 83.4 / 65.0 / 2.0
+    matched ~87% prec: c6ecec12@0.75 57.4 / 87.2   1968e962@0.75 56.0 / 88.0
+    @0.30  c6ecec12 65.1 / 73.9, queue 26 img/1k   1968e962 66.2 / 75.1, queue 70.5 img/1k
+  New detector ~= production on zero-shot (+1.1 recall / -1.2 precision at 0.70; same curve within ~1.5 pts), both beat
+  YOLO26s by ~20 recall points. Notable: far fewer unscreened-queue hits at 0.2-0.5 (128 vs 204 img/1k at 0.20).
+  Not promoted. Validation (in-distribution) recall for c6ecec12 not measured -- the job died before its own eval.
 
 ## 52155608 — 2026-11-20 — submit_classifier_confusion.sh 0139af8cad264f569519cd06074acd66 — SUBMITTED
 Why: Ben: promote the 11-20 refresh flat classifier 0139af8c (52121225) into the pipeline. Checkpoint and its own fitted

@@ -3409,3 +3409,42 @@ Overall (provisional): underfitting is established (0d + loss); training distrib
   run is needed before ruling it out. Resolution is worth ~10 pts with no retraining. Passed to the architecture chat (boem-d5, branch detector-architecture-comparison) as the dense-flock test.
 Next: (a) empty-tile FP + zero-shot check for 1000/1200px inference; (b) train at native resolution (min_size 1000-1200)
   -- one full run, the biggest lever found; (c) double-annotated dense tiles to measure the human ceiling (Ben to OK).
+
+## 52502097 — 2026-11-23 — submit_detection_input1000.sh (hpg-b200, 1 GPU, 16 CPU, 120GB, 48h), branch detector-architecture-comparison @f261aad
+Why: Ben: train a detector whose train and eval scale match at native 1000 px. torchvision RetinaNet's default
+min_size 800 / max_size 1333 shrinks every 1000 px tile to 0.8x in training AND prediction (c6ecec12 included). Dense-flock 0c
+(52491503) showed inference-only 1000 px lifts c6ecec12 VALIDATION recall 55.4 -> 62.4 at equal precision 0.97. This is
+c6ecec12's recipe exactly (deepforest-bird init, batch 64, lr 0.001, ReduceLROnPlateau, early stop 5, 30 epochs,
+same augs) with the one change --input-size 1000. It reads c6ecec12's own split files as-is (--train-csv
+train_max_empty_0_10.csv, --val-csv test_max_empty_0_25.csv), because re-running the resample would have drawn a
+different empty sample (set-order hashing) and overwritten them. Production venv (DeepForest friendly-beaver), run from the
+worktree. The checkpoint records input_size=1000, and detection.load() re-applies it; eval_detection_checkpoint.py and
+threshold_sweep.py go through detection.load.
+Next: expect ~30-35 min/epoch (GPU-bound at 1.56x pixels, vs 22 min at 800), so ~16 h for 30 epochs; check epoch time and that the
+first epochs don't OOM at batch 64. Then score min-val_cls epoch vs c6ecec12 (predicted at 1000 and at 800) with
+eval_detection_checkpoint.py (VALIDATION, pooled) + density_strata.py at interpolated equal precision, and on
+dense_flock/phase0/0d_train_sample.csv (fit on its own training tiles). val_cls is NOT comparable across scales; select within run only.
+Result: PENDING
+
+## 52502538 — 2026-11-23 — submit_zero_shot_input_size.sh (hpg-b200, 1 GPU, 8 CPU, 4h), branch detector-architecture-comparison @8c536b2
+Why: Ben: input size may be another recall/precision trade-off axis, so run the zero-shot check. Production c6ecec12/epoch27,
+inference only, swept by threshold_sweep.py (new --input-size override) on the pinned holdout (JPG_20260202_141900 +
+JPG_20260201_134000, IoU 0.4, 2000-frame seeded unscreened queue sample) at 800 (must reproduce 52121265: 59.0 / 85.4 /
+96.2 / 1.5 @0.70), 1000 (native) and 1200 (upsampled). Validation side (dense-flock 0c): 55.4 / 62.4 / 66.7 recall at
+equal precision 0.97; empty-val-tile FP rate @0.60 0.05 / 0.14 / 0.22%.
+Next: ZERO-SHOT box recall/precision and queue boxes per 1k frames at 0.60 and 0.70, and at matched precision, per size.
+Labelled separately from validation. Outputs: /blue/ewhite/b.weinstein/BOEM/zero_shot_input_size/.
+Result: PENDING
+
+## 52502655 — 2026-11-23 — submit_dense_flock_input_size.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 12h) — SUBMITTED
+Why: Ben OK'd checking what 1000/1200 px inference costs outside validation before any production change. 0c showed
+predicting at 1000 / 1200 instead of torchvision's 800 adds +7 / +11 pts VALIDATION recall at equal precision 0.97, with
+empty-val-tile FP 0.05% -> 0.14% -> 0.22% @0.60 (val empties capped at 25%, no July foam).
+scripts/dense_flock_input_size.py (branch dense-flock-diagnostics, run from worktree .claude/worktrees/dense-flock) wraps
+detection.load to set transform min_size (max_size scaled from 1333) and reuses unchanged:
+  ZERO-SHOT  threshold_sweep.py on the pinned holdout, same args as 52121265 (800 should reproduce 59.0/85.4 @0.70)
+  July load  review_load_by_threshold.py's 5,000-frame sample (seed 0) via generate_pool_predictions + human_review
+             (800 should reproduce 52348607's c6ecec12 row: 0.60 -> 17 frames / 20 boxes in sample)
+Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/input_size/ (earlier 52121265 / 52348607 files untouched).
+Not a duplicate of boem-d5's 52502097 (TRAINS at 1000); this is inference-only on c6ecec12.
+Next: zero-shot recall/precision and reviewer frames at 0.60 by input size -> decide whether to propose 1000/1200 inference.

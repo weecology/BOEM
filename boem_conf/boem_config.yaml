@@ -36,65 +36,12 @@ flight_name: null
 predict:
   patch_size: 1000
   patch_overlap: 0
-  # PAIRING VERIFIED FOR THE CURRENT CHECKPOINT (job 41939457, 2026-09-13).
-  # The foam risk described below was measured and did NOT materialise — the opposite
-  # happened. On the two foam-heavy July flights (JPG_20260712_100400 + JPG_20260712_113200,
-  # 3,000-frame sample) 1968e962/epoch29 emits FEWER boxes at 0.70 than a09c6933 did on the
-  # same flights: 0.67 boxes/1k vs 2.08 boxes/1k (120 boxes over 57,657 frames). Across the
-  # band it is ~3.5x more conservative at 0.40 (126 boxes/1k vs the 0.40-era 25,280 boxes
-  # over those same 57,657 frames = 438/1k).
-  # That is the profile of a model that learned to REJECT foam while scoring real animals
-  # higher — consistent with its training corpus, which is the first to include the July
-  # review pass's 52 human-marked FalsePositives as hard negatives.
-  # CAVEAT, do not over-read: 0.67 boxes/1k on a 3,000-frame sample is TWO boxes. It is at
-  # the sample's resolution limit, so it supports "no foam excess" but cannot settle whether
-  # the new model is now too conservative on July imagery. The Feb zero-shot holdout says its
-  # recall is better (94.2% vs 75.8% image recall), but Feb and July imagery differ sharply
-  # (79.1% of Feb boxes sit above 0.85 vs 1.4% of July ones), so that does not fully transfer
-  # either. A July-imagery recall answer needs reviewed July ground truth, which does not
-  # exist outside the pinned Feb pair.
-  # Original (now-closed) risk statement kept below for the reasoning:
-  # 0.70 was calibrated for a09c69331af8496380cbf99e3859d656/epoch16 on JULY SURVEY imagery
-  # (see the derivation below). detection_model.checkpoint moved to 1968e962/epoch29 on
-  # 2026-09-13, and this value has NOT been re-derived on survey imagery for it.
-  # What IS known for 1968e962, on the pinned Feb ZERO-SHOT holdout (jobs 41840299/41840640):
-  # 0.70 gives image recall 94.2% / box precision 86.6%, comfortably better than a09c6933 at
-  # the same cut, so 0.70 is a SAFE-OR-BETTER starting point on that substrate and holding it
-  # cannot silently lose frames relative to the model being replaced.
-  # The open risk is the other direction: 1968e962 scores higher overall (max 0.993 on the
-  # holdout vs a09c6933's 0.931), so on July imagery it may push FOAM above 0.70 that
-  # a09c6933 kept below. The 0.70 value exists precisely to exclude that foam, and the
-  # lesson of 2026-08-20 is that a threshold does not transfer between checkpoints.
-  # The survey-imagery derivation called for here WAS run: job 41939457, result at the top
-  # of this comment. Remaining unmeasured piece is per-class share clearing the cut and an
-  # eyeball of the Morus crops, which needs a survey run on the new checkpoint to produce.
-  # Re-derive with scripts/threshold_sweep.py whenever detection_model.checkpoint changes.
-  #
-  # 0.70 chosen 2026-08-20, on SURVEY imagery. This supersedes the 0.30 set on 2026-08-13
-  # from the Feb holdout sweep (job 39385379: img recall 97.8%, box recall 63.0%, prec
-  # 78.4% at 0.30). That sweep measured the pinned zero-shot Feb pair, where 79.1% of
-  # boxes already sat above 0.85; the July survey has 1.4% there. The threshold did not
-  # transfer, and the 0.30 pool turned out to be 98.5% foam.
-  # What DOES separate real animals from foam on July imagery is detection score alone:
-  #   - 19 Morus bassanus crops, eyeballed: the 8 real birds are exactly the 8 with
-  #     score >= 0.65 (0.664-0.831); all 11 foam crops fall in 0.400-0.573. No exceptions.
-  #   - Per-class share clearing 0.65 on the 20-flight survey: Thalasseus maximus 86.7%
-  #     (median 0.811) vs Clangula 0.3%, Chelonioidea 0.6%, Gavia 0.5%, Somateria 2.0%.
-  #     One class behaves like a species; the mass classes behave like nothing.
-  # Classifier confidence CANNOT substitute: median cropmodel_score on the foam sinks is
-  # 0.98-0.99. The classifier is maximally confident on foam. Detection score is the only
-  # signal that discriminates, which is why this gate carries the whole burden.
-  # Cost: the 20-flight survey pool goes 41,739 boxes (>=0.40) -> 388 (>=0.70).
-  # Box recall ceilings at 67.8% even at thresh 0.05, so a third of objects are invisible
-  # to this detector at ANY threshold. That is a detector problem, not a threshold one.
-  # NOTE: as of 2026-08-20 this value is also pushed into the live model's score_thresh by
-  # detection.load(), so the detector genuinely stops emitting below it. Before that fix
-  # the model's baked-in 0.4 floor silently overrode any lower setting here.
-  # 0.70 is the gate for THIS pipeline. The per-survey overrides are deliberately left at
-  # 0.5 and are not oversights: submit_seals_array.sh, submit_seals_missing_metadata.sh
-  # (seal detections peak ~0.89 even on obvious animals) and submit_neaq.sh (retired; its
-  # imagery is already a 0.5-screened subset, so a higher floor recovers nothing).
-  min_score: 0.70
+  # Detection score floor. Paired with detection_model.checkpoint: re-derive with
+  # scripts/threshold_sweep.py whenever the checkpoint changes, and move
+  # active_learning.min_detection_score and human_review.min_detection_score with it.
+  # Also pushed into the live model's score_thresh by detection.load().
+  # Per-survey overrides stay at 0.5 on purpose (seals, NEAQ submit scripts).
+  min_score: 0.60
   # This counts IMAGES, not patches: predict_tile(dataloader_strategy="batch") batches
   # whole images and flattens their crops, so one forward pass sees
   # batch_size * 35 patches for this ~6464x4852 camera. batch_size=1 therefore already
@@ -124,25 +71,9 @@ propagate:
 
 detection_model:
   force_train: False
-  # Comet 1968e962113f4c57bc6bf5f07fae1b25, epoch29 (val_classification 0.0899) — job
-  # 40994172, trained 2026-09-03 on the corpus refreshed with the completed July review
-  # pass. PROMOTED 2026-09-13, replacing a09c6933/epoch16.
-  #
-  # Promoted on ZERO-SHOT holdout evidence (jobs 41840299 / 41840640, the pinned Feb pair
-  # JPG_20260201_134000 + JPG_20260202_141900 — 648 fully-reviewed frames, 1,229 objects).
-  # At the SAME predict.min_score 0.70, zero-shot:
-  #     1968e962/epoch29   image recall 94.2%  box recall 57.9%  box precision 86.6%
-  #     a09c6933/epoch16   image recall 75.8%  box recall 44.3%  box precision 90.2%
-  # +18.4 points of image recall for -3.6 of precision. The box-recall CEILING (lowest
-  # threshold, i.e. what no threshold choice can recover) also rose 67.8% -> 71.4%, so this
-  # is a better detector and not merely a better-calibrated one.
-  # These are ZERO-SHOT numbers. Do NOT quote them as validation recall, and do not compare
-  # them to the ~0.06-0.80 box_recall on any Comet training run: that metric is ceilinged by
-  # the empty-frame ratio of whatever split it was computed on and is not comparable across
-  # runs (deepforest_box_recall_issue.md). No trustworthy in-distribution validation box
-  # recall exists for either checkpoint.
-  # Ignore box_recall on the Comet run for the same reason.
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/1968e962113f4c57bc6bf5f07fae1b25/epoch29-val_cls0.0899.ckpt
+  # Comet c6ecec12e078416c9fe645c89bc418cf, epoch27. Ignore box_recall on Comet runs: it is a
+  # per-tile mean ceilinged by the empty-frame ratio (deepforest_box_recall_issue.md).
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/c6ecec12e078416c9fe645c89bc418cf/epoch27-val_cls0.0867.ckpt
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -176,15 +107,8 @@ active_learning:
   # equivalent is 0.066. A floor in select_images/report, not the review band -- see
   # human_review.review_high for the full list of thresholds that must move together.
   min_classification_score: 0.07
-  # THIRD detection gate, independent of predict.min_score and human_review.
-  # min_detection_score. 0.8 -> 0.30 on 2026-08-14, -> 0.70 on 2026-08-20.
-  # All three gates are calibrated together for a09c6933/epoch16 and MUST move together —
-  # see predict.min_score for the derivation of 0.70. Keep this >= predict.min_score: the
-  # pool is already cut there, so anything lower is a no-op.
-  # The 2026-08-14 move to 0.30 was made because only 91 survey boxes cleared 0.85 across
-  # 533,876 images, which starved this queue. 0.70 keeps the queue fed (388 boxes on the
-  # 20-flight survey) without selecting images off foam.
-  min_detection_score: 0.70
+  # Third detection gate, independent of predict.min_score. Keep it equal to predict.min_score.
+  min_detection_score: 0.60
   model_checkpoint:
   target_labels:
     - "Tursiops truncatus"
@@ -218,10 +142,8 @@ active_testing:
   m: 
   patch_size: 1000
   patch_overlap: 0
-  # DEAD KEY as of 2026-08-20: nothing reads active_testing.min_score. Test images are
-  # drawn from the pool, which predict.min_score has already cut. Kept at 0.70 so it does
-  # not contradict the real gates if something ever starts reading it.
-  min_score: 0.70
+  # Dead key: nothing reads it. Kept equal to predict.min_score.
+  min_score: 0.60
 
 human_review:
   n: 30
@@ -231,10 +153,8 @@ human_review:
   # spurious; above review_high it is auto-annotated (confident_predictions).
   # Keep min_detection_score >= predict.min_score — the pool is already cut at that value,
   # so anything lower is a no-op.
-  # MUST MOVE WITH predict.min_score. active_learning.py:161 applies this as an
-  # independent hard cut, so a stale value here silently filters out every box the pool
-  # just produced. 0.85 -> 0.30 on 2026-08-14, -> 0.70 on 2026-08-20.
-  min_detection_score: 0.70
+  # Must equal predict.min_score: active_learning.py applies it as an independent hard cut.
+  min_detection_score: 0.60
   # ALL cropmodel_score thresholds below are on the TEMPERATURE-SCALED scale
   # (classification_model.temperature = 5.6136). They are meaningless on the raw scale and
   # must ALL move together if that key changes or is set to null. The full list:

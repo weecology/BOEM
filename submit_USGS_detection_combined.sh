@@ -4,9 +4,9 @@
 #SBATCH --mail-user=benweinstein2010@gmail.com
 #SBATCH --account=ewhite
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=80GB
-#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=120GB
+#SBATCH --time=48:00:00
 #SBATCH --output=/home/b.weinstein/logs/detection_BOEM%j.out
 #SBATCH --error=/home/b.weinstein/logs/detection_BOEM%j.err
 #SBATCH --partition=hpg-b200
@@ -21,7 +21,7 @@ export NCCL_DEBUG=INFO
 
 srun uv run python scripts/USGS_backbone.py \
     --batch_size 64 \
-    --workers 8 \
+    --workers 16 \
     --lr 0.001 \
     --max-empty-fraction 0.1 \
     --max-test-empty-fraction 0.25 \

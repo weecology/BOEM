@@ -109,12 +109,10 @@ def predict(checkpoint, image_paths, patch_size, patch_overlap, batch_size, work
     # Let every box through; the sweep does the thresholding offline. Without
     # this the model's own score_thresh silently truncates the low end of the
     # curve and every recall number below it is wrong.
-    try:
-        m.model.score_thresh = floor
-    except AttributeError:
-        pass
-    if hasattr(m, "config") and isinstance(m.config, dict):
-        m.config["score_thresh"] = floor
+    # torchvision models read model.score_thresh; transformers DETRs read config.score_thresh
+    # (a DictConfig, which the old isinstance(dict) guard skipped, leaving DETR floored at 0.4).
+    m.model.score_thresh = floor
+    m.config.score_thresh = floor
 
     preds = detection.predict(
         m, image_paths,

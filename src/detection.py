@@ -92,8 +92,21 @@ def set_input_size(m, size: int) -> None:
 
     The default (min_size 800, max_size 1333) shrinks BOEM's 1000 px tiles to 0.8x.
     size=1000 feeds them at native scale (an edge tile is scaled until its long side is 1000).
+    Covers torchvision models (RetinaNet, RetinaNet-DINOv3) and transformers DETRs, whose
+    image processor has its own shortest_edge 800 / longest_edge 1333 resize.
     """
-    m.model.transform.min_size, m.model.transform.max_size = (size,), size
+    if hasattr(m.model, "transform"):
+        m.model.transform.min_size, m.model.transform.max_size = (size,), size
+    else:
+        m.model.processor.size = {"shortest_edge": size, "longest_edge": size}
+
+
+def input_size(m) -> tuple:
+    """(short, long) side the model resizes tiles to, for logging."""
+    if hasattr(m.model, "transform"):
+        return m.model.transform.min_size[0], m.model.transform.max_size
+    s = m.model.processor.size
+    return s["shortest_edge"], s["longest_edge"]
 
 def extract_backbone(snapshot, annotations):
     warnings.warn("The number of classes in the model does not match the number of classes in the annotations. The backbone will be extracted and retrained.")

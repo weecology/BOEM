@@ -85,7 +85,40 @@ parser.add_argument(
     default=None,
     help="Validate on this existing CSV as-is (skips --max-test-empty-fraction resampling).",
 )
+parser.add_argument(
+    "--architecture",
+    default="retinanet",
+    choices=["retinanet", "retinanet_dinov3", "DeformableDetr"],
+    help="retinanet = ResNet-50 from weecology/deepforest-bird (production). The others need the "
+         "DeepForest PR #1473 venv of branch detector-architecture-comparison.",
+)
+parser.add_argument(
+    "--weights",
+    default=None,
+    help="HF repo to initialise from (non-retinanet). Defaults: retinanet_dinov3 -> "
+         "facebook/dinov3-vitl16-pretrain-sat493m, DeformableDetr -> SenseTime/deformable-detr.",
+)
+parser.add_argument("--freeze-backbone", action="store_true", help="Freeze the encoder (FPN/heads still train).")
+parser.add_argument("--optimizer", default="SGD", choices=["SGD", "Adam", "AdamW"])
+parser.add_argument("--weight-decay", type=float, default=0.0)
+parser.add_argument(
+    "--cosine",
+    action="store_true",
+    help="CosineAnnealingLR over --epochs down to 1e-5 instead of ReduceLROnPlateau on val_classification.",
+)
+parser.add_argument("--precision", default="32-true", help="Lightning precision, e.g. bf16-mixed.")
+parser.add_argument("--gradient-clip", type=float, default=None)
+parser.add_argument(
+    "--smoke",
+    type=int,
+    default=None,
+    help="Plumbing test: N random tiles each from train / val / zero-shot, 1 epoch, no Comet upload of a real run.",
+)
 args = parser.parse_args()
+DEFAULT_WEIGHTS = {
+    "retinanet_dinov3": "facebook/dinov3-vitl16-pretrain-sat493m",
+    "DeformableDetr": "SenseTime/deformable-detr",
+}
 
 exp_name = args.exp_name or os.environ.get("EXP_NAME")
 if not exp_name:
@@ -158,6 +191,23 @@ elif args.max_test_empty_fraction is not None:
     test.to_csv(test_csv_path, index=False)
     print(f"Limited test empty images to {args.max_test_empty_fraction:.0%}; saved {len(test)} rows to {test_csv_path}")
 
+# Smoke test: N random tiles per split, written to a scratch dir (never over the real split files).
+smoke_zeroshot_csv = None
+if args.smoke is not None:
+    smoke_dir = tempfile.mkdtemp(prefix="usgs_smoke_")
+    def _tiles(df, n):
+        keep = pd.Series(df.image_path.unique()).sample(min(n, df.image_path.nunique()), random_state=0)
+        return df[df.image_path.isin(keep)].copy()
+    train, test = _tiles(train, args.smoke), _tiles(test, args.smoke)
+    train_csv_path, test_csv_path = f"{smoke_dir}/train.csv", f"{smoke_dir}/val.csv"
+    train.to_csv(train_csv_path, index=False)
+    test.to_csv(test_csv_path, index=False)
+    smoke_zeroshot_csv = f"{smoke_dir}/zero_shot.csv"
+    _tiles(pd.read_csv(os.path.join(savedir, "zero_shot.csv"), low_memory=False), args.smoke).to_csv(
+        smoke_zeroshot_csv, index=False)
+    args.epochs, args.n_log_images = 1, 2
+    print(f"SMOKE: {args.smoke} tiles per split in {smoke_dir}, 1 epoch")
+
 # Print the number of empty images in train and test sets
 if "empty_image" not in train.columns:
     train["empty_image"] = (
@@ -180,11 +230,21 @@ print("Number of empty images in test set:", test["empty_image"].sum())
 # score_thresh must be set via config_args here: it is baked into the torchvision
 # RetinaNet at model construction. Assigning m.config["score_thresh"] after this
 # point updates only the dict, not the live model.
-m = main.deepforest(config_args={"score_thresh": 0.4})
-m.load_model("weecology/deepforest-bird")
+if args.architecture == "retinanet":
+    m = main.deepforest(config_args={"score_thresh": 0.4})
+    m.load_model("weecology/deepforest-bird")
+else:
+    m = main.deepforest(config_args={
+        "architecture": args.architecture,
+        "model": {"name": args.weights or DEFAULT_WEIGHTS[args.architecture], "revision": "main"},
+        "num_classes": 1,
+        "label_dict": {"Object": 0},
+        "score_thresh": 0.4,
+        "train": {"freeze_backbone": args.freeze_backbone},
+    })
 if args.input_size is not None:
     detection.set_input_size(m, args.input_size)
-print(f"Model input resize: min_size {m.model.transform.min_size}, max_size {m.model.transform.max_size}")
+print(f"Model {args.architecture} ({type(m.model).__name__}), input resize {detection.input_size(m)}")
 m.label_dict = {"Object":0}
 m.numeric_to_label_dict = {0:"Object"}
 
@@ -209,10 +269,17 @@ m.config["train"]["scheduler"]["params"]["factor"] = 0.5
 m.config["train"]["scheduler"]["params"]["eps"] = 0
 m.config["validation"]["lr_plateau_target"] = "val_classification"
 m.config["train"]["lr"] = args.lr
+m.config["train"]["optimizer"]["type"] = args.optimizer
+m.config["train"]["optimizer"]["weight_decay"] = args.weight_decay
+if args.cosine:
+    m.config["train"]["scheduler"]["type"] = "cosine"
+    m.config["train"]["scheduler"]["params"]["T_max"] = args.epochs
+    m.config["train"]["scheduler"]["params"]["eta_min"] = 1e-5
 # TF32 matmul for B200 speedup. bf16-mixed is disabled because DeepForest's
 # format_boxes calls .numpy() on prediction tensors and numpy doesn't support
 # bfloat16, which makes validation crash. Re-enable once upstream casts to float.
 m.config["matmul_precision"] = "high"
+m.config["precision"] = args.precision
 if args.positive_batch_fraction is not None:
     m.config = OmegaConf.merge(
         m.config,
@@ -230,7 +297,9 @@ m.config = OmegaConf.merge(m.config, {"train": {"augmentations": selected_augs}}
 
 comet_logger = CometLogger(project_name="BOEM", workspace="bw4sz")
 comet_logger.experiment.add_tag("detection")
-comet_logger.experiment.set_name(exp_name)
+comet_logger.experiment.set_name(exp_name + ("_smoke" if args.smoke is not None else ""))
+if args.smoke is not None:
+    comet_logger.experiment.add_tag("smoke")
 comet_logger.experiment.log_parameter("exp_name", exp_name)
 
 # Log the training and test sets
@@ -245,6 +314,12 @@ if args.max_empty_fraction is not None:
 if args.max_test_empty_fraction is not None:
     comet_logger.experiment.log_parameter("max_test_empty_fraction", args.max_test_empty_fraction)
 comet_logger.experiment.log_parameter("input_size", args.input_size or 800)
+comet_logger.experiment.log_parameter("architecture", args.architecture)
+comet_logger.experiment.log_parameter("weights", args.weights or DEFAULT_WEIGHTS.get(args.architecture, "weecology/deepforest-bird"))
+comet_logger.experiment.log_parameter("optimizer", args.optimizer)
+comet_logger.experiment.log_parameter("cosine", args.cosine)
+comet_logger.experiment.log_parameter("precision", args.precision)
+comet_logger.experiment.log_parameter("freeze_backbone", args.freeze_backbone)
 comet_logger.experiment.log_parameter("train_csv", train_csv_path)
 comet_logger.experiment.log_parameter("workers", m.config["workers"])
 comet_logger.experiment.log_parameter("batch_size", m.config["batch_size"])
@@ -335,7 +410,7 @@ def _log_prediction_images(model, ann_df, image_root, context, n_images, tmpdir)
 
 
 # Pre-training zero-shot evaluation: metrics + sample prediction images on held-out flights
-zeroshot_csv = os.path.join(savedir, "zero_shot.csv")
+zeroshot_csv = smoke_zeroshot_csv or os.path.join(savedir, "zero_shot.csv")
 zero_shot_df = pd.read_csv(zeroshot_csv, low_memory=False) if os.path.exists(zeroshot_csv) else None
 if zero_shot_df is not None and "empty_image" not in zero_shot_df.columns:
     zero_shot_df["empty_image"] = (
@@ -411,7 +486,8 @@ callbacks.append(
     )
 )
 
-checkpoint_dir = f"/blue/ewhite/b.weinstein/BOEM/training/checkpoints/{_run_id}"
+checkpoint_dir = (f"{smoke_dir}/checkpoints" if args.smoke is not None
+                  else f"/blue/ewhite/b.weinstein/BOEM/training/checkpoints/{_run_id}")
 os.makedirs(checkpoint_dir, exist_ok=True)
 callbacks.append(
     ModelCheckpoint(
@@ -429,13 +505,13 @@ strategy = "ddp" if devices > 1 else "auto"
 m.create_trainer(
     logger=comet_logger, accelerator="gpu", strategy=strategy,
     num_nodes=1, devices=devices, fast_dev_run=False,
-    callbacks=callbacks,
+    callbacks=callbacks, gradient_clip_val=args.gradient_clip,
 )
 
 m.trainer.fit(m)
 
 # Save the model
-m.trainer.save_checkpoint("/blue/ewhite/b.weinstein/BOEM/training/checkpoints/{}.pl".format(_run_id))
+m.trainer.save_checkpoint(f"{checkpoint_dir}.pl")
 
 # Post-training validation prediction images (in-distribution errors)
 with comet_context("validation_predictions"):

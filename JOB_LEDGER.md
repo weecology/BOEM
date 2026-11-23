@@ -3301,6 +3301,17 @@ Result (52487621), checked 2026-11-23: COMPLETED 41m14s, exit 0:0, but TRAIN LOS
 ## 52490803 — 2026-11-23 — submit_high_loss_tiles.sh c6ecec12/epoch27, rerun after the train-zero fix — SUBMITTED
 Why: rerun of 52487621 with the hook bug fixed. Val should reproduce 52487621's val numbers exactly.
 Next: upload --per-split 50 --dry-run, show Ben, then upload to Review.
+Result (52490803), checked 2026-11-23: COMPLETED 40m28s, exit 0:0. Val reproduces 52487621 exactly (mean 0.223, max 11.185).
+  Train 240,635 tiles: mean loss 0.265, p99 1.154, max 8.48 -- train mean is HIGHER than val (0.223): the model does not fit
+  its own training tiles better than held-out ones (matches the dense-flock chat's underfitting finding, job 52491503).
+  Output /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv (all 255,327 tiles, ranked).
+UPLOADED 2026-11-23: top 50 train + top 50 val (ranked within split, tiles already in LS skipped) -> "Bureau of Ocean
+  Energy Management - Review", comet_id high_loss_c6ecec12, 102 GT boxes as preannotations on 81 tiles, 19 tiles with no
+  GT boxes (model fires confidently there: likely missed animals). Leaders are mostly 1-box tiles with large
+  classification loss (an unlabelled object the model detects, or a box on nothing). List:
+  /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/top50_per_split_uploaded.csv
+Next: pull with the pull-annotations skill when done; corrected tiles return as Review annotations and do NOT replace
+  the original rows in train/test CSVs -- gather/prepare_USGS must prefer the reviewed version before the next retrain.
 
 ## 52491391 -> 52491503 — 2026-11-23 — submit_dense_flock_phase0.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 6h) — SUBMITTED
 Why: Ben: find out whether dense-flock under-detection comes from architecture, training data or augmentation.

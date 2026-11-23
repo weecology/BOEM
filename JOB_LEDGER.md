@@ -3436,7 +3436,7 @@ Next: ZERO-SHOT box recall/precision and queue boxes per 1k frames at 0.60 and 0
 Labelled separately from validation. Outputs: /blue/ewhite/b.weinstein/BOEM/zero_shot_input_size/.
 Result: PENDING
 
-## 52502655 — 2026-11-23 — submit_dense_flock_input_size.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 12h) — SUBMITTED
+## 52502655 -> 52502730 — 2026-11-23 — submit_dense_flock_input_size.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 6h) — SUBMITTED
 Why: Ben OK'd checking what 1000/1200 px inference costs outside validation before any production change. 0c showed
 predicting at 1000 / 1200 instead of torchvision's 800 adds +7 / +11 pts VALIDATION recall at equal precision 0.97, with
 empty-val-tile FP 0.05% -> 0.14% -> 0.22% @0.60 (val empties capped at 25%, no July foam).
@@ -3447,4 +3447,7 @@ detection.load to set transform min_size (max_size scaled from 1333) and reuses 
              (800 should reproduce 52348607's c6ecec12 row: 0.60 -> 17 frames / 20 boxes in sample)
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/input_size/ (earlier 52121265 / 52348607 files untouched).
 Not a duplicate of boem-d5's 52502097 (TRAINS at 1000); this is inference-only on c6ecec12.
-Next: zero-shot recall/precision and reviewer frames at 0.60 by input size -> decide whether to propose 1000/1200 inference.
+52502655 CANCELLED while pending: its zero-shot half duplicated boem-d5's 52502538 (same threshold_sweep at 800/1000/1200
+  on the same holdout). Resubmitted as 52502730, July reviewer load only.
+Next: July reviewer frames/boxes at 0.60 by input size (here) + zero-shot from 52502538 -> decide whether to propose
+  1000/1200 inference.

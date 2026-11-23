@@ -9,6 +9,7 @@ and contain no July foam, so this checks the two places a production change woul
   July load   review_load_by_threshold.py's 5,000-frame July sample (seed 0) through the pipeline's
               own generate_pool_predictions + human_review -> reviewer frames/boxes per threshold.
 
+The zero-shot half is run by boem-d5's job 52502538 instead (same sweep); main() runs July only.
 Both scripts are reused unchanged: detection.load is wrapped to set the RetinaNet transform size,
 and outputs go to their own directory so earlier results are not overwritten.
 
@@ -78,11 +79,6 @@ def july_load(sizes: list[int]) -> None:
 if __name__ == "__main__":
     sizes = [int(s) for s in sys.argv[1:]] or [800, 1000, 1200]
     OUT.mkdir(parents=True, exist_ok=True)
-    sweeps = []
-    for size in sizes:
-        use_size(size)
-        print(f"\n######## ZERO-SHOT sweep, input {size}px ########", flush=True)
-        sweeps.append(zero_shot(size))
+    # The zero-shot sweep is boem-d5's job 52502538 (threshold_sweep.py --input-size, same holdout and args);
+    # zero_shot() is kept for reruns but not called here, so only the July reviewer load runs.
     july_load(sizes)
-    sys.argv = ["threshold_sweep.py", "--report", *map(str, sweeps)]
-    runpy.run_path(str(REPO / "scripts/threshold_sweep.py"), run_name="__main__")

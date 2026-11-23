@@ -101,8 +101,11 @@ def sample_unscreened(flights, annotated_basenames, n, seed=0):
     return sorted(pool[:n])
 
 
-def predict(checkpoint, image_paths, patch_size, patch_overlap, batch_size, workers, floor):
+def predict(checkpoint, image_paths, patch_size, patch_overlap, batch_size, workers, floor, input_size=None):
     m = detection.load(checkpoint)
+    if input_size:  # override the checkpoint's own (recorded or 800/1333 default) resize
+        detection.set_input_size(m, input_size)
+    print(f"      input resize {m.model.transform.min_size}/{m.model.transform.max_size}", flush=True)
     # Let every box through; the sweep does the thresholding offline. Without
     # this the model's own score_thresh silently truncates the low end of the
     # curve and every recall number below it is wrong.
@@ -256,6 +259,8 @@ def main():
     ap.add_argument("--iou", type=float, default=0.4, help="deepforest evaluate_boxes convention")
     ap.add_argument("--score-floor", type=float, default=0.01)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--input-size", type=int, default=None,
+                    help="resize tiles to this many px in the model; default = the checkpoint's own")
     ap.add_argument("--report", nargs="+", default=None, help="summarise existing JSON(s) and exit")
     args = ap.parse_args()
 
@@ -280,13 +285,13 @@ def main():
 
     print(f"\n[1/2] scoring {len(labelled_paths)} labelled frames ...", flush=True)
     p_lab = predict(args.checkpoint, labelled_paths, args.patch_size, args.patch_overlap,
-                    args.batch_size, args.workers, args.score_floor)
+                    args.batch_size, args.workers, args.score_floor, args.input_size)
     print(f"      {len(p_lab)} raw boxes, score {p_lab['score'].min():.4f}-{p_lab['score'].max():.4f}"
           if len(p_lab) else "      0 raw boxes", flush=True)
 
     print(f"\n[2/2] scoring {len(queue_paths)} unscreened frames ...", flush=True)
     p_q = predict(args.checkpoint, queue_paths, args.patch_size, args.patch_overlap,
-                  args.batch_size, args.workers, args.score_floor)
+                  args.batch_size, args.workers, args.score_floor, args.input_size)
     print(f"      {len(p_q)} raw boxes", flush=True)
 
     out = {
@@ -294,6 +299,7 @@ def main():
         "flights": args.flights,
         "iou_thresh": args.iou,
         "score_floor": args.score_floor,
+        "input_size": args.input_size,
         "n_labelled_images": len(labelled_paths),
         "n_gt_objects": n_pos,
         "n_queue_images": len(queue_paths),

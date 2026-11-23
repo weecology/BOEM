@@ -13,6 +13,9 @@ from deepforest import augmentations as df_aug
 from deepforest.callbacks import ImagesCallback
 from deepforest.utilities import read_file
 from omegaconf import OmegaConf
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src import detection  # noqa: E402
 import kornia.augmentation as K
 
 # Register RandomAffine so it can be referenced from the augmentations config.
@@ -64,6 +67,24 @@ parser.add_argument(
     default=None,
     help="Comet experiment name. Falls back to EXP_NAME env var, then an auto-derived name.",
 )
+parser.add_argument(
+    "--input-size",
+    type=int,
+    default=None,
+    help="Resize tiles to this many px inside the model (train and predict). None = torchvision's "
+         "800/1333 default, which shrinks 1000 px tiles to 0.8x. Recorded in every checkpoint.",
+)
+parser.add_argument(
+    "--train-csv",
+    default=None,
+    help="Train on this existing CSV as-is (skips --max-empty-fraction resampling, which rewrites "
+         "train_max_empty_<frac>.csv with a different empty sample each run).",
+)
+parser.add_argument(
+    "--val-csv",
+    default=None,
+    help="Validate on this existing CSV as-is (skips --max-test-empty-fraction resampling).",
+)
 args = parser.parse_args()
 
 exp_name = args.exp_name or os.environ.get("EXP_NAME")
@@ -85,7 +106,11 @@ test = pd.read_csv(os.path.join(savedir, "test.csv"), low_memory=False)
 
 # Optional: limit proportion of empty images in train
 train_csv_path = os.path.join(savedir, "train.csv")
-if args.max_empty_fraction is not None:
+if args.train_csv is not None:
+    train_csv_path = args.train_csv
+    train = pd.read_csv(train_csv_path, low_memory=False)
+    print(f"Using existing train CSV {train_csv_path}: {len(train)} rows")
+elif args.max_empty_fraction is not None:
     if "empty_image" not in train.columns:
         train["empty_image"] = (
             (train["xmin"] == 0)
@@ -108,7 +133,11 @@ if args.max_empty_fraction is not None:
 
 # Optional: limit proportion of empty images in validation/test set
 test_csv_path = os.path.join(savedir, "test.csv")
-if args.max_test_empty_fraction is not None:
+if args.val_csv is not None:
+    test_csv_path = args.val_csv
+    test = pd.read_csv(test_csv_path, low_memory=False)
+    print(f"Using existing validation CSV {test_csv_path}: {len(test)} rows")
+elif args.max_test_empty_fraction is not None:
     if "empty_image" not in test.columns:
         test["empty_image"] = (
             (test["xmin"] == 0)
@@ -153,6 +182,9 @@ print("Number of empty images in test set:", test["empty_image"].sum())
 # point updates only the dict, not the live model.
 m = main.deepforest(config_args={"score_thresh": 0.4})
 m.load_model("weecology/deepforest-bird")
+if args.input_size is not None:
+    detection.set_input_size(m, args.input_size)
+print(f"Model input resize: min_size {m.model.transform.min_size}, max_size {m.model.transform.max_size}")
 m.label_dict = {"Object":0}
 m.numeric_to_label_dict = {0:"Object"}
 
@@ -212,6 +244,8 @@ if args.max_empty_fraction is not None:
     comet_logger.experiment.log_parameter("max_empty_fraction", args.max_empty_fraction)
 if args.max_test_empty_fraction is not None:
     comet_logger.experiment.log_parameter("max_test_empty_fraction", args.max_test_empty_fraction)
+comet_logger.experiment.log_parameter("input_size", args.input_size or 800)
+comet_logger.experiment.log_parameter("train_csv", train_csv_path)
 comet_logger.experiment.log_parameter("workers", m.config["workers"])
 comet_logger.experiment.log_parameter("batch_size", m.config["batch_size"])
 comet_logger.experiment.log_parameter("lr", m.config["train"]["lr"])
@@ -345,6 +379,17 @@ m.config["validation"]["root_dir"] = root_dir
 
 # Optional EarlyStopping on val_classification (loss; lower is better)
 callbacks = []
+
+
+class RecordInputSize(Callback):
+    """Store the resize scale in each checkpoint; detection.load() re-applies it."""
+
+    def on_save_checkpoint(self, trainer, pl_module, checkpoint):
+        if args.input_size is not None:
+            checkpoint["input_size"] = args.input_size
+
+
+callbacks.append(RecordInputSize())
 if args.early_stopping_patience is not None:
     callbacks.append(
         EarlyStopping(

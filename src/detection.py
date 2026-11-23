@@ -62,6 +62,12 @@ def load(checkpoint, annotations = None, score_thresh = None):
         snapshot.use_bird_release()
     else:
         snapshot = main.deepforest.load_from_checkpoint(checkpoint)
+        # The resize scale is not part of the weights; checkpoints trained with
+        # USGS_backbone.py --input-size record it under "input_size". Older ones don't,
+        # and keep torchvision's 800/1333 default they were trained at.
+        input_size = torch.load(checkpoint, map_location="cpu", weights_only=False).get("input_size")
+        if input_size:
+            set_input_size(snapshot, input_size)
 
     if not annotations is None:
         num_labels = len(annotations.label.unique())
@@ -80,6 +86,14 @@ def load(checkpoint, annotations = None, score_thresh = None):
         snapshot.config["score_thresh"] = score_thresh
 
     return snapshot
+
+def set_input_size(m, size: int) -> None:
+    """Set the size torchvision RetinaNet resizes each tile to before the backbone.
+
+    The default (min_size 800, max_size 1333) shrinks BOEM's 1000 px tiles to 0.8x.
+    size=1000 feeds them at native scale (an edge tile is scaled until its long side is 1000).
+    """
+    m.model.transform.min_size, m.model.transform.max_size = (size,), size
 
 def extract_backbone(snapshot, annotations):
     warnings.warn("The number of classes in the model does not match the number of classes in the annotations. The backbone will be extracted and retrained.")

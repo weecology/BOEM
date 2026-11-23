@@ -3467,7 +3467,16 @@ the training path's version-drift check; (2) RetinaNet + DINOv3 ViT-L/16 sat493m
 cosine, bf16-mixed, clip 1.0); (3) Deformable DETR, COCO init (AdamW 1e-4, wd 1e-4, cosine, clip 0.1, bs 16).
 Next: each arm "exit 0" with a checkpoint; bf16 validation does not crash (old .numpy() bug); it/s and peak GPU memory
 (arch_smoke_<id>_gpumem.csv) -> batch size and epoch-time estimate for Phase 1. Numbers from 512 tiles are not results.
-Result: PENDING
+Result (52503248), checked 2026-11-23: COMPLETED 6m37s, exit 0:0. All three arms built at input 1000/1000, trained 1 epoch,
+  validated, ran pre/post zero-shot validate and saved checkpoints; bf16-mixed validation did NOT crash (DINOv3 arm).
+  DINOv3 319M params all trainable (unfrozen as intended). Smoke metrics (recall 0 after 32 steps) are meaningless, as expected.
+  Throughput (single short epoch incl. warm-up, 16 loader workers, so rough) and peak GPU memory on 1 B200:
+    R50 RetinaNet   bs 64  1.71 it/s ~109 img/s   66.6 GB
+    DINOv3 ViT-L    bs 16  1.70 it/s  ~27 img/s   90.6 GB
+    Deformable DETR bs 16  1.44 it/s  ~23 img/s   88.3 GB
+  => on the 240,635-tile train file: DINOv3 ~2.5 h/epoch, DETR ~2.9 h/epoch per GPU (R50 ~37 min at 1000 px).
+  30 epochs on 1 GPU would be ~75-87 h, so Phase 1 needs multi-GPU and/or fewer epochs (Ben to choose budget).
+Next: decide GPUs x epochs for Phase 1; bs 32 likely fits for DINOv3/DETR (~90 GB at 16 of ~180 GB).
 
 ## (no job) — 2026-11-23 — H-CAST promotion: 52121226 wired into production
 Why: Ben: promote 52121226 -- it covers 5 more flat classes at no real accuracy tradeoff (77.37 vs 77.56 Species@1 on

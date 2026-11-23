@@ -40,8 +40,14 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
 - **ZERO-SHOT** (pinned holdout JPG_20260202_141900 + JPG_20260201_134000): `scripts/threshold_sweep.py`.
 - Report the two as separate, labelled numbers. Compare at **matched precision** and at the recall
   ceiling, not only at 0.70 (score calibration differs between architectures).
-- Also: recall by box size (<16, 16-32, >32 px), the dense-flock stratum (reuse the
-  `dense_flock_phase0.py` scorer), and inference cost (frames/s on a full flight, since surveys are ~500k frames).
+- Also: recall by box size (<16, 16-32, >32 px) and inference cost (frames/s on a full flight, since surveys are ~500k frames).
+- **Dense flocks** (agreed with the dense-flock chat, 2026-11-23): score raw predictions (score_thresh <= 0.3) with
+  `scripts/density_strata.py <predictions.csv> [gt.csv]` (from dense-flock-diagnostics commit 55a7050) on the validation
+  set AND on the training-tile sample `/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/0d_train_sample.csv`.
+  Reports @0.40/@0.70 and at matched overall precision 0.978. Baseline c6ecec12 @0.70 train/val recall: 29/30% at
+  11-20 birds/tile, 24/27% at 21-50 (vs 61% on 1-bird tiles), i.e. R50 underfits flock birds even on its own training
+  tiles. Whether DINOv3/DETR can fit them is a sharp test. Do NOT use Feb 2022 cap-probe frames or flock_dataset test
+  as held-out dense sets (mostly training frames). A double-annotated dense held-out set may come from that chat.
 
 ## Phases
 0. **Plumbing** (no science). Add `--architecture` (+ backbone/freeze/precision) to

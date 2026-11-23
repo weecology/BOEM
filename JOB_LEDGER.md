@@ -3504,3 +3504,16 @@ Deformable DETR (AdamW 1e-4 wd 1e-4 cosine clip 0.1, monitor val_loss). Checkpoi
 Next: map / box_recall on the fitted tiles rising for every arm (R50 should be near-perfect). An arm that stays near 0 gets
 fixed before Phase 1. These are fit numbers on training tiles, not validation.
 Result: PENDING
+
+## 52507234 — 2026-11-23 — submit_arch_phase1.sh array 0-1 (hpg-b200, 2 GPU DDP each, 12 CPU/task, 240GB, 36h), branch detector-architecture-comparison @f9c3e71
+Why: [architecture comparison, Phase 1] Ben: 2 B200 per arm, 15 epochs; submitted before the overfit check 52505453
+finished, at Ben's request. Task 0 = RetinaNet + DINOv3 ViT-L/16 sat493m unfrozen (SGD lr 0.02 @ batch 32, cosine 15 ep,
+bf16-mixed, clip 1.0); task 1 = Deformable DETR COCO init (AdamW 1e-4, wd 1e-4, cosine, clip 0.1, monitor val_loss).
+Both: c6ecec12's train_max_empty_0_10.csv / test_max_empty_0_25.csv read as-is, same augmentations, native 1000 px input,
+batch 16/GPU, no early stopping, every epoch checkpointed under training/checkpoints/<comet id>/. Smoke 52503248 put
+DINOv3 at ~27 img/s and DETR at ~23 img/s per GPU -> ~20 h each.
+Next: if 52505453 shows an arm not learning on its own training tiles, cancel that task. Otherwise pick the best epoch by
+the monitored val loss, then VALIDATION (eval_detection_checkpoint.py, pooled), ZERO-SHOT (threshold_sweep.py) and
+density_strata.py on val + dense_flock/phase0/0d_train_sample.csv, against c6ecec12 (at 1000 px, the dense-flock chat's
+0c numbers) at interpolated equal precision. Labelled separately.
+Result: PENDING

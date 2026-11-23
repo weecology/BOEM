@@ -3262,3 +3262,16 @@ generate_pool_predictions (production CropModel 0139af8c + T 4.4675 + H-CAST run
 /blue/ewhite/b.weinstein/BOEM/review_load_by_threshold/. Prior anchor (a09c6933, Aug): July 0.40 -> 19,008 frames /
 41,739 boxes vs 0.70 -> 360 / 388.
 Next: report review frames at 0.60 vs 0.70 for both detectors; spot-check what the 0.60-0.70 band holds (real vs foam).
+Result (52348607), checked 2026-11-23: COMPLETED 41m44s, exit 0:0, MaxRSS 17.7GB. 5,000 July frames (seed 0), x106.8 to the
+  533,876-frame survey. Review frames / review boxes (sample -> survey), human_review() at each threshold:
+    thr    1968e962 (production)              c6ecec12
+    0.40   230 / 286 -> 24,558 / 30,538       106 / 116 -> 11,318 / 12,386
+    0.50    64 /  70 ->  6,834 /  7,474        38 /  42 ->  4,057 /  4,485
+    0.60    12 /  12 ->  1,281 /  1,281        17 /  20 ->  1,815 /  2,136
+    0.70     6 /   6 ->    641 /    641         8 /  10 ->    854 /  1,068
+  0.60 costs ~2x the 0.70 review load (both detectors); 0.40 costs ~13-38x. c6ecec12 flags fewer low-score frames
+  (0.40: 125 vs 291 frames with any box) but slightly more at 0.60-0.70. CAVEAT: only 6-18 sample frames at >=0.60, so the
+  survey numbers there carry roughly +/-40% sampling error; the Aug anchor (a09c6933, 360 frames @0.70) is in range.
+  Outputs: /blue/ewhite/b.weinstein/BOEM/review_load_by_threshold/{summary,predictions}_*.csv
+Next: spot-check the 0.60-0.70 band boxes (real birds vs foam/glint) before choosing 0.60; larger sample if the
+  0.60 vs 0.70 difference has to be pinned down.

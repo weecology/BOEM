@@ -135,7 +135,7 @@ def main() -> int:
     print(f"  Flight: {flight_dir}")
     print(f"  Camera: {camera}")
     print("\nSubmit flythrough job with:")
-    print(f"  sbatch submit_flythrough.sh {flight_dir} {camera}")
+    print(f"  sbatch slurm/submit_flythrough.sh {flight_dir} {camera}")
     print("\nAfter reviewing/cleaning annotations, you can re-run the same command to regenerate the video.")
     return 0
 

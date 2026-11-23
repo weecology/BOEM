@@ -1,6 +1,6 @@
 #!/bin/bash
 # One SLURM job: request many CPUs; prepare_USGS.py parallelizes split_raster per image.
-# Run from repo root on the cluster: sbatch submit_prepare_annotations.sh
+# Run from repo root on the cluster: sbatch slurm/submit_prepare_annotations.sh
 
 #SBATCH --job-name=prep_ann
 #SBATCH --account=ewhite

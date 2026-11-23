@@ -43,7 +43,7 @@ from src import detection  # noqa: E402
 IMAGERY = "/blue/ewhite/b.weinstein/BOEM/imagery"
 ANNOTATIONS = "/blue/ewhite/b.weinstein/BOEM/annotations"
 
-# Pinned zero-shot holdout (submit_prepare_annotations.sh). Detection runs
+# Pinned zero-shot holdout (slurm/submit_prepare_annotations.sh). Detection runs
 # 38834235 and 39211658 never trained on these two flights.
 HOLDOUT = ["JPG_20260202_141900", "JPG_20260201_134000"]
 

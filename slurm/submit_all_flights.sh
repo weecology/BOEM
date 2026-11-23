@@ -3,7 +3,7 @@
 # Submit BOEM prediction jobs for each directory containing images.
 #
 # Usage:
-#   ./submit_all_flights.sh [OPTIONS] [START_DIR] [PATH_GLOB]
+#   ./slurm/submit_all_flights.sh [OPTIONS] [START_DIR] [PATH_GLOB]
 #
 # Options:
 #   --serial        run all directories in one GPU job (sequential, avoids queue churn)
@@ -20,7 +20,7 @@
 # the pool to images that previously had a detection >= min_score. To refresh species
 # labels without touching Label Studio or rebuilding flythrough videos (which decode
 # every 8th frame of the WHOLE flight and so defeat the point):
-#   ./submit_all_flights.sh --b200 --extra "active_learning.n_images=0 \
+#   ./slurm/submit_all_flights.sh --b200 --extra "active_learning.n_images=0 \
 #      active_testing.n_images=0 human_review.n=0 flythrough_video.enabled=False" \
 #      /blue/ewhite/b.weinstein/BOEM/imagery '*JPG_202607*'
 # The three n=0 gates make train/validation/review image lists empty, so annotator.upload()

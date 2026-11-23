@@ -3,21 +3,21 @@
 # Bring flight reports up to date with Label Studio without re-running any model.
 #
 # Usage:
-#   ./submit_regenerate_reports.sh '*JPG_202607*'
+#   ./slurm/submit_regenerate_reports.sh '*JPG_202607*'
 #
 # 1. Pulls every annotated task from Label Studio (tasks stay on the server) and backs
 #    the new CSVs up into annotations_backup/ -- once, here, not once per flight.
 # 2. Submits ONE CPU job that runs main.py report_only=True on each matching flight:
 #    predictions come from <flight>/.prediction_cache, labels from the annotation CSVs.
 #    A flight whose cache was not written by the configured detector and classifier
-#    fails there and needs the full pipeline (submit_all_flights.sh) instead.
+#    fails there and needs the full pipeline (slurm/submit_all_flights.sh) instead.
 #
 # Log the job in JOB_LEDGER.md.
 
 set -euo pipefail
 GLOB="$1"
 IMAGERY_ROOT="/blue/ewhite/b.weinstein/BOEM/imagery"
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 uv run python scripts/download_annotations.py
 uv run python scripts/backup_annotations.py

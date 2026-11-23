@@ -22,8 +22,9 @@ COMMON=(--train-csv $CSV --val-csv $CSV --zero-shot-csv $CSV --input-size 1000 -
         --checkpoint-root /blue/ewhite/b.weinstein/BOEM/architecture_comparison/overfit/checkpoints --save-top-k 1)
 run() { echo; echo "################ $1 $(date +%T) ################"; shift
         .venv/bin/python -u scripts/USGS_backbone.py "${COMMON[@]}" "$@"; echo "exit $? $(date +%T)"; }
-run retinanet --architecture retinanet --batch_size 16 --lr 0.001 --exp-name arch_overfit_retinanet
-run retinanet_dinov3 --architecture retinanet_dinov3 --batch_size 16 --lr 0.01 --cosine \
+ARMS=${ARMS:-retinanet retinanet_dinov3 DeformableDetr}
+[[ $ARMS == *"retinanet "* || $ARMS == retinanet ]] && run retinanet --architecture retinanet --batch_size 16 --lr 0.001 --exp-name arch_overfit_retinanet
+[[ $ARMS == *retinanet_dinov3* ]] && run retinanet_dinov3 --architecture retinanet_dinov3 --batch_size 16 --lr 0.01 --cosine \
     --precision bf16-mixed --gradient-clip 1.0 --exp-name arch_overfit_dinov3
-run DeformableDetr --architecture DeformableDetr --batch_size 16 --optimizer AdamW --lr 0.0001 \
+[[ $ARMS == *DeformableDetr* ]] && run DeformableDetr --architecture DeformableDetr --batch_size 16 --optimizer AdamW --lr 0.0001 \
     --weight-decay 0.0001 --cosine --gradient-clip 0.1 --monitor val_loss --exp-name arch_overfit_detr

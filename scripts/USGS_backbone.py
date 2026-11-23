@@ -486,9 +486,20 @@ if args.early_stopping_patience is not None:
         )
     )
 
+class SafeImagesCallback(ImagesCallback):
+    """DeepForest's ImagesCallback crashes (no image_path column) on an epoch with no
+    predictions above score_thresh, e.g. an untrained DINOv3 head early in training."""
+
+    def _log_last_predictions(self, trainer, pl_module):
+        if not any(len(p) for p in pl_module.predictions):
+            pl_module.print("No predictions above score_thresh this epoch; skipping prediction images")
+            return
+        super()._log_last_predictions(trainer, pl_module)
+
+
 images_save_dir = tempfile.mkdtemp(prefix="deepforest_images_")
 callbacks.append(
-    ImagesCallback(
+    SafeImagesCallback(
         save_dir=images_save_dir,
         prediction_samples=5,
         dataset_samples=5,

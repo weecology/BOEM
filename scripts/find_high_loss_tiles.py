@@ -55,10 +55,10 @@ def score(ckpt: str, train_csv: str, val_csv: str) -> None:
         if isinstance(mod, torch.nn.modules.batchnorm._BatchNorm):
             mod.eval()
 
-    rows = []
+    rows, losses = [], []
+    per_image_compute_loss(m.model, losses)  # wrap ONCE: re-wrapping chains to the old store
     for split, csv in (("val", val_csv), ("train", train_csv)):
-        losses: list[dict] = []
-        per_image_compute_loss(m.model, losses)
+        losses.clear()
         loader = m.load_dataset(csv, root_dir=str(CROPS), shuffle=False, batch_size=32)
         names = []
         with torch.no_grad():
@@ -69,7 +69,7 @@ def score(ckpt: str, train_csv: str, val_csv: str) -> None:
                 names.extend(image_names)
                 if b % 500 == 0:
                     print(f"{split}: {len(names):,} tiles", flush=True)
-        assert len(names) == len(losses)
+        assert len(names) == len(losses) and any(r["classification"] > 0 for r in losses)
         rows.append(pd.DataFrame(losses).assign(image_path=names, split=split, source_csv=csv))
 
     df = pd.concat(rows, ignore_index=True)

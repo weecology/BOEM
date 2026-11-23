@@ -3294,3 +3294,10 @@ Output: /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv (all tiles
 Next: `find_high_loss_tiles.py upload --per-split 50 --dry-run` (Ben 11-23: 50 train + 50 val, ranked within split), then upload to the Review project (comet_id
 high_loss_c6ecec12; GT species in the dropdown). Train and val ranked together, so val (unseen) may dominate --
 check the split mix before uploading.
+Result (52487621), checked 2026-11-23: COMPLETED 41m14s, exit 0:0, but TRAIN LOSSES ALL 0 -- script bug: the loss hook was
+  re-wrapped for the second split, so train losses chained into the val list. Val (14,692 tiles) is valid: mean 0.223,
+  p99 1.154, max 11.185. Bad file kept as tile_losses_52487621_train_zero.csv. Fixed (wrap once + assert non-zero), rerun below.
+
+## 52490803 — 2026-11-23 — submit_high_loss_tiles.sh c6ecec12/epoch27, rerun after the train-zero fix — SUBMITTED
+Why: rerun of 52487621 with the hook bug fixed. Val should reproduce 52487621's val numbers exactly.
+Next: upload --per-split 50 --dry-run, show Ben, then upload to Review.

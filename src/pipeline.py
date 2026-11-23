@@ -252,8 +252,7 @@ class Pipeline:
             full_flight_stamp = full_flight_cache + ".classifier"
             current_stamp = (
                 f"{self.config.classification_model.checkpoint}|"
-                f"{getattr(self.config.classification_model, 'temperature', None)}|"
-                f"{getattr(self.config.hierarchical, 'checkpoint', None)}"
+                f"{getattr(self.config.classification_model, 'temperature', None)}"
             )
             cached_stamp = None
             if os.path.isfile(full_flight_stamp):
@@ -263,19 +262,18 @@ class Pipeline:
             # straight to Label Studio and the flythrough video. A cache written before
             # temperature scaling holds raw max-softmax, which is a different scale from the
             # current one, so reusing it across a temperature change mixes the two silently.
-            # An unstamped cache is pre-2026-08-20 and therefore raw. The H-CAST checkpoint is
-            # stamped too, so a promoted H-CAST replaces stale hcast_* columns.
+            # An unstamped cache is pre-2026-08-20 and therefore raw.
             if os.path.isfile(full_flight_cache) and cached_stamp == current_stamp:
                 print(f"Loading cached full-flight predictions from {full_flight_cache}")
                 pool_predictions = pd.read_csv(full_flight_cache)
+            elif os.path.isfile(full_flight_cache):
+                print(
+                    f"Ignoring {full_flight_cache}: written under a different classifier or "
+                    f"temperature ({cached_stamp or 'unstamped/raw'} != {current_stamp}). "
+                    f"Its cropmodel_score is on the wrong scale; re-predicting."
+                )
             else:
-                if os.path.isfile(full_flight_cache):
-                    print(
-                        f"Ignoring {full_flight_cache}: written under a different classifier, "
-                        f"temperature or H-CAST ({cached_stamp or 'unstamped/raw'} != {current_stamp}); "
-                        f"re-predicting."
-                    )
-                # No valid cache — load models and run predictions
+                # No cache — load models and run predictions
                 detection_model = detection.load(
                     checkpoint=self.config.detection_model.checkpoint,
                     score_thresh=self.config.predict.min_score,

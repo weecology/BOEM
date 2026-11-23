@@ -3063,6 +3063,19 @@ job, 4 cpu / 32 GB / 4 h, serial over the July flights (same as 49328441).
 Next: check log for FAILED lines; crops/ count == observations_table.csv rows per report; 20260711_131000 expected to lack a
 report (no captures csv). Then rebuild the July zip if it is going out.
 
+## 52028210 — 2026-11-19 — submit_USGS_classification.sh (branch flat-drop-genus-sp @ c0527d1) — SUBMITTED
+Why: Ben: the flat classifier must not predict Larus sp / Sterna sp / Aythya sp / Calonectris sp — those are parents of
+their own species classes (same defect as Delphinidae sp, fixed in 49329504) and belong only in the hierarchical model.
+Chelonioidea sp is the one allowed indeterminate class. USGS_classification.py now DROPS every "A/B" label instead of
+mapping it to "Genus sp", and asserts no " sp" class other than Chelonioidea sp survives. Prompted by a report that
+Royal Terns were being conflated with a generic tern class. NB: "Sterninae"/"Sterna"/"Thalasseus" single-token labels
+(~26k raw rows) were already dropped by the two-word filter and still are; Sterninae was never a flat class.
+Inputs identical to 49329504 (same training/crops from 49349121, use_metadata=False), so the only change is the label set.
+Expected 74 -> 70 classes (d522a098 minus the four Genus sp).
+Next: confirm class list in log; compare per-class acc vs 49329504/d522a098 (micro 0.7619, macro prec 0.6183), esp.
+Thalasseus maximus, Sterna hirundo/forsteri, Larus spp., Aythya affinis; then pinned zero-shot before any production swap
+(production finetune.yaml is still a3dc30a0). Don't switch branches in the repo dir until the job starts.
+
 ## (no job) — 2026-11-19 — pelican / great egret campaign uploaded to Review (LS 197)
 Why: a3dc30a0's worst well-sampled confusion: Pelecanus occidentalis val recall 0.24, 54/100 -> Ardea alba (6 val crops,
 63 predicted); July field recall 9/37. Ben chose predictions + val crops, zero-shot holdout flights excluded.
@@ -3074,3 +3087,341 @@ classifier_confusion_a3dc30a0_predictions.csv (116 val crops touching either cla
 confusion_qc_a3dc30a0). LS 197 live: 511 -> 576 tasks, 65 unlabeled, all preannotated.
 Next: when annotated, download + backup_annotations.py; compare human labels vs USGS labels on the 56 tiles (label noise?)
 and vs a3dc30a0 calls; then decide whether the pelican/egret fix is labels or more crops.
+Result (52028210), checked 2026-11-19: COMPLETED 3h14m, exit 0:0. Checkpoint a1d526df310a488599abd78aa43ef8ba (buffer_30),
+72 classes; only indeterminate class is Chelonioidea sp. vs d522a098: removed Aythya/Calonectris/Larus/Sterna sp, added
+Egretta thula + Haliaeetus leucocephalus (split-threshold churn). 35,727 'A/B' crops dropped. Micro acc 0.7610 (was 0.7619),
+macro precision 0.6357 (was 0.6183), val_loss 3.69 (was 2.98). Thalasseus maximus 0.92, Sterna hirundo 0.80, S. forsteri 0.95,
+Larus delawarensis 0.08 (!), L. argentatus 0.78, L. marinus 0.82. REGRESSION: Tursiops 0.30 / Delphinus 0.45 / Stenella 0.33
+(49329504: 0.82 / 0.86 / 0.60). Val sets differ (the dropped crops reshuffle the parent-image split), and 49329504's log is
+gone from ~/logs, so per-class deltas other than the ones recorded above can't be checked.
+Next: confusion matrix on a1d526df val (submit_classifier_confusion.sh) to see where dolphins and L. delawarensis go; pinned
+zero-shot vs a3dc30a0/d522a098 before any production change.
+
+## 52095705 — 2026-11-20 — submit_classifier_confusion.sh a1d526df310a488599abd78aa43ef8ba — SUBMITTED
+Why: Ben asked to put a1d526df into the pipeline. classification_model.temperature (5.6136) is a3dc30a0-only and the
+review thresholds sit on the calibrated scale, so the checkpoint and its own fitted T must change together. Also gives
+the val confusion matrix needed to see where Tursiops/Delphinus/Stenella and Larus delawarensis go (52028210 regression).
+Next: copy fitted T into finetune.yaml with the checkpoint; check whether the val-quantile thresholds in boem_config.yaml
+need re-deriving.
+Result (52095705), checked 2026-11-20: COMPLETED, exit 0:0. Fitted T = 5.1651 (ECE 0.204 -> 0.071, NLL 3.104 -> 1.111,
+acc 0.7610; AUROC 0.784 raw -> 0.768 scaled). Confusion: Larus delawarensis 85/100 val -> Chroicocephalus philadelphia
+(dropping the 'delawarensis/argentatus' crops gutted the class); Tursiops 27 val crops (-> Morus bassanus x6, Bucephala x4),
+Delphinus 20 (-> Balaenoptera physalus x6), Stenella 6 -- small val counts, so the dolphin drop is noisy.
+PROMOTED at Ben's request: finetune.yaml -> a1d526df + T 5.1651. Calibrated thresholds (0.12 / 0.07 / review band) kept:
+calibration is what makes them portable, ECE matches a3dc30a0's. Loaded via Hydra config: 72 classes, only Chelonioidea sp.
+Full-flight caches are stamped by classifier+T, so every flight re-predicts on its next run.
+Next: pinned zero-shot vs a3dc30a0; decide whether to restore L. delawarensis crops (e.g. keep 'A/B' crops only when
+both halves share a species class we keep -- not possible for a genus pair) or accept it.
+
+## 52121223 → 52121224 / 52121225 → 52121226 — 2026-11-20 — USGS 11-20 manifest refresh: prepare, then detection + flat + H-CAST (branch flat-drop-genus-sp) — SUBMITTED
+Why: Ben: new USGS annotations delivered; full detection + classification retrain. USGS re-delivered all 15
+`UBFAI Data Collection/annotation_aws/*_annotation_manifest.csv` on 2026-11-20 15:47 (prepare_USGS reads only this top
+level; the nested annotation_aws/annotation_aws/ is the 07-28 copy). Human (private.*) rows 441,542 / 71,798 imgs (07-28)
+-> 507,657 / 76,922 imgs; key-diff +41,674 boxes on 6,421 images, 0 removed, created 2026-06..2026-11-02 (202108 18.7k,
+202202 9.0k, 202306 5.1k, 202501 3.5k, nyserda 2.9k). All labeled images resolve in the flattened imagery dir (107,385).
+LS review pull 93b7567 already backed up (--check: 0 new, 0 changed).
+Gap fixed before submit: submit_prepare_annotations.sh never passed --regenerate-crops (now does; mem 64->128GB per
+49349121), and _regenerate_ubfai_crops skips images with an existing crop CSV, so new boxes on already-cropped images
+would be lost. 1,233 such stale crop CSVs MOVED (not deleted) to
+/blue/ewhite/b.weinstein/BOEM/training/pre_usgs_refresh_20261120/stale_crop_csvs/ (+ stem list), so they re-cut.
+13,326 labeled images had no crop CSV (5,188 new + 8,138 July-labeled never cropped). Pre-run train/test/zero_shot.csv
+copied to the same dir. Zero-shot pinned JPG_20260202_141900 + JPG_20260201_134000.
+Chain: prep 52121223 -> detection 52121224 (afterok) + flat 52121225 (afterok, use_metadata=False, drops A/B labels)
+-> H-CAST 52121226 (afterok flat; auto-picks the newest usgs_train_split.csv = flat run's split, writes run_<jobid>).
+Don't switch branches in the repo dir until all four have started.
+Next: verify train/test/zero_shot totals vs 11-03 (train 671,944 / test 131,568 / zero_shot 22,996), stale CSVs
+regenerated with the new boxes, 0 rows of holdout flights in train/test. Nothing promoted automatically.
+Result (52121223), checked 2026-11-20: COMPLETED 43m37s, exit 0:0. 507,657 human rows / 76,922 imgs, 0 missing images.
+  Cropped 14,559 images: 14,519 ok, 40 failed -- 39 "no overlapping annotations" (1-3 boxes each, ~50 boxes, fall in no
+  tile; mostly single Artificial/Unknown/Morus boxes) + 1 truncated JPG 331855-0525182117098-CAM3 (from the 2026-05-04
+  delivery, not this one; 1 Cheloniidae box lost). 1,233 stale re-cuts: 27,163 -> 38,389 boxes (new labels landed).
+  train 758,336 rows / 484,640 boxes / 490,266 tiles (216,572 w/ boxes, 273,694 empty)   [11-03: 671,944 / 406,232 / 443,008]
+  test  134,176 rows /  22,278 boxes / 122,917 tiles ( 11,019 w/ boxes, 111,898 empty)   [11-03: 131,568 / 19,753 / 120,843]
+  zero_shot 22,996 / 1,258 / 22,680 -- unchanged, only the two pinned flights; 0 holdout rows in train/test (flight + path).
+  Downstream 52121224 / 52121225 now pending on Priority (GPU queue).
+Result (52121225, flat), checked 2026-11-20: COMPLETED 3h21m, exit 0:0, clean stderr. Checkpoint
+  buffer_30/0139af8cad264f569519cd06074acd66.ckpt (+ split CSVs). Pool 225,959 crops (a1d526df: 187,420), 41,693 parents,
+  38,750 A/B dropped, 73 classes (+Calidris maritima, -Egretta thula vs a1d526df). Train balanced to 47,600, val 3,972.
+  Micro acc 0.7822 (a1d526df 0.7610), macro prec 0.6411 (0.6357), val_loss 2.59 (3.69). VAL SETS DIFFER -- not comparable
+  until scored on a common set. Larus delawarensis 0.68 (a1d526df 0.08: the new USGS gull labels restored it), Delphinus 0.90
+  (0.45), Tursiops 0.38 (0.30), Stenella frontalis 0.20 (0.33). Still 0.0: Anas strepera, Ardea herodias, B. acutorostrata,
+  Branta bernicla, Haliaeetus, Pluvialis squatarola, Pterodroma hasitata, Sterna dougallii. Not promoted.
+  H-CAST 52121226 started 20:50 on this split: 72/51/21 heads (Columba livia not in taxonomy.json -- known since 08-20,
+  21 train / 13 val rows), ~29 min/epoch -> ~48h for 100 epochs, inside 72h.
+  Detection 52121224 at 20:45: epoch03 val_cls 0.1131, ~47 min/epoch -> all 30 epochs would end ~17:10 on 11-21 vs the
+  24h limit at 17:23. TIMEOUT would fail afterok and leave YOLO compare 52121265 never starting.
+
+## 52121265 — 2026-11-20 — submit_compare_yolo26_refresh.sh, afterok:52121224 (hpg-b200, 1 GPU) — SUBMITTED
+Why: Ben: when the 11-20 refresh detector (52121224) finishes, redo the YOLO26s comparison (51996709/51998927, branch
+yolo26-comparison). YOLO26s and 1968e962 JSONs in /blue/ewhite/b.weinstein/BOEM/yolo26_comparison/ are reused as-is
+(same pinned holdout JPG_20260202_141900 + JPG_20260201_134000, IoU 0.4, 2000-frame queue sample); only the new
+detector is swept, same threshold_sweep.py args as 1968e962. Job locates the run's checkpoint dir as the single
+training/checkpoints/<id>/ with epoch ckpts newer than the det job's start (exits if not exactly 1), picks min
+val_cls epoch (dry-run on 1968e962 reproduces epoch29), then --report on all three.
+Not redone: per_object_hits.csv / disagreement_examples/ (ad hoc in the other chat, no committed script).
+Next: compare new vs 1968e962 vs YOLO at 0.70 and matched precision; zero-shot holdout numbers only (not validation).
+Update 2026-11-21 09:15: detection 52121224 at epoch18 (val_cls 0.0902, still improving 0.001/epoch, ~47.5 min/epoch) ->
+  epoch29 ends ~17:10, then post-fit validation images + full zero-shot validate, vs the 24h limit at 17:23 -> TIMEOUT
+  near-certain. `scontrol update TimeLimit` denied (user). Dependency changed afterok -> afterany:52121224 so the compare
+  still runs on the saved per-epoch ckpts (min val_cls); it exits if it can't find exactly one new ckpt dir.
+  Consequence: the detection job's own post-training zero-shot metrics will likely be missing from its log/Comet;
+  the threshold_sweep in 52121265 is the zero-shot number of record anyway.
+Result (52121224, detection), checked 2026-11-22: TIMEOUT at 24h as predicted, after all 30 epochs were saved (epoch29
+  at 17:19). Comet c6ecec12e078416c9fe645c89bc418cf. Best val_cls epoch27 0.0867 (1968e962 e29 0.0899, different test sets).
+  Post-fit zero-shot validate in the job's own log never ran (killed). ~48 min/epoch: next detection run needs >24h or
+  fewer epochs / a resume -- the ewhite-b QOS allows up to 4 days.
+Result (52121265, YOLO compare), checked 2026-11-22: COMPLETED 18m50s, exit 0:0. Swept c6ecec12/epoch27 on the same
+  648 frames / 1,229 objects, IoU 0.4, 2000-frame queue. ZERO-SHOT (pinned holdout) box recall / precision / image recall / queue img per 1k:
+    @0.70  c6ecec12 59.0 / 85.4 / 96.2 / 1.5   1968e962 57.9 / 86.6 / 94.2 / 1.0   YOLO26s 38.0 / 83.4 / 65.0 / 2.0
+    matched ~87% prec: c6ecec12@0.75 57.4 / 87.2   1968e962@0.75 56.0 / 88.0
+    @0.30  c6ecec12 65.1 / 73.9, queue 26 img/1k   1968e962 66.2 / 75.1, queue 70.5 img/1k
+  New detector ~= production on zero-shot (+1.1 recall / -1.2 precision at 0.70; same curve within ~1.5 pts), both beat
+  YOLO26s by ~20 recall points. Notable: far fewer unscreened-queue hits at 0.2-0.5 (128 vs 204 img/1k at 0.20).
+  Not promoted. Validation (in-distribution) recall for c6ecec12 not measured -- the job died before its own eval.
+
+## 52155608 — 2026-11-20 — submit_classifier_confusion.sh 0139af8cad264f569519cd06074acd66 — SUBMITTED
+Why: Ben: promote the 11-20 refresh flat classifier 0139af8c (52121225) into the pipeline. Checkpoint and its own fitted
+temperature must change together (calibrated review thresholds), same procedure as a1d526df / 52095705.
+Next: copy fitted T + checkpoint into finetune.yaml and the T comment in boem_config.yaml; verify Hydra load.
+Result (52155608), checked 2026-11-20: COMPLETED 56s, exit 0:0. Fitted T = 4.4675 (ECE 0.178 -> 0.048, NLL 2.321 -> 0.914,
+  acc 0.7822 unchanged; AUROC 0.826 raw -> 0.806 scaled). Outputs classifier_confusion_0139af8c_{matrix,predictions}.csv + logits.npy.
+PROMOTED at Ben's request: finetune.yaml -> 0139af8c + T 4.4675; boem_config.yaml T comment updated. Calibrated thresholds
+  kept (same rationale as a1d526df; ECE now lower). Verified via Hydra compose + load: 73 classes, only Chelonioidea sp,
+  temperature active. Full-flight caches are stamped by classifier+T, so every flight re-predicts on its next run.
+  Production H-CAST (run_40306075 species.csv) cannot name 6 flat classes: Calidris maritima, Columba livia, Eudocimus albus,
+  Fregata magnificens, Haliaeetus leucocephalus, Sterna dougallii -> read as "H-CAST does not support" until 52121226 lands.
+Next: pinned zero-shot classifier comparison vs a1d526df (val splits differ); promote H-CAST 52121226 when it finishes.
+
+## 52339590 — 2026-11-22 — submit_eval_detection.sh c6ecec12/epoch27 (hpg-b200, 1 GPU) — SUBMITTED
+Why: Ben: run the validation the detection job (52121224) never reached before TIMEOUT. New scripts/eval_detection_checkpoint.py:
+VALIDATION (in-distribution) on test_max_empty_0_25.csv -- the exact file the run monitored (14,692 tiles) -- via
+DeepForest validate() (training-time definition, score_thresh 0.4) + box recall/precision at 0.4-0.9 from one predict pass.
+Not zero-shot (that's 52121265). 1968e962 deliberately NOT scored on it: the 11-20 split reshuffled parents, so its training
+images can sit in this test set (leaky).
+Next: record validation box recall @0.70 next to zero-shot 59.0% -- two labelled numbers, never merged.
+Result (52339590), checked 2026-11-22: COMPLETED 9m38s, exit 0:0. validate() (pooled, score_thresh 0.4): VALIDATION box recall
+  0.680, box precision 0.953, empty-frame acc 0.996, val_classification 0.0867 (matches the training log, so same file/model).
+  The per-threshold table was WRONG METRIC: evaluate_boxes' box_recall is a mean of per-tile recall (one-bird tiles outvote
+  flocks), e.g. 90.7% at 0.4 vs pooled 68.0%. Discarded; script fixed to pooled TP/GT and resubmitted (below).
+
+## 52339591 — 2026-11-22 — submit_benchmark_detection_training.sh (hpg-b200, 1 GPU, 32 CPU) — SUBMITTED
+Why: Ben: optimization review -- 52121224 ran 1 B200 / 8 CPU at ~48 min/epoch (240,635 tiles -> ~84 img/s) and timed out.
+sacct: TotalCPU 7d12h over 24h on 8 cores = CPUs ~94% busy -> suspected DataLoader-bound (1000px PNG decode + CPU kornia
+augs; DeepForest loader has no pin_memory / persistent_workers). New scripts/benchmark_detection_training.py times (A) the
+loader alone at 8/16/24/32 workers and (B) GPU-only train steps on resident batches, fp32/TF32 vs fp16 autocast.
+Quota context: ewhite QOS = 10 GPUs / 152 CPUs group-wide, MaxWall 31d (ewhite-b burst has gpu=0); the 24h limit was ours.
+Next: pick GPUs x workers so loader >= GPU rate; then multi-GPU DDP via the existing devices>1 path in USGS_backbone.py.
+Result (52339591), checked 2026-11-22: CANCELLED by SIGTERM at 1h20m (not by me, Reason None, before the 32-worker point).
+  B200 GPU-only train step (batch 64, resident data): fp32/TF32 197.3 img/s (20.3 min/epoch), fp16 autocast 192.4 (no gain).
+  DataLoader only: 8 workers 107.5 img/s (37.3 min/epoch), 16 -> 238.8, 24 -> 383.7 (~15-16 img/s per worker, ~linear).
+  => 52121224 (8 workers, ~84 img/s end-to-end) was LOADER-BOUND; the GPU sat ~55% idle. One B200 needs ~14 workers to stay fed.
+
+## 52344877 — 2026-11-22 — submit_eval_detection.sh c6ecec12/epoch27, pooled metrics — SUBMITTED
+Why: rerun of 52339590 with the per-threshold table fixed to POOLED box recall/precision (matched GT / all GT), the
+definition threshold_sweep.py's zero-shot numbers use; also saves the predictions CSV next to the checkpoint.
+Next: report VALIDATION recall @0.70 beside ZERO-SHOT 59.0% (52121265), labelled separately.
+Result (52344877), checked 2026-11-22: COMPLETED, exit 0:0. VALIDATION (in-distribution, test_max_empty_0_25.csv: 14,692 tiles,
+  11,019 with boxes, 22,278 boxes), POOLED box recall / precision, IoU 0.4:
+    0.40 84.0 / 92.0   0.50 74.8 / 94.5   0.60 61.6 / 96.4   0.70 45.7 / 97.9   0.80 30.7 / 99.1   0.90 18.3 / 99.4
+  vs ZERO-SHOT @0.70 (52121265): 59.0 / 85.4. Validation recall is LOWER: val tiles are dense USGS flocks (2.0 boxes/tile),
+  where low-score crowding bites; precision is higher because those labels are exhaustive.
+  Predictions: .../c6ecec12e078416c9fe645c89bc418cf/epoch27-val_cls0.0867.test_max_empty_0_25_predictions.csv
+  WHY validate() said 0.680: DeepForest RecallPrecision.compute = sum(per-tile recall over tiles WITH boxes) / ALL tiles, so
+  empty tiles count as recall 0 -> 0.907 (per-tile mean) x 11,019/14,692 = 0.680. Every training-log "box_recall" is capped
+  at (1 - empty fraction) and is not box recall. Use threshold_sweep.py / eval_detection_checkpoint.py pooled numbers only.
+
+## (no job) — 2026-11-22 — detection submit script resized: 1 B200 / 16 CPU / 16 workers / 120GB / 48h
+Why: Ben chose the 1-GPU/16-CPU option from the 52339591 review for future detection runs. Same model/batch/lr/epochs, so
+results stay comparable with c6ecec12; expected ~22 min/epoch (was ~48). 4-GPU DDP not adopted (would change effective
+batch 64 -> 256 and need lr re-tuning). Mem 80 -> 120GB: 52121224 peaked 70GB at 8 workers.
+Next: on the next detection run, confirm epoch time ~22 min and MaxRSS < 120GB.
+Upstream (2026-11-22): filed weecology/DeepForest#1479 (as Claude, no PR, at Ben's request). Empty-frame denominator
+already fixed on DeepForest main (d32560f1) but not in v2.1.0, our pin; per-image mean (vs pooled) still on main.
+
+## (no job) — 2026-11-22 — three-way zero-shot comparison c6ecec12 vs 1968e962 vs YOLO26s (CPU, local)
+Why: Ben: update the YOLO26 comparison (51996709/51998927, 52121265) with the 11-20 refresh detector, and replace the
+ad hoc per_object_hits.csv / disagreement_examples/ with a committed script. New scripts/compare_detectors_holdout.py
+re-matches the three saved *_labelled_boxes.csv (no inference) and reproduces each sweep JSON's TP/FP exactly at all 21
+thresholds before writing. Outputs: /blue/ewhite/b.weinstein/BOEM/yolo26_comparison/three_way/ (old ad hoc files kept;
+note the old per_object_hits.csv "prod" column was 1968e962 @0.55, not 0.70).
+Result: ZERO-SHOT pooled recall/precision @0.70: c6ecec12 59.0/85.4, 1968e962 57.9/86.6, YOLO26s 38.0/83.4. At matched
+  precision c6ecec12 ~= 1968e962 within 1.5 recall pts (both ~20-35 pts over YOLO), with 2-9x fewer unscreened-queue
+  frames at 70-83% precision. c6ecec12 gain is non-birds (38.7 vs 28.4% hit, mostly Delphinidae) and >90px objects;
+  dense flocks (>20/frame) 12-15% for all. Of the 59% recall gap, much is box fit: a >=0.70 box centred inside the GT
+  box exists for 79.3% (c6ecec12) / 74.9% / 47.5% of objects (sensitivity only). 151 GT objects overlap another GT box
+  at IoU>0.5 (184 same-annotator pairs) -- not resolved whether duplicates or packed animals.
+Next: decide whether to promote c6ecec12; consider re-scoring GT box fit (loose boxes) before trusting absolute recall.
+
+## 52348607 — 2026-11-22 — submit_review_load.sh (hpg-b200, 1 GPU, 16 CPU, 12h) — SUBMITTED
+Why: Ben asked what dropping the detection threshold 0.70 -> 0.40 would cost reviewers (his intuition: 0.60). Validation
+empties can't answer it (1000px tiles not frames; human-empty LS tiles, capped at 25%; older USGS surveys), and the July
+caches are cut at 0.70. New scripts/review_load_by_threshold.py: 250 random frames per July 2026 flight (5,000 of 533,876,
+seed 0), re-predicted at a 0.40 floor with 1968e962/e29 (production) and c6ecec12/e27 through the pipeline's own
+generate_pool_predictions (production CropModel 0139af8c + T 4.4675 + H-CAST run_40306075), then human_review() at
+0.40..0.70: review frames/boxes, auto-annotated, ignored, scaled x106.8 to the survey. Outputs in
+/blue/ewhite/b.weinstein/BOEM/review_load_by_threshold/. Prior anchor (a09c6933, Aug): July 0.40 -> 19,008 frames /
+41,739 boxes vs 0.70 -> 360 / 388.
+Next: report review frames at 0.60 vs 0.70 for both detectors; spot-check what the 0.60-0.70 band holds (real vs foam).
+Result (52348607), checked 2026-11-23: COMPLETED 41m44s, exit 0:0, MaxRSS 17.7GB. 5,000 July frames (seed 0), x106.8 to the
+  533,876-frame survey. Review frames / review boxes (sample -> survey), human_review() at each threshold:
+    thr    1968e962 (production)              c6ecec12
+    0.40   230 / 286 -> 24,558 / 30,538       106 / 116 -> 11,318 / 12,386
+    0.50    64 /  70 ->  6,834 /  7,474        38 /  42 ->  4,057 /  4,485
+    0.60    12 /  12 ->  1,281 /  1,281        17 /  20 ->  1,815 /  2,136
+    0.70     6 /   6 ->    641 /    641         8 /  10 ->    854 /  1,068
+  0.60 costs ~2x the 0.70 review load (both detectors); 0.40 costs ~13-38x. c6ecec12 flags fewer low-score frames
+  (0.40: 125 vs 291 frames with any box) but slightly more at 0.60-0.70. CAVEAT: only 6-18 sample frames at >=0.60, so the
+  survey numbers there carry roughly +/-40% sampling error; the Aug anchor (a09c6933, 360 frames @0.70) is in range.
+  Outputs: /blue/ewhite/b.weinstein/BOEM/review_load_by_threshold/{summary,predictions}_*.csv
+Next: spot-check the 0.60-0.70 band boxes (real birds vs foam/glint) before choosing 0.60; larger sample if the
+  0.60 vs 0.70 difference has to be pinned down.
+
+## (no job) — 2026-11-23 — PROMOTED detector c6ecec12/epoch27; detection gates 0.70 -> 0.60
+Why: Ben, after 52348607 (review load) and 52121265/52344877 (zero-shot / validation). boem_config.yaml:
+detection_model.checkpoint -> c6ecec12e078416c9fe645c89bc418cf/epoch27-val_cls0.0867.ckpt; predict.min_score,
+active_learning.min_detection_score, human_review.min_detection_score, active_testing.min_score all 0.70 -> 0.60.
+Expected July review load at 0.60 for c6ecec12: ~1,815 frames / 2,136 boxes (vs 854 / 1,068 at 0.70), +/-40%.
+Pool caches are keyed on detector checkpoint and min_score, so every flight re-predicts on its next run.
+Next: eyeball the 0.60-0.70 band for foam on the first re-run July flight.
+
+## 52487621 — 2026-11-23 — submit_high_loss_tiles.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU) — SUBMITTED
+Why: Ben: clean the training data -- find the 100 highest-loss tiles across the detector's training and validation
+tiles and post them to Label Studio for annotators. New scripts/find_high_loss_tiles.py: the training loss itself
+(RetinaNet focal classification + box regression), per tile, no augmentation, BatchNorm frozen, on
+train_max_empty_0_10.csv (the file c6ecec12 trained on) and test_max_empty_0_25.csv (its validation file).
+Verified on 6 tiles that the per-tile losses average exactly to torchvision's batch loss.
+Output: /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv (all tiles, ranked).
+Next: `find_high_loss_tiles.py upload --per-split 50 --dry-run` (Ben 11-23: 50 train + 50 val, ranked within split), then upload to the Review project (comet_id
+high_loss_c6ecec12; GT species in the dropdown). Train and val ranked together, so val (unseen) may dominate --
+check the split mix before uploading.
+Result (52487621), checked 2026-11-23: COMPLETED 41m14s, exit 0:0, but TRAIN LOSSES ALL 0 -- script bug: the loss hook was
+  re-wrapped for the second split, so train losses chained into the val list. Val (14,692 tiles) is valid: mean 0.223,
+  p99 1.154, max 11.185. Bad file kept as tile_losses_52487621_train_zero.csv. Fixed (wrap once + assert non-zero), rerun below.
+
+## 52490803 — 2026-11-23 — submit_high_loss_tiles.sh c6ecec12/epoch27, rerun after the train-zero fix — SUBMITTED
+Why: rerun of 52487621 with the hook bug fixed. Val should reproduce 52487621's val numbers exactly.
+Next: upload --per-split 50 --dry-run, show Ben, then upload to Review.
+Result (52490803), checked 2026-11-23: COMPLETED 40m28s, exit 0:0. Val reproduces 52487621 exactly (mean 0.223, max 11.185).
+  Train 240,635 tiles: mean loss 0.265, p99 1.154, max 8.48 -- train mean is HIGHER than val (0.223): the model does not fit
+  its own training tiles better than held-out ones (matches the dense-flock chat's underfitting finding, job 52491503).
+  Output /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv (all 255,327 tiles, ranked).
+UPLOADED 2026-11-23: top 50 train + top 50 val (ranked within split, tiles already in LS skipped) -> "Bureau of Ocean
+  Energy Management - Review", comet_id high_loss_c6ecec12, 102 GT boxes as preannotations on 81 tiles, 19 tiles with no
+  GT boxes (model fires confidently there: likely missed animals). Leaders are mostly 1-box tiles with large
+  classification loss (an unlabelled object the model detects, or a box on nothing). List:
+  /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/top50_per_split_uploaded.csv
+Next: pull with the pull-annotations skill when done; corrected tiles return as Review annotations and do NOT replace
+  the original rows in train/test CSVs -- gather/prepare_USGS must prefer the reviewed version before the next retrain.
+
+## 52491391 -> 52491503 — 2026-11-23 — submit_dense_flock_phase0.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 6h) — SUBMITTED
+Why: Ben: find out whether dense-flock under-detection comes from architecture, training data or augmentation.
+Offline baseline (no job, saved 52344877 predictions; new scripts/density_strata.py): VALIDATION pooled recall @0.70 falls
+1 bird/tile 61% -> 3-5 42% -> 11-20 30% -> 21-50 27% -> >50 9% (6 tiles), precision 95-98% at every density; matched-TP
+median score 0.79 -> 0.63. Holds within box-size bands and within each of the 6 largest sources. Anchor starvation
+cleared: torchvision matcher on 2,800 train tiles gives 0-1% (single) vs 1-4% (dense) GT with zero positive anchors.
+NMS 0.05 cleared: 3-5% of GT overlap a neighbour > IoU 0.05 (except >50 tiles, 18%). Batch composition already
+saturated (train is 90% non-empty). Separate size effect: 18-35px birds get ~3 positive anchors vs 20-30 above 35px.
+This job (scripts/dense_flock_phase0.py, all VALIDATION tiles, nothing zero-shot):
+  0a paste test: 300 single-bird targets (base score >= 0.3), k = 0/2/5/10/20/40 chips pasted near (real-flock spacing,
+     3.0 box sides), far (>= 300px) or background-only. Chips from OTHER tiles of the target's own parent frame; first
+     smoke used cross-survey chips and was all paste artifact (brown rectangles on blue water) -- fixed before submit.
+  0b label audit: unmatched >= 0.5 predictions on all 590 val tiles with >= 6 birds vs 300 single-bird tiles; separates
+     loose GT boxes (IoU 0.05-0.4) from no-GT-nearby; contact sheets in phase0/0b_sheets/.
+  0c full val re-predicted at 800 (production), 1000 (native), 1200 (upsampled), and NMS 0.2; density strata each.
+  0d (added): same strata on TRAINING tiles (<= 1000 per stratum, seed 0). Low dense recall on fitted tiles = cannot fit
+     flocks (capacity / conflicting labels), not too few dense examples. CPU smoke (4 tiles/stratum): @0.70 21-50 19%, >50 4%.
+52491391 CANCELLED while pending to add 0d; resubmitted as 52491503.
+Also found: the external dense sets are mostly TRAINING frames -- Feb 2022 cap-probe frames 1,053 of 1,108 share a
+  bname_parent with train (43 with val), flock_dataset test 44 of 80. Only the non-train remainder (55 / 36 frames) can
+  score fine-tuned arms, and it is validation-like (same flights), not zero-shot.
+Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/
+Read: near-k score drop with flat far/background -> learned local-context suppression (H3 or H2-taught); 0b mostly real
+  birds -> missing labels (H2); 0c res gain concentrated in dense strata -> resolution/size lever.
+Next: Phase 1 fine-tune arms (random / >= 6 birds / density-weighted sampler) from c6ecec12, fixed steps, 3 seeds, scored
+  per stratum at matched precision (0.978) with density_strata.py.
+Interim result (52491503, 0a/0b/0d), checked 2026-11-23 (0c still running):
+  0d TRAINING tiles fit no better than validation. Pooled recall @0.70 by birds/tile, TRAIN (6,331 stratified) vs VAL:
+     1: 61.0 vs 61.3 | 2: 49.5 vs 48.5 | 3-5: 41.3 vs 41.5 | 6-10: 34.3 vs 34.9 | 11-20: 28.8 vs 30.1 | 21-50: 23.8 vs 26.5 |
+     >50: 15.9 vs 9.1 (val n=6 tiles). @0.40 train 92.5 -> 56.2. => no generalization gap: the model does not fit dense
+     flocks even on tiles it trained on. Not "too few dense examples to generalise from".
+  0a paste test (300 targets, same-frame chips): near neighbours lower the target's score by only ~0.02-0.04 (median
+     0.782 -> 0.726-0.761) and the drop does NOT grow with k (k=2 -0.040 mean, k=40 -0.036); far and background arms flat
+     (<= 0.016). Pasted flock birds score ~0.67 median (48% >= 0.70) whether 2 or 40 are pasted, near or far -> a flock
+     bird's score is carried by the bird, not its neighbours. Caveat: chips are GT-box crops with a 3px feathered edge,
+     which may erode tightly-boxed birds -- k-independence holds regardless, absolute chip score is a lower bound.
+  0b unmatched >= 0.5 predictions per 100 GT: singles 2.0, 6-10 3.8, 11-20 5.7, 21-50 4.9, >50 10.2; about half are loose
+     GT boxes (IoU 0.05-0.4, e.g. large rays/sharks). Contact sheet: the rest is a mix of faint flock specks and empty water
+     -- missing labels exist but are a few % of birds, not a dominant signal in val labels.
+  Reading so far: H3 (neighbour-context suppression) is minor; H1 as "generalisation from too few dense tiles" is ruled
+  out by 0d; what remains is the model underfitting flock birds themselves (appearance/label ambiguity, capacity, or too
+  little loss weight on them). Phase 1's dense/weighted arms now test "more gradient on flock birds" rather than
+  "more dense examples to generalise from".
+
+## 52493454 — 2026-11-23 — submit_dense_flock_finetune.sh array 0-9%4 (hpg-b200, 1 GPU, 16 CPU, 8h each) — SUBMITTED
+Why: Ben's core question -- if training is matched to dense flocks, does dense-flock recall improve? Dense-flock Phase 1,
+scripts/dense_flock_finetune.py. Fine-tunes c6ecec12/epoch27 with identical optimisation (15,201 tiles/epoch x 8 epochs,
+batch 64, SGD lr 1e-4 constant, USGS_backbone augmentations, no in-loop validation, final epoch kept -- no
+val_cls selection, which would pick a different epoch per arm). Task 0 = no fine-tune reference; 1-9 = 3 seeds each of:
+  random   15,201 random train tiles (natural ~10% empties) -- the CONTROL (fine-tuning alone shifts calibration)
+  dense    all 13,681 train tiles with >= 6 birds + 1,520 empties (10%)
+  weighted all train tiles, WeightedRandomSampler weight min(birds, 20), empties held at 10%
+Each scored on the full VALIDATION set by density stratum (scripts/density_strata.py; @0.40/@0.70 and at matched overall
+precision 0.978), plus the NON-TRAINING remainder of Feb 2022 cap-probe frames (55) and flock_dataset test (36) via
+predict_tile 1000/0 -- validation-like (same flights), NOT zero-shot.
+Read: dense/weighted vs random at matched precision, per stratum, with the single-bird stratum as the cost.
+Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/phase1/
+
+## 52491503 + 52493454 — 2026-11-23 — dense-flock Phase 0 (0c) and Phase 1 results — CHECKED
+Result (52491503), COMPLETED 43m57s, exit 0:0. 0c VALIDATION recall at equal OVERALL precision (interpolated between
+  0.05-grid thresholds -- the grid alone mis-buckets native1000 at 97.79% vs target 97.8%), c6ecec12, no retraining:
+    prec 0.970   all   1    3-5  11-20 21-50 >50      prec 0.978   all   1    11-20 21-50
+    base800      55.4 70.0 52.9 39.0  34.8  14.5      base800      46.6 62.2 31.0  27.3
+    native1000   62.4 77.4 61.0 44.2  41.3  18.6      native1000   52.5 69.5 34.2  29.8
+    up1200       66.7 81.5 66.6 49.2  44.5  16.7      up1200       57.5 74.4 38.6  34.0
+    nms020       52.9 67.7 50.1 36.8  32.6  13.7      (NMS 0.2 is worse everywhere)
+  Resolution is a real lever (+11 pts overall at 1200px, inference only), relatively larger in flocks (21-50: +28% rel
+  vs singles +16%) but it does not close the density gap. Precision here is on GT tiles; empty-tile FP and zero-shot
+  not checked yet -- needed before any production change (1200px also costs ~2.25x pixels).
+Result (52493454), tasks 0-7 COMPLETED (10-38 min each), 8-9 (weighted s1, s2) still RUNNING. VALIDATION recall at
+  overall precision 0.97, interpolated, mean of 3 seeds (sd <= 0.007):
+              all   1     3-5   6-10  11-20 21-50 >50
+    none      55.4  70.0  52.9  45.1  39.0  34.8  14.5
+    random    46.6  61.4  42.9  36.3  32.2  27.2  10.0   <- control
+    dense     46.9  60.1  44.2  37.8  34.4  29.3   8.7
+    weighted  45.8  60.4  42.1  36.0  32.6  25.5   7.2   (seed 0 only)
+  (1) Fine-tuning itself hurts: every arm, the random control included, loses ~9 pts vs no fine-tune (8 epochs, SGD lr
+  1e-4, 6% subset -- an optimisation artifact, so compare arms only against random). (2) dense vs random: +1.5 to +2.2
+  pts at 6-50 birds/tile (5-7x the seed sd -> real), -1.3 on singles. (3) weighted ~= random. Density-matched training
+  gives a small real flock gain, an order smaller than the 35-pt density gap and smaller than the resolution effect.
+  feb2022 non-training frames (55 frames, 514 real birds, VALIDATION-like): dense 38.5-40.3 vs random 34.8-37.0 vs none
+  34.0 recall @0.70 at ~equal precision (87-88%) -- same direction. flock_test numbers are INVALID: its non-training
+  frames are 1,675 FalsePositive rows + 79 birds; scoring treated rejected boxes as GT. Script now drops FalsePositive
+  rows and no longer scores flock_test.
+Cross-check (boem-9c's 52490803, /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv): median per-tile focal
+  classification loss (torchvision normalises by positive anchors) rises with birds/tile and TRAIN ~= VAL:
+    1: 0.050/0.051  3-5: 0.089/0.090  11-20: 0.135/0.113  21-50: 0.168/0.139  >50: 0.200/0.255 (val n=6)
+  box regression likewise 0.118 -> 0.363 (train). Independent confirmation of 0d: the model underfits flock birds on
+  its own training tiles.
+Overall (provisional): underfitting is established (0d + loss); training distribution looks like a minor factor, but
+  Phase 1 cannot settle that -- the fine-tune recipe (constant lr 1e-4, last epoch, from a converged checkpoint) cost
+  ~9 pts (equal precision 0.97) / ~14 pts (grid read at 0.978) before sampling acted, so the +2 dense gain sits on a
+  degraded model (point raised by boem-d5). A gentler recipe (lr 1e-5 or decay) or density sampling in a full training
+  run is needed before ruling it out. Resolution is worth ~10 pts with no retraining. Passed to the architecture chat (boem-d5, branch detector-architecture-comparison) as the dense-flock test.
+Next: (a) empty-tile FP + zero-shot check for 1000/1200px inference; (b) train at native resolution (min_size 1000-1200)
+  -- one full run, the biggest lever found; (c) double-annotated dense tiles to measure the human ceiling (Ben to OK).
+
+## 52502097 — 2026-11-23 — submit_detection_input1000.sh (hpg-b200, 1 GPU, 16 CPU, 120GB, 48h), branch detector-architecture-comparison @f261aad
+Why: Ben: train a detector whose train and eval scale match at native 1000 px. torchvision RetinaNet's default
+min_size 800 / max_size 1333 shrinks every 1000 px tile to 0.8x in training AND prediction (c6ecec12 included). Dense-flock 0c
+(52491503) showed inference-only 1000 px lifts c6ecec12 VALIDATION recall 55.4 -> 62.4 at equal precision 0.97. This is
+c6ecec12's recipe exactly (deepforest-bird init, batch 64, lr 0.001, ReduceLROnPlateau, early stop 5, 30 epochs,
+same augs) with the one change --input-size 1000. It reads c6ecec12's own split files as-is (--train-csv
+train_max_empty_0_10.csv, --val-csv test_max_empty_0_25.csv), because re-running the resample would have drawn a
+different empty sample (set-order hashing) and overwritten them. Production venv (DeepForest friendly-beaver), run from the
+worktree. The checkpoint records input_size=1000, and detection.load() re-applies it; eval_detection_checkpoint.py and
+threshold_sweep.py go through detection.load.
+Next: expect ~30-35 min/epoch (GPU-bound at 1.56x pixels, vs 22 min at 800), so ~16 h for 30 epochs; check epoch time and that the
+first epochs don't OOM at batch 64. Then score min-val_cls epoch vs c6ecec12 (predicted at 1000 and at 800) with
+eval_detection_checkpoint.py (VALIDATION, pooled) + density_strata.py at interpolated equal precision, and on
+dense_flock/phase0/0d_train_sample.csv (fit on its own training tiles). val_cls is NOT comparable across scales; select within run only.
+Result: PENDING

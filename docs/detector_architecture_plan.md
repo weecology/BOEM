@@ -41,6 +41,12 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
 - Report the two as separate, labelled numbers. Compare at **matched precision**, at the recall
   ceiling, and at the production gate **0.60** (moved from 0.70 on 2026-11-23 with c6ecec12), not only at a fixed threshold (score calibration differs between architectures).
 - Also: recall by box size (<16, 16-32, >32 px) and inference cost (frames/s on a full flight, since surveys are ~500k frames).
+- **Equal precision is interpolated** between grid thresholds, not density_strata.py's 0.05-grid pick (mis-buckets
+  near the target; interpolated version coming from the dense-flock chat).
+- **Do not use `flock_dataset/` as a dense-bird set** without dropping `label == "FalsePositive"`: its non-training test
+  frames hold 1,675 FalsePositive boxes vs 79 birds. Feb 2022 cap-probe frames are clean (`Object`) but mostly training frames.
+- Underfitting test: focal cls loss on TRAIN tiles rises 0.050 (singles) -> 0.168 (21-50 birds), same as val
+  (`/blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv`). Score each candidate on its own dense training tiles.
 - **Dense flocks** (agreed with the dense-flock chat, 2026-11-23): score raw predictions (score_thresh <= 0.3) with
   `scripts/density_strata.py <predictions.csv> [gt.csv]` (from dense-flock-diagnostics commit 55a7050) on the validation
   set AND on the training-tile sample `/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/0d_train_sample.csv`.
@@ -54,7 +60,9 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
    `scripts/USGS_backbone.py`; 1-GPU smoke train of each arm (a few batches). Confirm checkpoints reload
    in both eval scripts. Re-score c6ecec12 under this venv: it must reproduce 45.7 / 97.9 validation and
    59.0 / 85.4 zero-shot at 0.70, or the DeepForest version drift is a confound.
-1. **Architecture at fixed input (800 px), same split, same augmentations.**
+1. **Architecture at fixed input, native 1000 px (`min_size`/`max_size` raised so tiles are not shrunk), same split,
+   same augmentations.** The 800 px default costs c6ecec12 ~7 pts validation recall at equal precision 0.97 by inference
+   alone (dense-flock 0c: 55.4 -> 62.4 native -> 66.7 at 1200). The R50 reference is c6ecec12 predicted at 1000 (and 1200).
    - B: RetinaNet + DINOv3 ViT-L sat493m, encoder unfrozen (MillionTrees E007 recipe: SGD, cosine, bf16,
      grad clip 1.0). E007 gain over the fine-tuned R50: macro F1 +0.8 within-distribution, +4.5 out-of-distribution.
    - C: Deformable DETR (COCO init) through `automodel`.
@@ -63,7 +71,8 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
    dense-flock job 52491503 part 0c: `/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/0c_*.density_strata.csv`; read it first): `min_size` 1000 (native) and ~1600 (upsampled for
    the ViT); optionally a 16 px anchor level (dense-flock anchor audit: 18-35 px birds get ~3 positive anchors vs 20-30 for >35 px,
    but the density drop holds inside every size band, so size is not the whole dense-flock story).
-   If dense-flock Phase 1 (52493454) shows the density-weighted sampler helps, apply it to the candidates too. Only arms that beat the gate in Phase 1.
+   Dense-flock Phase 1 (52493454): weighted sampler no better than random, dense-only +1.5-2.2 pts at 6-50 birds/tile,
+   so sampling changes are NOT carried over. Training on 1000/1200 px (not just inference) is the Phase 2 question. Only arms that beat the gate in Phase 1.
 3. **Promotion gate**: beats c6ecec12 at matched precision on BOTH validation and zero-shot beyond
    seed noise (≥2 seeds for the winner), acceptable survey throughput, threshold re-derived with
    `threshold_sweep.py`, end-to-end pipeline run on the debug flight, and one DeepForest ref that carries

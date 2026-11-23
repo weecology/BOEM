@@ -5,7 +5,7 @@ checkpoint: /blue/ewhite/b.weinstein/BOEM/training/classification/checkpoints/bu
 # divides the logits by this before DeepForest's softmax, so cropmodel_score is a calibrated
 # probability instead of a raw max-softmax, fit by minimising NLL on the checkpoint's val split.
 # PAIRED WITH THE CHECKPOINT ABOVE AND NOTHING ELSE. It does not transfer. Re-fit with
-#   sbatch submit_classifier_confusion.sh <comet_id>
+#   sbatch slurm/submit_classifier_confusion.sh <comet_id>
 # whenever `checkpoint` moves, and move the cropmodel_score thresholds with it (see
 # human_review.review_high in boem_config.yaml for the list). Set to null to disable
 # scaling and return every threshold to the raw scale.

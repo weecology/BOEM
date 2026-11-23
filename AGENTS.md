@@ -17,6 +17,11 @@ Treat a "changed" (not new) file as a red flag — downloads are append-only, so
 in-place rewrite means an existing annotation was overwritten. Never delete from
 `annotations_backup/` to match upstream; retaining orphans is the point.
 
+## SLURM Scripts
+
+Reusable SLURM scripts live in `slurm/`; submit from the repo root (`sbatch slurm/<script>.sh`).
+Don't commit one-off submit scripts to `main` — the ledger records what ran.
+
 ## Job Ledger
 
 Before submitting a SLURM job from this repo (sbatch), and after checking on

@@ -10,7 +10,7 @@ annotation has to be spent.
 
 Scoring is ~440 ms of CPU per frame and reads the full 12 MB JPEG off Lustre, so this
 belongs in a SLURM job with real cores: an interactive shell on this cluster gets one
-CPU and the ProcessPoolExecutor is then inert. See submit_score_flights.sh.
+CPU and the ProcessPoolExecutor is then inert. See slurm/submit_score_flights.sh.
 """
 import argparse
 import os

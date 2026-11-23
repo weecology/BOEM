@@ -27,7 +27,7 @@ Define and reuse these (environment variables, a small shell snippet, or the use
 
 **Default for this project:** `export SLURM_SSH=hpg` after `hpg` is defined in `~/.ssh/config` (see [reference.md](reference.md)).
 
-Optional: `SLURM_SBATCH_SCRIPT` — path relative to repo root on the cluster, e.g. `submit_upload_full_flight.sh`.
+Optional: `SLURM_SBATCH_SCRIPT` — path relative to repo root on the cluster, e.g. `slurm/submit_upload_full_flight.sh`.
 
 ## Workflow
 
@@ -65,7 +65,7 @@ If the branch only exists locally, push it first: `git push -u origin '<BRANCH>'
 
 ### 3) SSH: submit the job
 
-Run `sbatch` from the repo root on the cluster (adjust script and args to match the project’s scripts, e.g. `submit_flythrough.sh`, `submit_upload_full_flight.sh`):
+Run `sbatch` from the repo root on the cluster (adjust script and args to match the project’s scripts, e.g. `slurm/submit_flythrough.sh`, `slurm/submit_upload_full_flight.sh`):
 
 ```bash
 ssh "$SLURM_SSH" "cd '$SLURM_REMOTE_ROOT/$SLURM_REPO_DIR' && sbatch <SCRIPT_RELATIVE_PATH> [ARGS...]"

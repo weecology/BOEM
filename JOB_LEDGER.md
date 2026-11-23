@@ -3493,3 +3493,14 @@ Verified: Hydra compose + load_hcast_model on CPU, heads 72/51/21, forward (B,72
   H-CAST, so full-flight uploads after a classifier change carry human annotations only. Moved to its own branch
   full-flight-cache-repredict (276510e) + issue weecology/BOEM#35, not on this branch. Edge case (rarely used path).
 Next: score both checkpoints on the 1,612 new-val boxes neither trained on, for the record.
+
+## 52505453 — 2026-11-23 — submit_arch_overfit.sh (hpg-b200, 1 GPU, 16 CPU, 3h), branch detector-architecture-comparison @83b1414
+Why: [architecture comparison, Phase 0] learning check before Phase 1 (Ben chose 2xB200 x 15 epochs per arm). In smoke
+52503248 DETR's val_loss_ce went 0.90 -> 702 after one 32-step epoch (cardinality error 0.05 -> 232), which is either the
+mostly-empty smoke val set or a broken setup. Each arm trains AND validates on the same 256 bird tiles (685 boxes,
+/blue/ewhite/b.weinstein/BOEM/architecture_comparison/overfit/overfit_256.csv, seed 0 from train_max_empty_0_10.csv)
+for 30 epochs at 1000 px, Phase 1 recipes: R50 (positive control, bs 16, lr 1e-3), DINOv3 (SGD 0.01 cosine bf16 clip 1),
+Deformable DETR (AdamW 1e-4 wd 1e-4 cosine clip 0.1, monitor val_loss). Checkpoints top-1 only, in overfit/checkpoints/.
+Next: map / box_recall on the fitted tiles rising for every arm (R50 should be near-perfect). An arm that stays near 0 gets
+fixed before Phase 1. These are fit numbers on training tiles, not validation.
+Result: PENDING

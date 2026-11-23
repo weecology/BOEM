@@ -5,6 +5,17 @@ Branch `species-geo-priors`, worktree `.claude/worktrees/species-geo-priors` (cu
 a flight's location and season, first using our own flight metadata, then using open
 occurrence data (eBird, GBIF, OBIS, MDAT).
 
+## Decisions (2026-11-23)
+
+1. **GBIF is the pretraining source** for the location encoder (E4), reached after a few
+   experiments. BOEM may supply its own survey data, which would come first or alongside
+   it. eBird is not needed for now.
+2. **Captures CSVs for the unconverted aflights are coming over Globus** (user triggered
+   the transfer). No converter will be written. E0 waits for the transfer.
+3. **DeepForest PR #1334 is on hold.** Metadata embeddings don't belong in DeepForest yet,
+   and the PR will probably be closed eventually. How to hold that code inside BOEM is an
+   open question, deferred for now. BOEM still pins DeepForest to the PR branch until then.
+
 ## 1. Where things stand (2026-11-23)
 
 **DeepForest PR [#1334](https://github.com/weecology/DeepForest/pull/1334)**
@@ -123,19 +134,18 @@ fixed design choice:
 
 | ID | What | Compute | Output |
 |---|---|---|---|
-| **E0** | Infrastructure: convert the 50 aflights to captures CSVs (July 2026 first); build one global `Basename → (lat, lon, date, flight, region)` index; report metadata coverage per train/val split and per class × region | CPU | Coverage table; July survey gets coordinates |
+| **E0** | Infrastructure: once the Globus captures CSVs land, build one global `Basename → (lat, lon, date, flight, region)` index; report metadata coverage per train/val split and per class × region | CPU | Coverage table; July survey gets coordinates |
 | **E1** | Baseline "out-of-range" audit: current classifier on Gulf vs Atlantic flights at det ≥ 0.70. Count predicted species × region against a range table (eBird S&T presence plus an expert list). Split human-verified boxes from unverified ones. | 1 GPU, short | Out-of-range rate per region; which species absorb errors |
-| **E2** | Post-hoc prior sweep: source {expert list, GBIF density, eBird S&T, MDAT} × resolution × λ. Score on flight-held-out labelled crops with coordinates: top-1, per-region accuracy, out-of-range rate. Report validation and zero-shot holdout as separate numbers. | CPU over cached logits | Whether a prior helps, by how much, and at what grain |
+| **E2** | Post-hoc prior sweep: source {expert list, GBIF density, BOEM survey data if supplied, MDAT} × resolution × λ. Score on flight-held-out labelled crops with coordinates: top-1, per-region accuracy, out-of-range rate. Report validation and zero-shot holdout as separate numbers. | CPU over cached logits | Whether a prior helps, by how much, and at what grain |
 | **E3** | Fair learned-metadata comparison now that the join works: PR #1334 encoder vs none, 3 seeds, **flights split by group** | 6 GPU runs | First real measurement of learned lat/lon/day |
-| **E4** | Pretrained, frozen GBIF/eBird location encoder in the metadata slot vs E3 and vs E2 | Encoder pretrain + 3 runs | Whether outside data beats our own labels |
+| **E4** | Pretrained, frozen GBIF location encoder (plus BOEM data if supplied) in the metadata slot vs E3 and vs E2 | Encoder pretrain + 3 runs | Whether outside data beats our own labels |
 | E5 (later) | Location + size (resume the size worktree) | — | — |
 
 **Run order:** E0 → E1 → E2 are cheap and decide whether E3 and E4 are worth GPU time. E2
-needs only an eBird S&T key and cached logits.
+needs only GBIF data and cached logits.
 
-**DeepForest PR:** rebase onto DeepForest main, squash, and address the docs, dataset and
-tests comments. Defer the subclass refactor, as the reviewer suggested, unless E4 needs it.
-E3 depends on this. E0–E2 do not.
+**DeepForest PR:** on hold (Decision 3). E3 and E4 need the metadata CropModel code
+somewhere BOEM can import it. Decide that before E3. E0–E2 do not depend on it.
 
 ## 7. Coordination
 

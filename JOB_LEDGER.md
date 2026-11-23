@@ -3328,6 +3328,23 @@ Read: near-k score drop with flat far/background -> learned local-context suppre
   birds -> missing labels (H2); 0c res gain concentrated in dense strata -> resolution/size lever.
 Next: Phase 1 fine-tune arms (random / >= 6 birds / density-weighted sampler) from c6ecec12, fixed steps, 3 seeds, scored
   per stratum at matched precision (0.978) with density_strata.py.
+Interim result (52491503, 0a/0b/0d), checked 2026-11-23 (0c still running):
+  0d TRAINING tiles fit no better than validation. Pooled recall @0.70 by birds/tile, TRAIN (6,331 stratified) vs VAL:
+     1: 61.0 vs 61.3 | 2: 49.5 vs 48.5 | 3-5: 41.3 vs 41.5 | 6-10: 34.3 vs 34.9 | 11-20: 28.8 vs 30.1 | 21-50: 23.8 vs 26.5 |
+     >50: 15.9 vs 9.1 (val n=6 tiles). @0.40 train 92.5 -> 56.2. => no generalization gap: the model does not fit dense
+     flocks even on tiles it trained on. Not "too few dense examples to generalise from".
+  0a paste test (300 targets, same-frame chips): near neighbours lower the target's score by only ~0.02-0.04 (median
+     0.782 -> 0.726-0.761) and the drop does NOT grow with k (k=2 -0.040 mean, k=40 -0.036); far and background arms flat
+     (<= 0.016). Pasted flock birds score ~0.67 median (48% >= 0.70) whether 2 or 40 are pasted, near or far -> a flock
+     bird's score is carried by the bird, not its neighbours. Caveat: chips are GT-box crops with a 3px feathered edge,
+     which may erode tightly-boxed birds -- k-independence holds regardless, absolute chip score is a lower bound.
+  0b unmatched >= 0.5 predictions per 100 GT: singles 2.0, 6-10 3.8, 11-20 5.7, 21-50 4.9, >50 10.2; about half are loose
+     GT boxes (IoU 0.05-0.4, e.g. large rays/sharks). Contact sheet: the rest is a mix of faint flock specks and empty water
+     -- missing labels exist but are a few % of birds, not a dominant signal in val labels.
+  Reading so far: H3 (neighbour-context suppression) is minor; H1 as "generalisation from too few dense tiles" is ruled
+  out by 0d; what remains is the model underfitting flock birds themselves (appearance/label ambiguity, capacity, or too
+  little loss weight on them). Phase 1's dense/weighted arms now test "more gradient on flock birds" rather than
+  "more dense examples to generalise from".
 
 ## 52493454 — 2026-11-23 — submit_dense_flock_finetune.sh array 0-9%4 (hpg-b200, 1 GPU, 16 CPU, 8h each) — SUBMITTED
 Why: Ben's core question -- if training is matched to dense flocks, does dense-flock recall improve? Dense-flock Phase 1,

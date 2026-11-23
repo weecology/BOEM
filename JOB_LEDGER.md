@@ -3391,7 +3391,10 @@ Cross-check (boem-9c's 52490803, /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/t
     1: 0.050/0.051  3-5: 0.089/0.090  11-20: 0.135/0.113  21-50: 0.168/0.139  >50: 0.200/0.255 (val n=6)
   box regression likewise 0.118 -> 0.363 (train). Independent confirmation of 0d: the model underfits flock birds on
   its own training tiles.
-Overall: architecture/capacity or label ambiguity, not training distribution. Data matching is worth ~2 pts; resolution
-  ~10. Passed to the architecture chat (boem-d5, branch detector-architecture-comparison) as the dense-flock test.
+Overall (provisional): underfitting is established (0d + loss); training distribution looks like a minor factor, but
+  Phase 1 cannot settle that -- the fine-tune recipe (constant lr 1e-4, last epoch, from a converged checkpoint) cost
+  ~9 pts (equal precision 0.97) / ~14 pts (grid read at 0.978) before sampling acted, so the +2 dense gain sits on a
+  degraded model (point raised by boem-d5). A gentler recipe (lr 1e-5 or decay) or density sampling in a full training
+  run is needed before ruling it out. Resolution is worth ~10 pts with no retraining. Passed to the architecture chat (boem-d5, branch detector-architecture-comparison) as the dense-flock test.
 Next: (a) empty-tile FP + zero-shot check for 1000/1200px inference; (b) train at native resolution (min_size 1000-1200)
   -- one full run, the biggest lever found; (c) double-annotated dense tiles to measure the human ceiling (Ben to OK).

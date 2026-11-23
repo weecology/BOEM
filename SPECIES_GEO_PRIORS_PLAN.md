@@ -169,25 +169,28 @@ Outputs are in `/blue/ewhite/b.weinstein/BOEM/geo_priors/`: `frame_index.csv` (6
   already covered, so it adds nothing. By sub-region: AtlanticNorth 3.89M, MidAtlantic
   0.98M, SouthAtlantic 0.46M, GulfEast 0.53M, GulfWest 0.52M, GreatLakes 0.26M,
   InlandWest 0.17M.
-- **Coverage of the a3dc30a0 classifier crops (58,460 train+val):**
-
-  | Source | Crops | Share |
-  |---|---|---|
-  | Captures (exact coordinates) | 34,284 | 58.6% |
-  | Old-format NYSERDA (NY Bight, region only, 2016–2019) | 16,874 | 28.9% |
-  | Old-format `boemy1` (2018) and `boemy2` (2019–20) | 6,883 | 11.8% |
-  | Unknown (2023-04-25 truncated captures, a few others) | 419 | 0.7% |
-
-  Location is unknown for the `boemy` crops (question for the user). Region is known for
-  87.5% of crops.
-- **The classifier training data is almost entirely Atlantic.**
-  - Gulf: 673 crops (1.2%), only from Feb and Dec, and **none from July**.
-  - Only 13 classes have more than 10 Gulf crops.
-  - So a learned lat/lon encoder (E3) trained on our own crops cannot learn Gulf ranges.
-    At most it learns "Gulf means gulls, terns and pelicans" from 673 examples.
-  - This strengthens the case for an external prior (E2) and GBIF pretraining (E4).
-- **Evaluation data:** the Gulf boxes in Label Studio (about 8.5k, mostly LA/TX in Dec/Feb,
-  plus the July Review queue) are *not* in classifier training. They are the out-of-sample
-  Gulf test set for E1 and E2. Val-split logits for a3dc30a0 are already cached at
-  `/blue/ewhite/b.weinstein/BOEM/classifier_confusion_a3dc30a0_logits.npy`, but those are
-  99% Atlantic.
+- **Reference classifier is 0139af8c** (trained 2026-11-20, on the pool that includes the
+  July 2026 Gulf labels). main's `finetune.yaml` still points at the August checkpoint
+  a3dc30a0, which predates the July labels. Both are tabulated; numbers below are 0139af8c.
+- **Coverage of 0139af8c crops (51,585 train+val):** captures (exact coordinates) 32,011
+  (62%); NYSERDA (NY Bight, region only) 12,476; `boemy1/2` 6,828 and unknown 270 have no
+  location. **`boemy` is ignored by user decision.**
+- **Gulf is 1,005 crops (1.9%):** Feb 346, Jul 454, Dec 205. Only 4 of 73 classes have
+  more than 50 Gulf crops. Royal tern has the most: 334 Gulf vs 711 Atlantic.
+- **Why so few, despite 33.8k human-labelled Gulf boxes in the classifier's classes
+  (1,146 frames)?** All Label Studio annotations *do* reach `training/crops` and the
+  classifier pool. The Gulf boxes are lost downstream:
+  1. They are frame-poor flocks. For example, 490 frigatebird boxes sit in 14 frames, and
+     5,184 royal tern boxes in 148 frames.
+  2. The split is by parent frame, and the class-balance cap is 4× the median count.
+  3. The two-word filter drops coarse labels (`Bird`, `Laridae`, `Sterninae`, `Aves`).
+  (An earlier draft said the Gulf Label Studio labels never reached training. That was
+  wrong; see the 2026-11-23 conversation.)
+- **Evaluation set:** 16,336 human-labelled Gulf boxes in the classifier's classes, in
+  590 frames that are not in 0139af8c's train split (GulfWest 12,274, GulfEast 4,062).
+  The frames are held out, but the flights are not. Top classes: Morus 6,395, Larus
+  argentatus 4,157, Thalasseus maximus 1,626, Chelonioidea 1,190, Phalacrocorax 1,139.
+- **Implication for E3:** a lat/lon encoder trained only on our crops sees 1,005 Gulf
+  examples. It can learn little range information from that, which strengthens the case
+  for E2 and E4. A cheap side experiment: **cap per region × class rather than per class**,
+  so dense Gulf flocks are not downsampled away.

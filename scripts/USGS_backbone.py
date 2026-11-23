@@ -215,8 +215,9 @@ if args.smoke is not None:
     smoke_zeroshot_csv = f"{smoke_dir}/zero_shot.csv"
     _tiles(pd.read_csv(os.path.join(savedir, "zero_shot.csv"), low_memory=False), args.smoke).to_csv(
         smoke_zeroshot_csv, index=False)
-    args.epochs, args.n_log_images = 1, 2
-    print(f"SMOKE: {args.smoke} tiles per split in {smoke_dir}, 1 epoch")
+    # 3 epochs so the every-3rd-epoch box-metric validation runs too.
+    args.epochs, args.n_log_images = 3, 2
+    print(f"SMOKE: {args.smoke} tiles per split in {smoke_dir}, 3 epochs")
 
 # Print the number of empty images in train and test sets
 if "empty_image" not in train.columns:
@@ -374,6 +375,11 @@ if not isinstance(_run_id, str):
 def _log_prediction_images(model, ann_df, image_root, context, n_images, tmpdir):
     """Run predict_image on n sample non-empty images and log overlays to Comet."""
     if ann_df is None or ann_df.empty:
+        return
+    if devices > 1:
+        # predict_image goes through the DDP trainer: one image leaves the other ranks with an
+        # empty DataLoader, which raises on those ranks and deadlocks rank 0 (job 52507234).
+        print(f"Skipping {context} prediction images on {devices} GPUs (single-image predict is not DDP-safe)")
         return
     if "empty_image" in ann_df.columns:
         candidates = ann_df[~ann_df["empty_image"]]

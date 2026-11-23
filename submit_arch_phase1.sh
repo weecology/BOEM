@@ -31,4 +31,5 @@ case $SLURM_ARRAY_TASK_ID in
           --gradient-clip 0.1 --monitor val_loss --exp-name arch_p1_deformable_detr) ;;
 esac
 nvidia-smi -L
-srun .venv/bin/python -u scripts/USGS_backbone.py "${COMMON[@]}" "${ARM[@]}"
+# SMOKE=N (sbatch --export=ALL,SMOKE=512): same arms and DDP layout on N tiles per split, 3 epochs, scratch dir.
+srun .venv/bin/python -u scripts/USGS_backbone.py "${COMMON[@]}" "${ARM[@]}" ${SMOKE:+--smoke $SMOKE}

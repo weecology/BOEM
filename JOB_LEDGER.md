@@ -3359,3 +3359,39 @@ precision 0.978), plus the NON-TRAINING remainder of Feb 2022 cap-probe frames (
 predict_tile 1000/0 -- validation-like (same flights), NOT zero-shot.
 Read: dense/weighted vs random at matched precision, per stratum, with the single-bird stratum as the cost.
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/phase1/
+
+## 52491503 + 52493454 — 2026-11-23 — dense-flock Phase 0 (0c) and Phase 1 results — CHECKED
+Result (52491503), COMPLETED 43m57s, exit 0:0. 0c VALIDATION recall at equal OVERALL precision (interpolated between
+  0.05-grid thresholds -- the grid alone mis-buckets native1000 at 97.79% vs target 97.8%), c6ecec12, no retraining:
+    prec 0.970   all   1    3-5  11-20 21-50 >50      prec 0.978   all   1    11-20 21-50
+    base800      55.4 70.0 52.9 39.0  34.8  14.5      base800      46.6 62.2 31.0  27.3
+    native1000   62.4 77.4 61.0 44.2  41.3  18.6      native1000   52.5 69.5 34.2  29.8
+    up1200       66.7 81.5 66.6 49.2  44.5  16.7      up1200       57.5 74.4 38.6  34.0
+    nms020       52.9 67.7 50.1 36.8  32.6  13.7      (NMS 0.2 is worse everywhere)
+  Resolution is a real lever (+11 pts overall at 1200px, inference only), relatively larger in flocks (21-50: +28% rel
+  vs singles +16%) but it does not close the density gap. Precision here is on GT tiles; empty-tile FP and zero-shot
+  not checked yet -- needed before any production change (1200px also costs ~2.25x pixels).
+Result (52493454), tasks 0-7 COMPLETED (10-38 min each), 8-9 (weighted s1, s2) still RUNNING. VALIDATION recall at
+  overall precision 0.97, interpolated, mean of 3 seeds (sd <= 0.007):
+              all   1     3-5   6-10  11-20 21-50 >50
+    none      55.4  70.0  52.9  45.1  39.0  34.8  14.5
+    random    46.6  61.4  42.9  36.3  32.2  27.2  10.0   <- control
+    dense     46.9  60.1  44.2  37.8  34.4  29.3   8.7
+    weighted  45.8  60.4  42.1  36.0  32.6  25.5   7.2   (seed 0 only)
+  (1) Fine-tuning itself hurts: every arm, the random control included, loses ~9 pts vs no fine-tune (8 epochs, SGD lr
+  1e-4, 6% subset -- an optimisation artifact, so compare arms only against random). (2) dense vs random: +1.5 to +2.2
+  pts at 6-50 birds/tile (5-7x the seed sd -> real), -1.3 on singles. (3) weighted ~= random. Density-matched training
+  gives a small real flock gain, an order smaller than the 35-pt density gap and smaller than the resolution effect.
+  feb2022 non-training frames (55 frames, 514 real birds, VALIDATION-like): dense 38.5-40.3 vs random 34.8-37.0 vs none
+  34.0 recall @0.70 at ~equal precision (87-88%) -- same direction. flock_test numbers are INVALID: its non-training
+  frames are 1,675 FalsePositive rows + 79 birds; scoring treated rejected boxes as GT. Script now drops FalsePositive
+  rows and no longer scores flock_test.
+Cross-check (boem-9c's 52490803, /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv): median per-tile focal
+  classification loss (torchvision normalises by positive anchors) rises with birds/tile and TRAIN ~= VAL:
+    1: 0.050/0.051  3-5: 0.089/0.090  11-20: 0.135/0.113  21-50: 0.168/0.139  >50: 0.200/0.255 (val n=6)
+  box regression likewise 0.118 -> 0.363 (train). Independent confirmation of 0d: the model underfits flock birds on
+  its own training tiles.
+Overall: architecture/capacity or label ambiguity, not training distribution. Data matching is worth ~2 pts; resolution
+  ~10. Passed to the architecture chat (boem-d5, branch detector-architecture-comparison) as the dense-flock test.
+Next: (a) empty-tile FP + zero-shot check for 1000/1200px inference; (b) train at native resolution (min_size 1000-1200)
+  -- one full run, the biggest lever found; (c) double-annotated dense tiles to measure the human ceiling (Ben to OK).

@@ -49,9 +49,9 @@ SMOKE = bool(os.environ.get("SMOKE"))  # CPU, a few steps, outputs under phase1/
 EXTERNAL = {
     "feb2022": (Path("/blue/ewhite/b.weinstein/BOEM/detection_cap_probe/feb2022/train_annotations.csv"),
                 Path("/blue/ewhite/b.weinstein/BOEM/detection_cap_probe/feb2022/images")),
-    "flock_test": (Path("/blue/ewhite/b.weinstein/src/BOEM/flock_dataset/test_annotations.csv"),
-                   Path("/blue/ewhite/b.weinstein/src/BOEM/flock_dataset/images")),
 }
+# flock_dataset test is NOT used: its non-training frames hold 1,675 FalsePositive (annotator-rejected) boxes
+# and only 79 real birds, so its "dense flocks" are mostly dense false positives (job 52493454).
 if SMOKE:
     OUT = OUT / "smoke"
     EPOCHS, BATCH = 1, 2
@@ -147,6 +147,7 @@ def score(m, arm: str, seed: int) -> None:
     for name, (csv, img_dir) in EXTERNAL.items():
         ext = pd.read_csv(csv)
         ext["image_path"] = ext.image_path.map(lambda x: Path(x).name)
+        ext = ext[ext.label != "FalsePositive"]
         ext = ext[~ext.image_path.map(lambda x: Path(x).stem).isin(train_parents)]
         frames = sorted(set(ext.image_path))[: 1 if SMOKE else None]
         ext = ext[ext.image_path.isin(frames)]

@@ -114,6 +114,16 @@ parser.add_argument(
     default=None,
     help="Plumbing test: N random tiles each from train / val / zero-shot, 1 epoch, no Comet upload of a real run.",
 )
+parser.add_argument(
+    "--monitor",
+    default="val_classification",
+    help="Validation loss for early stopping, checkpoint names and ReduceLROnPlateau. Transformers DETRs "
+         "log val_loss / val_loss_ce, not val_classification.",
+)
+parser.add_argument("--zero-shot-csv", default=None, help="Override the zero-shot CSV (default crops/zero_shot.csv).")
+parser.add_argument("--checkpoint-root", default="/blue/ewhite/b.weinstein/BOEM/training/checkpoints",
+                    help="Checkpoints go to <root>/<comet id>/.")
+parser.add_argument("--save-top-k", type=int, default=-1, help="-1 keeps every epoch (production default).")
 args = parser.parse_args()
 DEFAULT_WEIGHTS = {
     "retinanet_dinov3": "facebook/dinov3-vitl16-pretrain-sat493m",
@@ -267,7 +277,7 @@ m.config["train"]["scheduler"]["params"]["mode"] = "min"
 m.config["train"]["scheduler"]["params"]["patience"] = 3
 m.config["train"]["scheduler"]["params"]["factor"] = 0.5
 m.config["train"]["scheduler"]["params"]["eps"] = 0
-m.config["validation"]["lr_plateau_target"] = "val_classification"
+m.config["validation"]["lr_plateau_target"] = args.monitor
 m.config["train"]["lr"] = args.lr
 m.config["train"]["optimizer"]["type"] = args.optimizer
 m.config["train"]["optimizer"]["weight_decay"] = args.weight_decay
@@ -318,6 +328,7 @@ comet_logger.experiment.log_parameter("architecture", args.architecture)
 comet_logger.experiment.log_parameter("weights", args.weights or DEFAULT_WEIGHTS.get(args.architecture, "weecology/deepforest-bird"))
 comet_logger.experiment.log_parameter("optimizer", args.optimizer)
 comet_logger.experiment.log_parameter("cosine", args.cosine)
+comet_logger.experiment.log_parameter("monitor", args.monitor)
 comet_logger.experiment.log_parameter("precision", args.precision)
 comet_logger.experiment.log_parameter("freeze_backbone", args.freeze_backbone)
 comet_logger.experiment.log_parameter("train_csv", train_csv_path)
@@ -410,7 +421,7 @@ def _log_prediction_images(model, ann_df, image_root, context, n_images, tmpdir)
 
 
 # Pre-training zero-shot evaluation: metrics + sample prediction images on held-out flights
-zeroshot_csv = smoke_zeroshot_csv or os.path.join(savedir, "zero_shot.csv")
+zeroshot_csv = smoke_zeroshot_csv or args.zero_shot_csv or os.path.join(savedir, "zero_shot.csv")
 zero_shot_df = pd.read_csv(zeroshot_csv, low_memory=False) if os.path.exists(zeroshot_csv) else None
 if zero_shot_df is not None and "empty_image" not in zero_shot_df.columns:
     zero_shot_df["empty_image"] = (
@@ -468,7 +479,7 @@ callbacks.append(RecordInputSize())
 if args.early_stopping_patience is not None:
     callbacks.append(
         EarlyStopping(
-            monitor="val_classification",
+            monitor=args.monitor,
             mode="min",
             patience=args.early_stopping_patience,
             verbose=True,
@@ -487,14 +498,18 @@ callbacks.append(
 )
 
 checkpoint_dir = (f"{smoke_dir}/checkpoints" if args.smoke is not None
-                  else f"/blue/ewhite/b.weinstein/BOEM/training/checkpoints/{_run_id}")
+                  else f"{args.checkpoint_root}/{_run_id}")
 os.makedirs(checkpoint_dir, exist_ok=True)
 callbacks.append(
     ModelCheckpoint(
         dirpath=checkpoint_dir,
-        filename="epoch{epoch:02d}-val_cls{val_classification:.4f}",
+        # val_cls naming kept for the R50 default: threshold/compare scripts parse it.
+        filename=("epoch{epoch:02d}-val_cls{val_classification:.4f}" if args.monitor == "val_classification"
+                  else f"epoch{{epoch:02d}}-{args.monitor}{{{args.monitor}:.4f}}"),
         auto_insert_metric_name=False,
-        save_top_k=-1,
+        save_top_k=args.save_top_k,
+        monitor=args.monitor,
+        mode="min",
         every_n_epochs=1,
         save_last=True,
     )

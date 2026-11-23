@@ -3425,3 +3425,13 @@ first epochs don't OOM at batch 64. Then score min-val_cls epoch vs c6ecec12 (pr
 eval_detection_checkpoint.py (VALIDATION, pooled) + density_strata.py at interpolated equal precision, and on
 dense_flock/phase0/0d_train_sample.csv (fit on its own training tiles). val_cls is NOT comparable across scales; select within run only.
 Result: PENDING
+
+## 52502538 — 2026-11-23 — submit_zero_shot_input_size.sh (hpg-b200, 1 GPU, 8 CPU, 4h), branch detector-architecture-comparison @8c536b2
+Why: Ben: input size may be another recall/precision trade-off axis, so run the zero-shot check. Production c6ecec12/epoch27,
+inference only, swept by threshold_sweep.py (new --input-size override) on the pinned holdout (JPG_20260202_141900 +
+JPG_20260201_134000, IoU 0.4, 2000-frame seeded unscreened queue sample) at 800 (must reproduce 52121265: 59.0 / 85.4 /
+96.2 / 1.5 @0.70), 1000 (native) and 1200 (upsampled). Validation side (dense-flock 0c): 55.4 / 62.4 / 66.7 recall at
+equal precision 0.97; empty-val-tile FP rate @0.60 0.05 / 0.14 / 0.22%.
+Next: ZERO-SHOT box recall/precision and queue boxes per 1k frames at 0.60 and 0.70, and at matched precision, per size.
+Labelled separately from validation. Outputs: /blue/ewhite/b.weinstein/BOEM/zero_shot_input_size/.
+Result: PENDING

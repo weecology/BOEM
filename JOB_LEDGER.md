@@ -3468,3 +3468,16 @@ cosine, bf16-mixed, clip 1.0); (3) Deformable DETR, COCO init (AdamW 1e-4, wd 1e
 Next: each arm "exit 0" with a checkpoint; bf16 validation does not crash (old .numpy() bug); it/s and peak GPU memory
 (arch_smoke_<id>_gpumem.csv) -> batch size and epoch-time estimate for Phase 1. Numbers from 512 tiles are not results.
 Result: PENDING
+
+## (no job) — 2026-11-23 — H-CAST promotion: 52121226 wired into production
+Why: Ben: promote 52121226 -- it covers 5 more flat classes at no real accuracy tradeoff (77.37 vs 77.56 Species@1 on
+  different val sets; no fair head-to-head was run).
+Changes: built output/usgs_hier/run_52121226/species.csv with build_hcast_label_csv.py off the 0139af8c split (72 rows,
+  51 genus / 21 family). hierarchical.yaml checkpoint + label_csv now point INTO run_52121226/ (md5 9d4a9821...) rather
+  than overwriting output/usgs_hier/best_checkpoint.pth, so the previous 40306075 files stay intact for running jobs and
+  rollback is two config lines.
+Verified: Hydra compose + load_hcast_model on CPU, heads 72/51/21, forward (B,72)/(B,51)/(B,21), species_71 =
+  Chelonioidea sp. Flat 0139af8c val classes H-CAST cannot name: only Columba livia (absent from taxonomy.json).
+  Not run: end-to-end pipeline on a flight. H-CAST outputs aren't in the full-flight cache stamp -- check whether
+  cached flights re-predict before trusting old caches' hcast_* columns.
+Next: score both checkpoints on the 1,612 new-val boxes neither trained on, for the record.

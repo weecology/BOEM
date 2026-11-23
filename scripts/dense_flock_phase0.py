@@ -8,6 +8,9 @@ Validation (in-distribution) tiles only; nothing here is zero-shot.
   0b label audit  -- confident predictions that match no GT, by density, on VALIDATION tiles
                      (the model has fitted to its own training labels, so training tiles would
                      hide missing labels). Writes contact sheets for eyeballing.
+  0d train fit    -- the same density strata on a stratified sample of TRAINING tiles. Low dense
+                     recall on tiles the model was fitted to means it cannot fit flocks
+                     (capacity or label conflict), not that it lacks dense examples.
   0c re-predict   -- full validation set at 800px (production), 1000px (native), 1200px
                      (upsampled) and NMS 0.2, each scored by density stratum.
 
@@ -31,6 +34,7 @@ from density_strata import CROPS, density, is_empty, load_gt, report, strata_tab
 CKPT = ("/blue/ewhite/b.weinstein/BOEM/training/checkpoints/c6ecec12e078416c9fe645c89bc418cf/"
         "epoch27-val_cls0.0867.ckpt")
 VAL = CROPS / "test_max_empty_0_25.csv"
+TRAIN = CROPS / "train_max_empty_0_10.csv"
 OUT = Path("/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0")
 KS = [0, 2, 5, 10, 20, 40]
 # SMOKE=1: tiny samples on CPU, outputs under phase0/smoke, to check the script end to end.
@@ -266,6 +270,26 @@ def label_audit(m, gt: pd.DataFrame, n_singles: int = 300) -> None:
     print(f"0b: contact sheets in {sheets}")
 
 
+# ---------------------------------------------------------------- 0d training-set fit
+def train_fit(m, per_bin: int = 1000) -> None:
+    """Density strata on TRAINING tiles (up to per_bin tiles per stratum, seed 0) at 800px."""
+    gt = load_gt(TRAIN)
+    dens = density(gt[~is_empty(gt)])
+    tiles = pd.concat([s.sample(min(4 if SMOKE else per_bin, len(s)), random_state=0)
+                       for _, s in dens.groupby(dens, observed=True)]).index
+    sub = gt[gt.image_path.isin(tiles)]
+    csv = OUT / "0d_train_sample.csv"
+    sub.to_csv(csv, index=False)
+    m.model.score_thresh = 0.3
+    p = m.predict_file(csv_file=str(csv), root_dir=str(CROPS))
+    p["image_path"] = p.image_path.map(lambda x: Path(x).name)
+    p.to_csv(OUT / "0d_train_predictions.csv", index=False)
+    table = strata_table(p, sub)
+    table.to_csv(OUT / "0d_train.density_strata.csv", index=False)
+    print(f"\n######## 0d TRAINING-tile fit ({len(tiles):,} tiles, stratified; 'all' is NOT a population number) ########")
+    report(table)
+
+
 # ---------------------------------------------------------------- 0c re-predict
 def repredict(m, gt: pd.DataFrame) -> None:
     variants = {"base800": (800, 800, 0.05), "native1000": (1000, 1000, 0.05),
@@ -303,4 +327,5 @@ if __name__ == "__main__":
     gt = load_gt(VAL)
     paste_test(m, gt)
     label_audit(m, gt)
+    train_fit(m)
     repredict(m, gt)

@@ -3302,7 +3302,7 @@ Result (52487621), checked 2026-11-23: COMPLETED 41m14s, exit 0:0, but TRAIN LOS
 Why: rerun of 52487621 with the hook bug fixed. Val should reproduce 52487621's val numbers exactly.
 Next: upload --per-split 50 --dry-run, show Ben, then upload to Review.
 
-## 52491391 — 2026-11-23 — submit_dense_flock_phase0.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 6h) — SUBMITTED
+## 52491391 -> 52491503 — 2026-11-23 — submit_dense_flock_phase0.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 6h) — SUBMITTED
 Why: Ben: find out whether dense-flock under-detection comes from architecture, training data or augmentation.
 Offline baseline (no job, saved 52344877 predictions; new scripts/density_strata.py): VALIDATION pooled recall @0.70 falls
 1 bird/tile 61% -> 3-5 42% -> 11-20 30% -> 21-50 27% -> >50 9% (6 tiles), precision 95-98% at every density; matched-TP
@@ -3317,6 +3317,12 @@ This job (scripts/dense_flock_phase0.py, all VALIDATION tiles, nothing zero-shot
   0b label audit: unmatched >= 0.5 predictions on all 590 val tiles with >= 6 birds vs 300 single-bird tiles; separates
      loose GT boxes (IoU 0.05-0.4) from no-GT-nearby; contact sheets in phase0/0b_sheets/.
   0c full val re-predicted at 800 (production), 1000 (native), 1200 (upsampled), and NMS 0.2; density strata each.
+  0d (added): same strata on TRAINING tiles (<= 1000 per stratum, seed 0). Low dense recall on fitted tiles = cannot fit
+     flocks (capacity / conflicting labels), not too few dense examples. CPU smoke (4 tiles/stratum): @0.70 21-50 19%, >50 4%.
+52491391 CANCELLED while pending to add 0d; resubmitted as 52491503.
+Also found: the external dense sets are mostly TRAINING frames -- Feb 2022 cap-probe frames 1,053 of 1,108 share a
+  bname_parent with train (43 with val), flock_dataset test 44 of 80. Only the non-train remainder (55 / 36 frames) can
+  score fine-tuned arms, and it is validation-like (same flights), not zero-shot.
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/
 Read: near-k score drop with flat far/background -> learned local-context suppression (H3 or H2-taught); 0b mostly real
   birds -> missing labels (H2); 0c res gain concentrated in dense strata -> resolution/size lever.

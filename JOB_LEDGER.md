@@ -3150,6 +3150,13 @@ Result (52121225, flat), checked 2026-11-20: COMPLETED 3h21m, exit 0:0, clean st
   21 train / 13 val rows), ~29 min/epoch -> ~48h for 100 epochs, inside 72h.
   Detection 52121224 at 20:45: epoch03 val_cls 0.1131, ~47 min/epoch -> all 30 epochs would end ~17:10 on 11-21 vs the
   24h limit at 17:23. TIMEOUT would fail afterok and leave YOLO compare 52121265 never starting.
+Result (52121226, H-CAST), checked 2026-11-23: COMPLETED 2026-11-22 15:29, 1d18h40m, all 100 epochs, exit 0:0, stderr only
+  warnings. Trained on the 0139af8c split (train 210,906 incl. 163,327 higher-taxon rows, val 3,972), heads 72/51/21.
+  Best Species@1 77.37 (ep97; Species@5 93.2, Genus@1 81.8, Family@1 87.9). Production run_40306075: 77.56 / ~94 / ~84 / ~91
+  on the 2b27e044 val with 72/50/18 heads -- DIFFERENT val set and hierarchy, not comparable. Head-to-head on the new val is
+  LEAKY in production's favour: 2,639 of 3,985 0139af8c val crops (image_path) are in the 2b27e044 train split.
+  Checkpoint output/usgs_hier/run_52121226/best_checkpoint.pth; no species.csv built yet. Not promoted.
+Next: build species.csv (build_hcast_label_csv.py off the 0139af8c split); score both on a common set before promoting.
 
 ## 52121265 — 2026-11-20 — submit_compare_yolo26_refresh.sh, afterok:52121224 (hpg-b200, 1 GPU) — SUBMITTED
 Why: Ben: when the 11-20 refresh detector (52121224) finishes, redo the YOLO26s comparison (51996709/51998927, branch

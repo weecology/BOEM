@@ -3154,7 +3154,10 @@ Result (52121226, H-CAST), checked 2026-11-23: COMPLETED 2026-11-22 15:29, 1d18h
   warnings. Trained on the 0139af8c split (train 210,906 incl. 163,327 higher-taxon rows, val 3,972), heads 72/51/21.
   Best Species@1 77.37 (ep97; Species@5 93.2, Genus@1 81.8, Family@1 87.9). Production run_40306075: 77.56 / ~94 / ~84 / ~91
   on the 2b27e044 val with 72/50/18 heads -- DIFFERENT val set and hierarchy, not comparable. Head-to-head on the new val is
-  LEAKY in production's favour: 2,639 of 3,985 0139af8c val crops (image_path) are in the 2b27e044 train split.
+  LEAKY in production's favour: 2,373 of 3,985 0139af8c val BOXES (image_path + coords) are in the 2b27e044 train split
+  (2,639 share a tile, 3,096 a parent frame) -- the 11-20 refresh re-split from scratch. Each split is clean on its own at
+  box level (2b27e044 0 boxes, 0139af8c 8 -- same box, conflicting labels), but ~250 tiles / ~1,000 parent-frame rows sit on
+  both sides of each split (neighbouring birds in one frame), so both val scores are somewhat optimistic.
   Checkpoint output/usgs_hier/run_52121226/best_checkpoint.pth; no species.csv built yet. Not promoted.
 Next: build species.csv (build_hcast_label_csv.py off the 0139af8c split); score both on a common set before promoting.
 

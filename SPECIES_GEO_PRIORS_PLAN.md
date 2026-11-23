@@ -56,26 +56,28 @@ false positives.
 
 ## 2. Data facts that shape the design
 
-Flights with `*_captures.csv` in `metadata_aflight_csvs/` (223 flights), by median
-position:
+Flights with `*_captures.csv` in `metadata_aflight_csvs/`: 255 after the 2026-11-23 Globus
+transfer (25 new flights, 75 new files, no existing file modified). Grouped by median position:
 
 | Region | Flights | Months covered |
 |---|---|---|
-| Atlantic (NC–ME) | 199 | every month |
-| Gulf (LA/TX) | 13 | Nov, Dec, Feb only |
-| Great Lakes (Green Bay, 2021) | 11 | Nov–Dec |
-| Nevada (2021) | 7 | Mar |
+| Atlantic (FL east coast to ME) | 200 | every month except Oct |
+| Gulf | 35 | Jan, Feb, Dec (LA/TX); **Jul 2026 (20 flights, FL Panhandle to the Keys)** |
+| Great Lakes (Green Bay, 2021) | 12 | Nov–Dec |
+| Nevada/Idaho | 8 | Mar, Dec |
 
-- **The July 2026 Gulf survey (20 flights) has `.aflight` files but no captures CSV.** That
-  is the survey with the eider problem, and today it cannot get coordinates. 50 aflights in
-  `metadata/aflights/` have no CSV. Among them are the 4 flights that
-  `missing_metadata_for_usgs.md` asks USGS for. Those arrived on 2026-08-18, so that
-  request doc is out of date.
-  Format: UTF-16 XML (`<FlightEntity Format="Compact25">`). No converter exists in this
-  repo; the earlier conversion was done elsewhere.
-- **Region and season are confounded.** Gulf flights are winter-only (plus the unlabelled
-  July set), while Atlantic flights cover the whole year. A learned lat/lon/day encoder
-  trained on 13 Gulf flights can memorize flight identity instead of learning range. Any
+- **The July 2026 Gulf survey now has coordinates** (Globus, 2026-11-23). Join check:
+  more than 99.9% of the frames in its image folders match a captures `Basename`. Those
+  July flights run along the eastern Gulf (Florida), not LA/TX, so "Gulf" covers two
+  sub-regions.
+- Two aircraft fly on the same day (SEABIRD1 in the Gulf, SEABIRD2 in Maine on
+  2025-01-25). Group by `flights.csv` Asset plus Folder, never by date alone.
+- 26 aflights still have no CSV: 2017–2018, 2022, 2023-04/06, `20241219_120500/131500/150200`,
+  `20250217_115700`, `20260202_141900`, and `20260203_094600/142000`. Coordinates for these
+  would have to come from the `.aflight` XML. Low priority unless they hold labelled crops.
+- **Region and season are still partly confounded.** Gulf flights cover only Dec–Feb and
+  July, while Atlantic flights cover the whole year. A learned lat/lon/day encoder
+  trained on 35 Gulf flights can memorize flight identity instead of learning range. Any
   learned-metadata experiment must split by flight.
 - Label Studio labels with a resolvable region: 8.5k Gulf and 6.1k Atlantic. 17k (54%) use
   old flight naming and do not resolve yet. *Somateria* has 82 Atlantic labels and 1 Gulf.

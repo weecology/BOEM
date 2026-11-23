@@ -3301,3 +3301,24 @@ Result (52487621), checked 2026-11-23: COMPLETED 41m14s, exit 0:0, but TRAIN LOS
 ## 52490803 — 2026-11-23 — submit_high_loss_tiles.sh c6ecec12/epoch27, rerun after the train-zero fix — SUBMITTED
 Why: rerun of 52487621 with the hook bug fixed. Val should reproduce 52487621's val numbers exactly.
 Next: upload --per-split 50 --dry-run, show Ben, then upload to Review.
+
+## 52491391 — 2026-11-23 — submit_dense_flock_phase0.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 6h) — SUBMITTED
+Why: Ben: find out whether dense-flock under-detection comes from architecture, training data or augmentation.
+Offline baseline (no job, saved 52344877 predictions; new scripts/density_strata.py): VALIDATION pooled recall @0.70 falls
+1 bird/tile 61% -> 3-5 42% -> 11-20 30% -> 21-50 27% -> >50 9% (6 tiles), precision 95-98% at every density; matched-TP
+median score 0.79 -> 0.63. Holds within box-size bands and within each of the 6 largest sources. Anchor starvation
+cleared: torchvision matcher on 2,800 train tiles gives 0-1% (single) vs 1-4% (dense) GT with zero positive anchors.
+NMS 0.05 cleared: 3-5% of GT overlap a neighbour > IoU 0.05 (except >50 tiles, 18%). Batch composition already
+saturated (train is 90% non-empty). Separate size effect: 18-35px birds get ~3 positive anchors vs 20-30 above 35px.
+This job (scripts/dense_flock_phase0.py, all VALIDATION tiles, nothing zero-shot):
+  0a paste test: 300 single-bird targets (base score >= 0.3), k = 0/2/5/10/20/40 chips pasted near (real-flock spacing,
+     3.0 box sides), far (>= 300px) or background-only. Chips from OTHER tiles of the target's own parent frame; first
+     smoke used cross-survey chips and was all paste artifact (brown rectangles on blue water) -- fixed before submit.
+  0b label audit: unmatched >= 0.5 predictions on all 590 val tiles with >= 6 birds vs 300 single-bird tiles; separates
+     loose GT boxes (IoU 0.05-0.4) from no-GT-nearby; contact sheets in phase0/0b_sheets/.
+  0c full val re-predicted at 800 (production), 1000 (native), 1200 (upsampled), and NMS 0.2; density strata each.
+Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/
+Read: near-k score drop with flat far/background -> learned local-context suppression (H3 or H2-taught); 0b mostly real
+  birds -> missing labels (H2); 0c res gain concentrated in dense strata -> resolution/size lever.
+Next: Phase 1 fine-tune arms (random / >= 6 birds / density-weighted sampler) from c6ecec12, fixed steps, 3 seeds, scored
+  per stratum at matched precision (0.978) with density_strata.py.

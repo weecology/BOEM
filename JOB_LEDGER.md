@@ -3275,3 +3275,22 @@ Result (52348607), checked 2026-11-23: COMPLETED 41m44s, exit 0:0, MaxRSS 17.7GB
   Outputs: /blue/ewhite/b.weinstein/BOEM/review_load_by_threshold/{summary,predictions}_*.csv
 Next: spot-check the 0.60-0.70 band boxes (real birds vs foam/glint) before choosing 0.60; larger sample if the
   0.60 vs 0.70 difference has to be pinned down.
+
+## (no job) — 2026-11-23 — PROMOTED detector c6ecec12/epoch27; detection gates 0.70 -> 0.60
+Why: Ben, after 52348607 (review load) and 52121265/52344877 (zero-shot / validation). boem_config.yaml:
+detection_model.checkpoint -> c6ecec12e078416c9fe645c89bc418cf/epoch27-val_cls0.0867.ckpt; predict.min_score,
+active_learning.min_detection_score, human_review.min_detection_score, active_testing.min_score all 0.70 -> 0.60.
+Expected July review load at 0.60 for c6ecec12: ~1,815 frames / 2,136 boxes (vs 854 / 1,068 at 0.70), +/-40%.
+Pool caches are keyed on detector checkpoint and min_score, so every flight re-predicts on its next run.
+Next: eyeball the 0.60-0.70 band for foam on the first re-run July flight.
+
+## 52487621 — 2026-11-23 — submit_high_loss_tiles.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU) — SUBMITTED
+Why: Ben: clean the training data -- find the 100 highest-loss tiles across the detector's training and validation
+tiles and post them to Label Studio for annotators. New scripts/find_high_loss_tiles.py: the training loss itself
+(RetinaNet focal classification + box regression), per tile, no augmentation, BatchNorm frozen, on
+train_max_empty_0_10.csv (the file c6ecec12 trained on) and test_max_empty_0_25.csv (its validation file).
+Verified on 6 tiles that the per-tile losses average exactly to torchvision's batch loss.
+Output: /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv (all tiles, ranked).
+Next: `find_high_loss_tiles.py upload --top 100 --dry-run`, then upload to the Review project (comet_id
+high_loss_c6ecec12; GT species in the dropdown). Train and val ranked together, so val (unseen) may dominate --
+check the split mix before uploading.

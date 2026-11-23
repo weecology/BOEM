@@ -3503,7 +3503,14 @@ for 30 epochs at 1000 px, Phase 1 recipes: R50 (positive control, bs 16, lr 1e-3
 Deformable DETR (AdamW 1e-4 wd 1e-4 cosine clip 0.1, monitor val_loss). Checkpoints top-1 only, in overfit/checkpoints/.
 Next: map / box_recall on the fitted tiles rising for every arm (R50 should be near-perfect). An arm that stays near 0 gets
 fixed before Phase 1. These are fit numbers on training tiles, not validation.
-Result: PENDING
+Result (52505453), checked 2026-11-23: COMPLETED 25m54s, exit 0:0 overall, but the DINOv3 arm exited 1. FIT on its own 256
+  tiles (DeepForest validate(), score_thresh 0.4; training-tile fit, not validation), before -> after 30 epochs:
+    R50 RetinaNet    box_recall 0.317 -> 0.882, box_prec 0.949 -> 0.942, map_50 0.233 -> 0.633
+    Deformable DETR  box_recall 0.015 -> 0.806, box_prec 0.000 -> 0.919, map_50 0.004 -> 0.630   => DETR learns; setup OK
+    DINOv3           CRASHED at the epoch-5 ImagesCallback: no predictions >= 0.4 yet after 80 steps -> empty DataFrame
+                     with no image_path (DeepForest callbacks.py _log_last_predictions bug). Not evidence it can't learn.
+  Fixed in USGS_backbone.py (SafeImagesCallback skips such epochs). Phase 1 task 0 (52507234_0) had already started on the
+  old code, but on full data it should predict >= 0.4 long before its epoch-5 callback; DINOv3-only overfit rerun below.
 
 ## 52507234 — 2026-11-23 — submit_arch_phase1.sh array 0-1 (hpg-b200, 2 GPU DDP each, 12 CPU/task, 240GB, 36h), branch detector-architecture-comparison @f9c3e71
 Why: [architecture comparison, Phase 1] Ben: 2 B200 per arm, 15 epochs; submitted before the overfit check 52505453
@@ -3516,4 +3523,9 @@ Next: if 52505453 shows an arm not learning on its own training tiles, cancel th
 the monitored val loss, then VALIDATION (eval_detection_checkpoint.py, pooled), ZERO-SHOT (threshold_sweep.py) and
 density_strata.py on val + dense_flock/phase0/0d_train_sample.csv, against c6ecec12 (at 1000 px, the dense-flock chat's
 0c numbers) at interpolated equal precision. Labelled separately.
+Result: PENDING
+
+## 52509099 — 2026-11-23 — ARMS=retinanet_dinov3 submit_arch_overfit.sh (hpg-b200, 1 GPU, 3h), branch detector-architecture-comparison @876d217
+Why: rerun of 52505453's DINOv3 arm with the ImagesCallback crash fixed: does DINOv3 fit its own 256 training tiles?
+Next: if box_recall/map_50 stay near 0 after 30 epochs, cancel 52507234_0 (Phase 1 DINOv3) and debug lr/init first.
 Result: PENDING

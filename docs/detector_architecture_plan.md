@@ -42,13 +42,13 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
   ceiling, and at the production gate **0.60** (moved from 0.70 on 2026-11-23 with c6ecec12), not only at a fixed threshold (score calibration differs between architectures).
 - Also: recall by box size (<16, 16-32, >32 px) and inference cost (frames/s on a full flight, since surveys are ~500k frames).
 - **Equal precision is interpolated** between grid thresholds, not density_strata.py's 0.05-grid pick (mis-buckets
-  near the target; interpolated version coming from the dense-flock chat).
+  near the target; fixed in 9bd5e54).
 - **Do not use `flock_dataset/` as a dense-bird set** without dropping `label == "FalsePositive"`: its non-training test
   frames hold 1,675 FalsePositive boxes vs 79 birds. Feb 2022 cap-probe frames are clean (`Object`) but mostly training frames.
 - Underfitting test: focal cls loss on TRAIN tiles rises 0.050 (singles) -> 0.168 (21-50 birds), same as val
   (`/blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv`). Score each candidate on its own dense training tiles.
 - **Dense flocks** (agreed with the dense-flock chat, 2026-11-23): score raw predictions (score_thresh <= 0.3) with
-  `scripts/density_strata.py <predictions.csv> [gt.csv]` (from dense-flock-diagnostics commit 55a7050) on the validation
+  `scripts/density_strata.py <predictions.csv> [gt.csv]` (from dense-flock-diagnostics commit 9bd5e54, interpolated equal precision + @0.60) on the validation
   set AND on the training-tile sample `/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/0d_train_sample.csv`.
   Reports @0.40/@0.70 and at matched overall precision 0.978. Baseline c6ecec12 @0.70 train/val recall: 29/30% at
   11-20 birds/tile, 24/27% at 21-50 (vs 61% on 1-bird tiles), i.e. R50 underfits flock birds even on its own training

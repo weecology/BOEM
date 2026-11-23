@@ -9,6 +9,7 @@ empty-tile false positives are reported separately.
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from deepforest import evaluate
 
@@ -74,21 +75,31 @@ def strata_table(preds: pd.DataFrame, gt: pd.DataFrame, thresholds=THRESHOLDS) -
 
 
 def matched_precision(table: pd.DataFrame, target: float) -> tuple[float, pd.DataFrame]:
-    """Lowest grid threshold whose overall precision reaches target, and the strata there."""
-    overall = table[table.dens == "all"]
-    ok = overall[overall.precision >= target]
-    t = ok.threshold.min() if len(ok) else overall.threshold.max()
-    return t, table[table.threshold == t]
+    """Each stratum's recall at the score threshold where OVERALL precision equals target.
+
+    The threshold is interpolated between grid points (overall precision rises with threshold),
+    then each stratum's recall is interpolated at it. Picking the nearest grid threshold instead
+    mis-buckets models that sit just below the target (e.g. 97.79% vs 97.8%) by a whole 0.05 step.
+    Returns (nan, empty) if the target is outside the model's precision range on this grid.
+    """
+    overall = table[table.dens == "all"].sort_values("threshold")
+    if not overall.precision.min() <= target <= overall.precision.max():
+        return float("nan"), table.iloc[0:0]
+    t = float(np.interp(target, overall.precision, overall.threshold))
+    rows = [{"dens": d, "threshold": t, "n_gt": g.n_gt.iloc[0],
+             "recall": np.interp(t, g.threshold, g.recall), "precision": np.interp(t, g.threshold, g.precision)}
+            for d, g in ((d, g.sort_values("threshold")) for d, g in table.groupby("dens", sort=False))]
+    return t, pd.DataFrame(rows)
 
 
 def report(table: pd.DataFrame, target: float = DEFAULT_TARGET_PRECISION) -> None:
     order = ["all"] + LABELS
-    for t in (0.40, 0.70):
+    for t in (0.40, 0.60, 0.70):
         s = table[table.threshold == t].set_index("dens").reindex(order).dropna(how="all")
         print(f"\n== score >= {t:.2f} ==")
         print(s[["tiles", "n_gt", "tp", "pred", "recall", "precision"]].round(3).to_string())
     t, s = matched_precision(table, target)
-    print(f"\n== matched overall precision >= {target:.3f}: threshold {t:.2f} ==")
+    print(f"\n== at overall precision {target:.3f} (interpolated): threshold {t:.3f} ==")
     print(s.set_index("dens").reindex(order).dropna(how="all")[["n_gt", "tp", "recall", "precision"]].round(3).to_string())
 
 

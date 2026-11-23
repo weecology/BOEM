@@ -6,9 +6,9 @@ Two steps:
     # one value per tile, no augmentation, BatchNorm frozen. Writes <out_dir>/tile_losses.csv.
     uv run python scripts/find_high_loss_tiles.py score <checkpoint.ckpt> <train_csv> <val_csv>
 
-    # CPU: upload the top-N tiles (train and val ranked together) to the Review project with their
+    # CPU: upload the top-N tiles of EACH split (ranked within split) to the Review project with their
     # current ground-truth boxes as preannotations, so annotators correct the label rather than redraw it.
-    uv run python scripts/find_high_loss_tiles.py upload --top 100 [--dry-run]
+    uv run python scripts/find_high_loss_tiles.py upload --per-split 50 [--dry-run]
 
 High loss on a training tile the model has seen for 30 epochs usually means the label is wrong
 (missed animal, box on water, loose box); on a validation tile it can also just be a hard tile.
@@ -85,7 +85,7 @@ def score(ckpt: str, train_csv: str, val_csv: str) -> None:
         print(f"{split}: {len(g):,} tiles, loss mean {g.loss.mean():.3f}, p99 {g.loss.quantile(.99):.3f}, max {g.loss.max():.3f}")
 
 
-def upload(top: int, dry_run: bool) -> None:
+def upload(per_split: int, dry_run: bool) -> None:
     from dotenv import load_dotenv
     from hydra import compose, initialize_config_dir
 
@@ -104,9 +104,10 @@ def upload(top: int, dry_run: bool) -> None:
         df = annotator.gather_data(instance_name=instance, image_dir=str(CROPS))
         if df is not None and not df.empty:
             existing.update(os.path.basename(str(x)) for x in df["image_path"].unique())
-    skipped = losses[losses.image_path.isin(existing)].head(top)
-    sel = losses[~losses.image_path.isin(existing)].head(top)
-    print(f"Top {top} tiles (skipped {len(skipped)} already annotated in Label Studio among the leaders):")
+    # Ranked within split: val tiles are unseen, so a joint ranking would be val-dominated.
+    fresh = losses[~losses.image_path.isin(existing)]
+    sel = fresh.groupby("split", group_keys=False).head(per_split)
+    print(f"Top {per_split} tiles per split ({losses.image_path.isin(existing).sum()} tiles already in Label Studio skipped):")
     print(sel[["image_path", "split", "loss", "classification", "bbox_regression", "n_boxes"]].to_string(index=False))
     print(sel.split.value_counts().to_string())
 
@@ -119,7 +120,7 @@ def upload(top: int, dry_run: bool) -> None:
     boxes["score"] = float("nan")
     boxes["cropmodel_score"] = float("nan")
     boxes["comet_id"] = "high_loss_" + Path(losses.checkpoint.iloc[0]).parent.name[:8]
-    out = OUT_DIR / f"top{top}_uploaded.csv"
+    out = OUT_DIR / f"top{per_split}_per_split_uploaded.csv"
     sel.to_csv(out, index=False)
     print(f"{len(boxes)} GT boxes on {boxes.image_path.nunique()} tiles; {len(sel) - boxes.image_path.nunique()} tiles have none")
     if dry_run:
@@ -140,8 +141,8 @@ if __name__ == "__main__":
     s.add_argument("train_csv")
     s.add_argument("val_csv")
     u = sub.add_parser("upload")
-    u.add_argument("--top", type=int, default=100)
+    u.add_argument("--per-split", type=int, default=50)
     u.add_argument("--dry-run", action="store_true")
     a = p.parse_args()
     torch.set_float32_matmul_precision("high")
-    score(a.checkpoint, a.train_csv, a.val_csv) if a.cmd == "score" else upload(a.top, a.dry_run)
+    score(a.checkpoint, a.train_csv, a.val_csv) if a.cmd == "score" else upload(a.per_split, a.dry_run)

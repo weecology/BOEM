@@ -3291,6 +3291,6 @@ tiles and post them to Label Studio for annotators. New scripts/find_high_loss_t
 train_max_empty_0_10.csv (the file c6ecec12 trained on) and test_max_empty_0_25.csv (its validation file).
 Verified on 6 tiles that the per-tile losses average exactly to torchvision's batch loss.
 Output: /blue/ewhite/b.weinstein/BOEM/high_loss_tiles/tile_losses.csv (all tiles, ranked).
-Next: `find_high_loss_tiles.py upload --top 100 --dry-run`, then upload to the Review project (comet_id
+Next: `find_high_loss_tiles.py upload --per-split 50 --dry-run` (Ben 11-23: 50 train + 50 val, ranked within split), then upload to the Review project (comet_id
 high_loss_c6ecec12; GT species in the dropdown). Train and val ranked together, so val (unseen) may dominate --
 check the split mix before uploading.

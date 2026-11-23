@@ -3328,3 +3328,17 @@ Read: near-k score drop with flat far/background -> learned local-context suppre
   birds -> missing labels (H2); 0c res gain concentrated in dense strata -> resolution/size lever.
 Next: Phase 1 fine-tune arms (random / >= 6 birds / density-weighted sampler) from c6ecec12, fixed steps, 3 seeds, scored
   per stratum at matched precision (0.978) with density_strata.py.
+
+## 52493454 — 2026-11-23 — submit_dense_flock_finetune.sh array 0-9%4 (hpg-b200, 1 GPU, 16 CPU, 8h each) — SUBMITTED
+Why: Ben's core question -- if training is matched to dense flocks, does dense-flock recall improve? Dense-flock Phase 1,
+scripts/dense_flock_finetune.py. Fine-tunes c6ecec12/epoch27 with identical optimisation (15,201 tiles/epoch x 8 epochs,
+batch 64, SGD lr 1e-4 constant, USGS_backbone augmentations, no in-loop validation, final epoch kept -- no
+val_cls selection, which would pick a different epoch per arm). Task 0 = no fine-tune reference; 1-9 = 3 seeds each of:
+  random   15,201 random train tiles (natural ~10% empties) -- the CONTROL (fine-tuning alone shifts calibration)
+  dense    all 13,681 train tiles with >= 6 birds + 1,520 empties (10%)
+  weighted all train tiles, WeightedRandomSampler weight min(birds, 20), empties held at 10%
+Each scored on the full VALIDATION set by density stratum (scripts/density_strata.py; @0.40/@0.70 and at matched overall
+precision 0.978), plus the NON-TRAINING remainder of Feb 2022 cap-probe frames (55) and flock_dataset test (36) via
+predict_tile 1000/0 -- validation-like (same flights), NOT zero-shot.
+Read: dense/weighted vs random at matched precision, per stratum, with the single-bird stratum as the cost.
+Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/phase1/

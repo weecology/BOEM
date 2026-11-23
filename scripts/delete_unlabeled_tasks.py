@@ -4,7 +4,7 @@
 Unlabeled tasks are the pending annotation queue: nobody has looked at them, so
 deleting one destroys no human work, only the queue entry. Use this to retire a
 dataset the project has stopped annotating. Completed tasks are never touched —
-`scripts/delete_completed_tasks.py` owns those, and it downloads before deleting
+`scripts/pull_annotations.py` owns those, and it downloads before deleting
 because a completed task holds the only server-side copy of its annotation.
 
 Flights are matched case-insensitively against each task's `data.flight_name`,

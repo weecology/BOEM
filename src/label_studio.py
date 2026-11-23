@@ -505,8 +505,13 @@ def get_annotated_tasks(label_studio_project):
     return [t for t in label_studio_project.get_tasks() if t.get("annotations")]
 
 
-def download_completed_tasks(label_studio_project, csv_dir):
-    labeled_tasks = get_annotated_tasks(label_studio_project)
+def download_completed_tasks(label_studio_project, csv_dir, tasks=None):
+    """Write annotated tasks to <csv_dir>/<flight>/<timestamp>.csv.
+
+    Pass `tasks` (from get_annotated_tasks) to download exactly that snapshot, so a caller
+    that later deletes those task ids deletes only what it saved.
+    """
+    labeled_tasks = get_annotated_tasks(label_studio_project) if tasks is None else tasks
     if not labeled_tasks:
         print("No new annotations")
         return None

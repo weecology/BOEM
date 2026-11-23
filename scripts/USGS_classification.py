@@ -31,9 +31,6 @@ import comet_ml
 from pytorch_lightning.loggers import CometLogger
 from src.classification import (
     DOLPHIN_FAMILY_LABELS,
-    SLASH_NOT_A_TAXON,
-    _slash_label_to_genus,
-    map_ambiguous_slash_labels,
     map_turtle_labels,
     preprocess_and_train,
 )
@@ -205,20 +202,10 @@ def train_test_split_by_image(
 
 
 def normalize_label(l):
-    """Trim a label to two words, resolving "A/B" ambiguity to the genus.
-
-    A slash means the annotator could not separate two species, so the label resolves to
-    "Genus sp" -- never to the first species, which is what the old
-    ``s.replace("/", " ")`` did. map_ambiguous_slash_labels normally handles these earlier
-    (before the class-count filter, so variants merge); this is the same rule applied
-    defensively for any caller that reaches here with a raw slash label.
-    """
+    """Trim a label to its first two words."""
     if pd.isna(l):
         return l
-    s = str(l).strip()
-    if "/" in s and s not in SLASH_NOT_A_TAXON:
-        return _slash_label_to_genus(s)
-    return " ".join(s.split()[:2])
+    return " ".join(str(l).strip().split()[:2])
 
 
 @hydra.main(config_path=str(PROJECT_ROOT / "boem_conf"), config_name="boem_config")
@@ -285,12 +272,11 @@ def main(cfg: DictConfig):
     print(f"[dolphins] dropping {int(is_dolphin_family.sum())} family-rank dolphin crops from the flat classifier")
     crop_annotations = crop_annotations[~is_dolphin_family]
 
-    # Resolve "A/B" annotator ambiguity to the genus BEFORE the class-count filter, so that
-    # every slash variant of a genus merges into one class and is counted together.
-    slash_before = crop_annotations["label"].astype(str).str.contains("/", na=False).sum()
-    crop_annotations["label"] = map_ambiguous_slash_labels(crop_annotations["label"])
-    n_ambiguous = int(slash_before - crop_annotations["label"].astype(str).str.contains("/", na=False).sum())
-    print(f"[ambiguous] {n_ambiguous} crops resolved from 'A/B' species labels to 'Genus sp'")
+    # "A/B" labels would become "Genus sp" classes that are parents of their own species classes.
+    # The hierarchical model uses them; the flat model drops them. Turtles are the only exception.
+    is_ambiguous = crop_annotations["label"].astype(str).str.contains("/", na=False)
+    print(f"[ambiguous] dropping {int(is_ambiguous.sum())} 'A/B' crops from the flat classifier")
+    crop_annotations = crop_annotations[~is_ambiguous]
 
     # Keep labels with more than 25 images
     crop_annotations = crop_annotations.groupby("label").filter(lambda x: len(x) > 25)
@@ -304,6 +290,8 @@ def main(cfg: DictConfig):
     # Two word labels
     crop_annotations["label"] = crop_annotations["label"].apply(lambda x: ' '.join(x.split()[:2]))
     crop_annotations = crop_annotations[crop_annotations["label"].apply(lambda x: len(x.split()) == 2)]
+    indeterminate = set(crop_annotations.loc[crop_annotations["label"].str.endswith(" sp"), "label"]) - {"Chelonioidea sp"}
+    assert not indeterminate, f"flat classifier must not train indeterminate classes: {sorted(indeterminate)}"
 
     # Remove any crop_annotations with empty boxes
     crop_annotations = crop_annotations[(crop_annotations['xmin'] != 0) & (crop_annotations['ymin'] != 0) & (crop_annotations['xmax'] != 0) & (crop_annotations['ymax'] != 0)]

@@ -38,8 +38,8 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
   split), so it is not retrained.
 - **VALIDATION** (in-distribution): `scripts/eval_detection_checkpoint.py`, pooled TP/GT, IoU 0.4.
 - **ZERO-SHOT** (pinned holdout JPG_20260202_141900 + JPG_20260201_134000): `scripts/threshold_sweep.py`.
-- Report the two as separate, labelled numbers. Compare at **matched precision** and at the recall
-  ceiling, not only at 0.70 (score calibration differs between architectures).
+- Report the two as separate, labelled numbers. Compare at **matched precision**, at the recall
+  ceiling, and at the production gate **0.60** (moved from 0.70 on 2026-11-23 with c6ecec12), not only at a fixed threshold (score calibration differs between architectures).
 - Also: recall by box size (<16, 16-32, >32 px) and inference cost (frames/s on a full flight, since surveys are ~500k frames).
 - **Dense flocks** (agreed with the dense-flock chat, 2026-11-23): score raw predictions (score_thresh <= 0.3) with
   `scripts/density_strata.py <predictions.csv> [gt.csv]` (from dense-flock-diagnostics commit 55a7050) on the validation
@@ -59,8 +59,11 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
      grad clip 1.0). E007 gain over the fine-tuned R50: macro F1 +0.8 within-distribution, +4.5 out-of-distribution.
    - C: Deformable DETR (COCO init) through `automodel`.
    - Epoch budget is matched in wall-clock, not epochs, and stated in the ledger.
-2. **Resolution** on the Phase-1 winner(s) plus R50: `min_size` 1000 (native) and ~1600 (upsampled for
-   the ViT); optionally a 16 px anchor level. Only arms that beat the gate in Phase 1.
+2. **Resolution** on the Phase-1 winner(s) plus R50 (c6ecec12 at 800/1000/1200 px is already being re-predicted by
+   dense-flock job 52491503 part 0c: `/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/0c_*.density_strata.csv`; read it first): `min_size` 1000 (native) and ~1600 (upsampled for
+   the ViT); optionally a 16 px anchor level (dense-flock anchor audit: 18-35 px birds get ~3 positive anchors vs 20-30 for >35 px,
+   but the density drop holds inside every size band, so size is not the whole dense-flock story).
+   If dense-flock Phase 1 (52493454) shows the density-weighted sampler helps, apply it to the candidates too. Only arms that beat the gate in Phase 1.
 3. **Promotion gate**: beats c6ecec12 at matched precision on BOTH validation and zero-shot beyond
    seed noise (≥2 seeds for the winner), acceptable survey throughput, threshold re-derived with
    `threshold_sweep.py`, end-to-end pipeline run on the debug flight, and one DeepForest ref that carries

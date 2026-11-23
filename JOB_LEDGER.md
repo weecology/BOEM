@@ -3458,3 +3458,13 @@ detection.load to set transform min_size (max_size scaled from 1333) and reuses 
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/input_size/ (earlier 52121265 / 52348607 files untouched).
 Not a duplicate of boem-d5's 52502097 (TRAINS at 1000); this is inference-only on c6ecec12.
 Next: zero-shot recall/precision and reviewer frames at 0.60 by input size -> decide whether to propose 1000/1200 inference.
+
+## 52503248 — 2026-11-23 — submit_arch_smoke.sh (hpg-b200, 1 GPU, 16 CPU, 3h), branch detector-architecture-comparison @e2e59b0
+Why: [architecture comparison, Phase 0] plumbing smoke for the DINOv3 / DETR arms before any real training. In the worktree's
+DeepForest PR #1473 venv (ac213f01), USGS_backbone.py --smoke 512 (512 random tiles per train/val/zero-shot split, 1 epoch,
+scratch dir, Comet tag "smoke"), native 1000 px input, sequentially: (1) R50 RetinaNet, production recipe (bs 64, lr 1e-3),
+the training path's version-drift check; (2) RetinaNet + DINOv3 ViT-L/16 sat493m unfrozen, E007 recipe (SGD lr 0.01 @ bs 16,
+cosine, bf16-mixed, clip 1.0); (3) Deformable DETR, COCO init (AdamW 1e-4, wd 1e-4, cosine, clip 0.1, bs 16).
+Next: each arm "exit 0" with a checkpoint; bf16 validation does not crash (old .numpy() bug); it/s and peak GPU memory
+(arch_smoke_<id>_gpumem.csv) -> batch size and epoch-time estimate for Phase 1. Numbers from 512 tiles are not results.
+Result: PENDING

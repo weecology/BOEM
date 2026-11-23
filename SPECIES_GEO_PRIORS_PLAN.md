@@ -157,3 +157,37 @@ somewhere BOEM can import it. Decide that before E3. E0–E2 do not depend on it
   worktree, DeepForest PR #1473), and a session uploading Label Studio review tasks.
   None of them touches `src/spatiotemporal_metadata.py` or the classifier metadata path.
 - Log every sbatch in `JOB_LEDGER.md`.
+
+## Results
+
+### E0 (2026-11-23, no SLURM job: `scripts/geo_priors_e0.py`, ~1 min on a compute node)
+
+Outputs are in `/blue/ewhite/b.weinstein/BOEM/geo_priors/`: `frame_index.csv` (6.81M frames),
+`e0_crops_a3dc30a0.csv`, and `e0_class_by_region_a3dc30a0.csv`.
+
+- **Frame index:** 6,814,779 frames, all from captures CSVs. Every `metadata_aws` frame was
+  already covered, so it adds nothing. By sub-region: AtlanticNorth 3.89M, MidAtlantic
+  0.98M, SouthAtlantic 0.46M, GulfEast 0.53M, GulfWest 0.52M, GreatLakes 0.26M,
+  InlandWest 0.17M.
+- **Coverage of the a3dc30a0 classifier crops (58,460 train+val):**
+
+  | Source | Crops | Share |
+  |---|---|---|
+  | Captures (exact coordinates) | 34,284 | 58.6% |
+  | Old-format NYSERDA (NY Bight, region only, 2016–2019) | 16,874 | 28.9% |
+  | Old-format `boemy1` (2018) and `boemy2` (2019–20) | 6,883 | 11.8% |
+  | Unknown (2023-04-25 truncated captures, a few others) | 419 | 0.7% |
+
+  Location is unknown for the `boemy` crops (question for the user). Region is known for
+  87.5% of crops.
+- **The classifier training data is almost entirely Atlantic.**
+  - Gulf: 673 crops (1.2%), only from Feb and Dec, and **none from July**.
+  - Only 13 classes have more than 10 Gulf crops.
+  - So a learned lat/lon encoder (E3) trained on our own crops cannot learn Gulf ranges.
+    At most it learns "Gulf means gulls, terns and pelicans" from 673 examples.
+  - This strengthens the case for an external prior (E2) and GBIF pretraining (E4).
+- **Evaluation data:** the Gulf boxes in Label Studio (about 8.5k, mostly LA/TX in Dec/Feb,
+  plus the July Review queue) are *not* in classifier training. They are the out-of-sample
+  Gulf test set for E1 and E2. Val-split logits for a3dc30a0 are already cached at
+  `/blue/ewhite/b.weinstein/BOEM/classifier_confusion_a3dc30a0_logits.npy`, but those are
+  99% Atlantic.

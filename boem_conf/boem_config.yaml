@@ -36,7 +36,12 @@ flight_name: null
 predict:
   patch_size: 1000
   patch_overlap: 0
-  # PAIRING VERIFIED FOR THE CURRENT CHECKPOINT (job 41939457, 2026-09-13).
+  # 2026-11-23: 0.70 -> 0.60, with detection_model.checkpoint -> c6ecec12/epoch27 (Ben).
+  # Cost measured for THIS pairing by job 52348607 (5,000 random July frames, x106.8):
+  # c6ecec12 review frames / boxes on the July survey 0.70 -> 854 / 1,068, 0.60 -> 1,815 / 2,136
+  # (~2x). Only 17 sample frames at >=0.60, so roughly +/-40%. The 0.60-0.70 band has not
+  # been eyeballed for foam yet. The 0.70 history below is kept for the reasoning.
+  # PAIRING VERIFIED FOR 1968e962 (job 41939457, 2026-09-13).
   # The foam risk described below was measured and did NOT materialise — the opposite
   # happened. On the two foam-heavy July flights (JPG_20260712_100400 + JPG_20260712_113200,
   # 3,000-frame sample) 1968e962/epoch29 emits FEWER boxes at 0.70 than a09c6933 did on the
@@ -94,7 +99,7 @@ predict:
   # 0.5 and are not oversights: submit_seals_array.sh, submit_seals_missing_metadata.sh
   # (seal detections peak ~0.89 even on obvious animals) and submit_neaq.sh (retired; its
   # imagery is already a 0.5-screened subset, so a higher floor recovers nothing).
-  min_score: 0.70
+  min_score: 0.60
   # This counts IMAGES, not patches: predict_tile(dataloader_strategy="batch") batches
   # whole images and flattens their crops, so one forward pass sees
   # batch_size * 35 patches for this ~6464x4852 camera. batch_size=1 therefore already
@@ -142,7 +147,12 @@ detection_model:
   # runs (deepforest_box_recall_issue.md). No trustworthy in-distribution validation box
   # recall exists for either checkpoint.
   # Ignore box_recall on the Comet run for the same reason.
-  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/1968e962113f4c57bc6bf5f07fae1b25/epoch29-val_cls0.0899.ckpt
+  # PROMOTED 2026-11-23 (Ben): Comet c6ecec12e078416c9fe645c89bc418cf, epoch27 (val_cls 0.0867),
+  # job 52121224, trained on the 11-20 refreshed corpus. ZERO-SHOT pinned Feb pair @0.70 (52121265):
+  # box recall 59.0% / precision 85.4% / image recall 96.2% vs 1968e962 57.9 / 86.6 / 94.2.
+  # VALIDATION (in-distribution, test_max_empty_0_25.csv, pooled, 52344877) @0.70: 45.7% / 97.9%.
+  # Previous: 1968e962113f4c57bc6bf5f07fae1b25/epoch29-val_cls0.0899.ckpt (history below).
+  checkpoint: /blue/ewhite/b.weinstein/BOEM/training/checkpoints/c6ecec12e078416c9fe645c89bc418cf/epoch27-val_cls0.0867.ckpt
   checkpoint_dir: /blue/ewhite/b.weinstein/BOEM/detection/checkpoints
   patch_size: 1000
   patch_overlap: 0
@@ -184,7 +194,7 @@ active_learning:
   # The 2026-08-14 move to 0.30 was made because only 91 survey boxes cleared 0.85 across
   # 533,876 images, which starved this queue. 0.70 keeps the queue fed (388 boxes on the
   # 20-flight survey) without selecting images off foam.
-  min_detection_score: 0.70
+  min_detection_score: 0.60  # 0.70 -> 0.60 on 2026-11-23, with predict.min_score
   model_checkpoint:
   target_labels:
     - "Tursiops truncatus"
@@ -221,7 +231,7 @@ active_testing:
   # DEAD KEY as of 2026-08-20: nothing reads active_testing.min_score. Test images are
   # drawn from the pool, which predict.min_score has already cut. Kept at 0.70 so it does
   # not contradict the real gates if something ever starts reading it.
-  min_score: 0.70
+  min_score: 0.60
 
 human_review:
   n: 30
@@ -234,7 +244,7 @@ human_review:
   # MUST MOVE WITH predict.min_score. active_learning.py:161 applies this as an
   # independent hard cut, so a stale value here silently filters out every box the pool
   # just produced. 0.85 -> 0.30 on 2026-08-14, -> 0.70 on 2026-08-20.
-  min_detection_score: 0.70
+  min_detection_score: 0.60  # 0.70 -> 0.60 on 2026-11-23, with predict.min_score
   # ALL cropmodel_score thresholds below are on the TEMPERATURE-SCALED scale
   # (classification_model.temperature = 4.4675, 0139af8c). They are meaningless on the raw scale and
   # must ALL move together if that key changes or is set to null. The full list:

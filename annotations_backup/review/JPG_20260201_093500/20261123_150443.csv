@@ -1,0 +1,2 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+5087.971351298017,3049.323783766,5149.136576623988,3184.3237837659995,Ardea alba,0.9401631,Ardea alba,0.4575798,C7_L8_F8697_T20260201_120651_444.jpg," sanacleto@ufl.edu, 24",JPG_20260201_093500

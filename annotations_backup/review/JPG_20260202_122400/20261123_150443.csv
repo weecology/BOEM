@@ -1,0 +1,2 @@
+xmin,ymin,xmax,ymax,label,model_det_score,model_label,model_cls_score,image_path,annotator,flight_name
+5668.378050767275,3608.9999999999995,5711.378050767276,3668.9999999999995,Laridae,0.86474377,Pelecanus occidentalis,0.45800865,C7_L3_F3184_T20260202_132317_666.jpg," sanacleto@ufl.edu, 24",JPG_20260202_122400

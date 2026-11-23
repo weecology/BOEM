@@ -2,7 +2,7 @@
 name = "boem"
 description = "BOEM bird detection and classification pipeline"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.15"
 version = "1.0.0"
 dependencies = [
   "numpy",
@@ -58,7 +58,10 @@ override-dependencies = [
 # Detection needs tmp/hpc-balanced-empty-frames; restore this line once the DeepForest PR merges to main.
 # deepforest = { git = "https://github.com/bw4sz/DeepForest.git", branch = "tmp/hpc-balanced-empty-frames" }
 # Temporary: classification needs claude/friendly-beaver (CropModel.load_from_disk(metadata_csv=...), weecology PR #1334).
-deepforest = { git = "https://github.com/weecology/DeepForest.git", branch = "claude/friendly-beaver" }
+# Branch detector-architecture-comparison ONLY: DINOv3 RetinaNet + HF DETR (weecology/DeepForest PR #1473,
+# commit ac213f01). Drops friendly-beaver's CropModel metadata support -- use this venv for detection
+# training/eval experiments only, never for the classification pipeline.
+deepforest = { git = "https://github.com/jveitchmichaelis/DeepForest.git", rev = "ac213f010e91f7f42982d7d9c3607da9d175758b" }
 
 torch = [
   { index = "pytorch-cu128", marker = "sys_platform != 'darwin'" },

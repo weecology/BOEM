@@ -3478,6 +3478,11 @@ Changes: built output/usgs_hier/run_52121226/species.csv with build_hcast_label_
   rollback is two config lines.
 Verified: Hydra compose + load_hcast_model on CPU, heads 72/51/21, forward (B,72)/(B,51)/(B,21), species_71 =
   Chelonioidea sp. Flat 0139af8c val classes H-CAST cannot name: only Columba livia (absent from taxonomy.json).
-  Not run: end-to-end pipeline on a flight. H-CAST outputs aren't in the full-flight cache stamp -- check whether
-  cached flights re-predict before trusting old caches' hcast_* columns.
+  Not run: end-to-end pipeline on a flight. Main run path re-runs classification + H-CAST every run (.prediction_cache
+  only narrows the image pool), so it picks the new checkpoint up with no cache work.
+  BUG FIXED in upload_full_flight (src/pipeline.py, since beb7001): a stamp MISMATCH printed "re-predicting" but the
+  elif branch never predicted, so pool_predictions stayed None and the full-flight upload carried human annotations only.
+  So the 11-20 note "every flight re-predicts on its next run" was false: any full-flight upload since a classifier/T
+  change silently dropped model predictions. Mismatch now falls through to prediction, and the stamp now includes the
+  H-CAST checkpoint, so every .full_flight_predictions.csv re-predicts once on its next upload.
 Next: score both checkpoints on the 1,612 new-val boxes neither trained on, for the record.

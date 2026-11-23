@@ -3523,9 +3523,23 @@ Next: if 52505453 shows an arm not learning on its own training tiles, cancel th
 the monitored val loss, then VALIDATION (eval_detection_checkpoint.py, pooled), ZERO-SHOT (threshold_sweep.py) and
 density_strata.py on val + dense_flock/phase0/0d_train_sample.csv, against c6ecec12 (at 1000 px, the dense-flock chat's
 0c numbers) at interpolated equal precision. Labelled separately.
-Result: PENDING
+Result (52507234), checked 2026-11-23: CANCELLED by me after ~35 min, both tasks deadlocked. On each, rank 1 raised
+  "DataLoader within local rank has zero length" in USGS_backbone.py _log_prediction_images (pre-training zero-shot Comet images):
+  main.predict_image on ONE image through the 2-GPU DDP trainer leaves rank 1 empty; rank 0 then hung. Never hit before because
+  production trains on 1 GPU. Fixed (image logging skipped when devices > 1); relaunched behind a 2-GPU smoke, below.
 
 ## 52509099 — 2026-11-23 — ARMS=retinanet_dinov3 submit_arch_overfit.sh (hpg-b200, 1 GPU, 3h), branch detector-architecture-comparison @876d217
 Why: rerun of 52505453's DINOv3 arm with the ImagesCallback crash fixed: does DINOv3 fit its own 256 training tiles?
 Next: if box_recall/map_50 stay near 0 after 30 epochs, cancel 52507234_0 (Phase 1 DINOv3) and debug lr/init first.
+Result (52509099), checked 2026-11-23: python exit 0 (sacct FAILED 1:0 is only the script's last false [[ ]] test). DINOv3 fit
+  on its own 256 tiles after 30 epochs (480 steps): box_recall 0.000 -> 0.172, box_prec 0.556, map_50 0.023, val_cls 1.150 -> 0.448.
+  Learning but slow vs R50 0.882 / DETR 0.806 recall: only DINOv3's encoder is pretrained (FPN + head random), while R50 starts
+  from the full deepforest-bird detector and DETR from a full COCO detector. Not grounds to drop the arm; Phase 1 has ~112k steps.
+
+## 52511271 -> 52511275 — 2026-11-23 — submit_arch_phase1.sh: 2-GPU smoke (SMOKE=512, 3 ep) then Phase 1 relaunch (afterok), branch detector-architecture-comparison @3dae124
+Why: relaunch of cancelled 52507234 (same arms, recipe and data: DINOv3 sat493m / Deformable DETR, 2xB200, 15 ep, 1000 px)
+after the DDP image-logging fix. 52511271 runs both arms in the identical 2-GPU DDP layout on 512 tiles per split for 3 epochs, so
+pre/post zero-shot validate, the every-3rd-epoch box metrics and checkpointing are all exercised on 2 ranks. 52511275 starts only
+if both smoke tasks exit 0.
+Next: if 52511271 fails, 52511275 never starts (DependencyNeverSatisfied) -- read arch_p1_52511271_{0,1}.err. Otherwise as 52507234's Next.
 Result: PENDING

@@ -3424,7 +3424,11 @@ Next: expect ~30-35 min/epoch (GPU-bound at 1.56x pixels, vs 22 min at 800), so 
 first epochs don't OOM at batch 64. Then score min-val_cls epoch vs c6ecec12 (predicted at 1000 and at 800) with
 eval_detection_checkpoint.py (VALIDATION, pooled) + density_strata.py at interpolated equal precision, and on
 dense_flock/phase0/0d_train_sample.csv (fit on its own training tiles). val_cls is NOT comparable across scales; select within run only.
-Result: PENDING
+Update (owner now boem-ec, handed over by boem-d5), checked 2026-11-23 ~20:40: RUNNING 3h10m, no OOM at batch 64. Comet
+  e0cb9f957c404690becdd370ab6938fb. ~47 min/epoch (not the 30-35 expected; same as c6ecec12's loader-bound 48) -> 30 epochs
+  ~23.5h, inside 48h. val_cls by epoch vs c6ecec12 (same val CSV): e0 0.1262 vs 0.1728, e1 0.1136 vs 0.1548, e2 0.1051 vs
+  0.1150 -- ahead so far, but val_cls is not strictly comparable across input sizes (anchor assignment changes).
+Result: PENDING (running).
 
 ## 52502538 — 2026-11-23 — submit_zero_shot_input_size.sh (hpg-b200, 1 GPU, 8 CPU, 4h), branch detector-architecture-comparison @8c536b2
 Why: Ben: input size may be another recall/precision trade-off axis, so run the zero-shot check. Production c6ecec12/epoch27,
@@ -3434,7 +3438,14 @@ JPG_20260201_134000, IoU 0.4, 2000-frame seeded unscreened queue sample) at 800 
 equal precision 0.97; empty-val-tile FP rate @0.60 0.05 / 0.14 / 0.22%.
 Next: ZERO-SHOT box recall/precision and queue boxes per 1k frames at 0.60 and 0.70, and at matched precision, per size.
 Labelled separately from validation. Outputs: /blue/ewhite/b.weinstein/BOEM/zero_shot_input_size/.
-Result: PENDING
+Result (52502538), checked 2026-11-23: COMPLETED 2h23m, exit 0:0. 800 reproduces 52121265 exactly (59.0 / 85.4 / 96.2 / 1.5
+  @0.70). ZERO-SHOT box recall / precision / image recall / queue img per 1k (pinned holdout, 1,229 objects):
+    @0.70   800 59.0/85.4/96.2/1.5   1000 57.4/84.8/94.4/1.0   1200 52.8/88.9/85.1/1.0
+    @0.60   800 61.0/83.1/98.9/1.5   1000 59.8/82.4/96.8/2.0   1200 58.7/86.9/90.9/2.5
+    matched precision ~85.4%: 800 59.0 @0.70 | 1000 ~57 @~0.71 | 1200 60.5 @0.55 (queue 6.5 img/1k vs 1.5)
+  Inference-only upsizing does NOT transfer to zero-shot: flat within +-2 pts at equal precision, vs +7/+11 on VALIDATION
+  (0c). Plausible reason: holdout objects are large (median 71px) where USGS val birds are ~28px, so the 0.8x downscale only
+  hurts the small-bird USGS tiles. Low-threshold queue noise grows fast with size (0.40: 7 -> 13.5 -> 68 img/1k).
 
 ## 52502655 -> 52502730 — 2026-11-23 — submit_dense_flock_input_size.sh c6ecec12/epoch27 (hpg-b200, 1 GPU, 16 CPU, 6h) — SUBMITTED
 Why: Ben OK'd checking what 1000/1200 px inference costs outside validation before any production change. 0c showed
@@ -3449,5 +3460,15 @@ Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/input_size/ (earlier 52121265
 Not a duplicate of boem-d5's 52502097 (TRAINS at 1000); this is inference-only on c6ecec12.
 52502655 CANCELLED while pending: its zero-shot half duplicated boem-d5's 52502538 (same threshold_sweep at 800/1000/1200
   on the same holdout). Resubmitted as 52502730, July reviewer load only.
-Next: July reviewer frames/boxes at 0.60 by input size (here) + zero-shot from 52502538 -> decide whether to propose
-  1000/1200 inference.
+Result (52502730), checked 2026-11-23: COMPLETED 1h20m, exit 0:0. 800 reproduces 52348607's c6ecec12 row exactly. July reviewer
+  load, review frames / boxes in the 5,000-frame sample (survey x106.8):
+    thr    800          1000          1200
+    0.40   106 / 116    248 / 341     590 / 1210
+    0.50    38 / 42      62 / 67      153 / 204
+    0.55    21 / 24      30 / 32       78 / 87
+    0.60    17 / 20      12 / 14       28 / 31     (survey 1,815 / 1,281 / 2,990 frames)
+    0.70     8 / 10       7 / 9         3 / 3
+  At the 0.60 gate, 1000 is no costlier than 800 (fewer frames, within the +-40% sampling error); 1200 costs ~1.6x, and at
+  its zero-shot matched-precision point (0.55) ~4.6x (8,328 survey frames vs 1,815).
+Decision: do NOT change production inference size for c6ecec12 -- no zero-shot gain, more July foam at 1200. Validation gain
+  (small USGS birds) is real but does not transfer. Native-1000 TRAINING (52502097) is the remaining test.

@@ -3542,4 +3542,7 @@ after the DDP image-logging fix. 52511271 runs both arms in the identical 2-GPU 
 pre/post zero-shot validate, the every-3rd-epoch box metrics and checkpointing are all exercised on 2 ranks. 52511275 starts only
 if both smoke tasks exit 0.
 Next: if 52511271 fails, 52511275 never starts (DependencyNeverSatisfied) -- read arch_p1_52511271_{0,1}.err. Otherwise as 52507234's Next.
-Result: PENDING
+Result (52511271 smoke), checked 2026-11-23: both tasks COMPLETED exit 0:0 (3m07s DINOv3, 2m29s DETR). On 2 DDP ranks:
+  pre-training zero-shot validate, 3 training epochs (16 steps each), post-training validation + zero-shot, checkpoints; Comet
+  prediction images skipped as intended. 52511275 released (PENDING, Priority).
+Result (52511275): PENDING

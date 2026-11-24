@@ -3470,5 +3470,5 @@ Result (52502730), checked 2026-11-23: COMPLETED 1h20m, exit 0:0. 800 reproduces
     0.70     8 / 10       7 / 9         3 / 3
   At the 0.60 gate, 1000 is no costlier than 800 (fewer frames, within the +-40% sampling error); 1200 costs ~1.6x, and at
   its zero-shot matched-precision point (0.55) ~4.6x (8,328 survey frames vs 1,815).
-Decision: do NOT change production inference size for c6ecec12 -- no zero-shot gain, more July foam at 1200. Validation gain
+Recommendation (Ben to decide): keep production inference at 800 for c6ecec12 -- no zero-shot gain, more July foam at 1200. Validation gain
   (small USGS birds) is real but does not transfer. Native-1000 TRAINING (52502097) is the remaining test.

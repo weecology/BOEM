@@ -3576,4 +3576,6 @@ Next: score A, B and 0139af8c on the identical val split:
   - The Gulf val subset (only 126 crops, so indicative only).
   Also read Comet val accuracy at about epoch 10 of A (about equal gradient steps to B's 45 epochs), so
   "more data" is not confused with "more steps".
+Update 2026-11-24 13:45 EST: both still PENDING (QOSGrpMemLimit). The group memory is held by 52511275_0/1
+  (240 GB each) and 52502097 (120 GB), which should end around 15:30, 17:00 and 19:30 EST. Gate not yet checkable.
 Result: PENDING

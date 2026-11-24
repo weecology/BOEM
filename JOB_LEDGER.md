@@ -3553,3 +3553,27 @@ Update (52511275), 2026-11-23 22:40: both RUNNING, GPUs 63-100% util. Lightning'
   (1000 px R50 52502097 is at val_cls 0.1136 at epoch01; val_cls is not comparable across architectures/scales -- context only.)
   Empty dirs training/checkpoints/52511275 and /52512566 are the non-zero-rank _run_id fallback (only rank 0 writes); harmless.
 Result (52511275): PENDING
+
+## 52604503 (null) + 52604504 (4.0) — 2026-11-24 — submit_class_balance_bracket.sh {null, 4.0} (hpg-b200, 1 GPU, 8 CPU, 80GB, 24h), branch class-balance-bracket @ flat-drop-genus-sp 42d8105
+Why: Ben: compare the 4x-median class-balance cap to training on all the data. The cap keeps only 47,600 of 0139af8c's
+203,974 pre-balance train crops (23%). 22 of 73 classes sit at the cap of 1,380 (median 345). The 2026-09-04 bracket
+(41098248 factor 2.0 / 41098249 null) FAILED in about 40 s and was never rerun, so this has never been measured.
+Two arms, otherwise identical to 0139af8c (52121225):
+  - Same classifier code (cdc49fe; nothing the classifier reads changed up to 42d8105).
+  - Same pool: 0 of `training/crops/*.csv` are newer than 0139af8c's saved split.
+  - Same split seed (42) and use_metadata=False, run in .venv-classification with --no-sync.
+  - Arm A, factor=null: no cap, about 204k train crops, ~16 min/epoch x 45 epochs, so ~12 h train plus ~3 h writing crops.
+  - Arm B, factor=4.0: noise control. The train crops are identical to 0139af8c's (seeded sample), and training is unseeded,
+    so A-vs-B differences only count if they exceed B-vs-0139af8c.
+Gate: on start, each run's saved usgs_val_split.csv must equal 0139af8c's (3,985 rows, same image_path + box + label).
+  A's log must show "[class balance] no downsampling ... train pool size 203974", and B's must show "203974 -> 47600".
+  If either differs, cancel.
+Next: score A, B and 0139af8c on the identical val split:
+  - Micro accuracy. NOTE: val is capped at 100 per class, so it is near-balanced and flatters a capped model.
+  - Macro recall and precision.
+  - Per-class recall change, especially for the 22 capped classes vs the rare ones.
+  - Abundance-weighted accuracy (survey_metrics.py, natural distribution).
+  - The Gulf val subset (only 126 crops, so indicative only).
+  Also read Comet val accuracy at about epoch 10 of A (about equal gradient steps to B's 45 epochs), so
+  "more data" is not confused with "more steps".
+Result: PENDING

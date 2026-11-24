@@ -3545,4 +3545,11 @@ Next: if 52511271 fails, 52511275 never starts (DependencyNeverSatisfied) -- rea
 Result (52511271 smoke), checked 2026-11-23: both tasks COMPLETED exit 0:0 (3m07s DINOv3, 2m29s DETR). On 2 DDP ranks:
   pre-training zero-shot validate, 3 training epochs (16 steps each), post-training validation + zero-shot, checkpoints; Comet
   prediction images skipped as intended. 52511275 released (PENDING, Priority).
+Update (52511275), 2026-11-23 22:40: both RUNNING, GPUs 63-100% util. Lightning's progress bar writes nothing to the .out
+  during an epoch -- watch checkpoint mtimes instead. Comet/ckpt dirs: DINOv3 = training/checkpoints/6fc49164bfa548d984f3af18f8352f2a
+  (2.55 GB/ckpt incl. optimizer state), DETR = training/checkpoints/5b01a721da604e5da5177ae248f61d20 (0.48 GB).
+    DINOv3 epoch00 20:29 val_cls 0.1205, epoch01 21:50 val_cls 0.0973 -> ~81 min/epoch -> 15 ep end ~15:30 11-24
+    DETR   epoch00 20:52 val_loss 0.651, epoch01 22:29 val_loss 0.587  -> ~97 min/epoch -> 15 ep end ~19:30 11-24 (36 h limit OK)
+  (1000 px R50 52502097 is at val_cls 0.1136 at epoch01; val_cls is not comparable across architectures/scales -- context only.)
+  Empty dirs training/checkpoints/52511275 and /52512566 are the non-zero-rank _run_id fallback (only rank 0 writes); harmless.
 Result (52511275): PENDING

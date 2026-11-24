@@ -3389,6 +3389,8 @@ Result (52493454), tasks 0-7 COMPLETED (10-38 min each), 8-9 (weighted s1, s2) s
     random    46.6  61.4  42.9  36.3  32.2  27.2  10.0   <- control
     dense     46.9  60.1  44.2  37.8  34.4  29.3   8.7
     weighted  45.8  60.4  42.1  36.0  32.6  25.5   7.2   (seed 0 only)
+    weighted  46.3  60.6  42.8  36.5  32.9  27.0   8.1   (all 3 seeds; tasks 8-9 COMPLETED 36-37 min, exit 0:0,
+                                                          checked 2026-11-24) -> weighted == random within seed sd
   (1) Fine-tuning itself hurts: every arm, the random control included, loses ~9 pts vs no fine-tune (8 epochs, SGD lr
   1e-4, 6% subset -- an optimisation artifact, so compare arms only against random). (2) dense vs random: +1.5 to +2.2
   pts at 6-50 birds/tile (5-7x the seed sd -> real), -1.3 on singles. (3) weighted ~= random. Density-matched training
@@ -3428,6 +3430,9 @@ Update (owner now boem-ec, handed over by boem-d5), checked 2026-11-23 ~20:40: R
   e0cb9f957c404690becdd370ab6938fb. ~47 min/epoch (not the 30-35 expected; same as c6ecec12's loader-bound 48) -> 30 epochs
   ~23.5h, inside 48h. val_cls by epoch vs c6ecec12 (same val CSV): e0 0.1262 vs 0.1728, e1 0.1136 vs 0.1548, e2 0.1051 vs
   0.1150 -- ahead so far, but val_cls is not strictly comparable across input sizes (anchor assignment changes).
+Update 2026-11-24 ~10:40: RUNNING 18h39m, at epoch 22, no errors. Best val_cls so far 0.0828 (e20/e21; e22 0.0892) vs
+  c6ecec12 best 0.0867 -- not strictly comparable across input sizes. ~49 min/epoch; ReduceLROnPlateau + early stop 5 may end
+  it before 30. Scoring (val strata, 0d train fit, zero-shot, July load) scheduled for 2026-11-24 22:30 UTC.
 Result: PENDING (running).
 
 ## 52502538 — 2026-11-23 — submit_zero_shot_input_size.sh (hpg-b200, 1 GPU, 8 CPU, 4h), branch detector-architecture-comparison @8c536b2

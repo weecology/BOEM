@@ -50,6 +50,9 @@ def main_(ckpt: str, val_csv: Path) -> None:
     for k in ("box_recall", "box_precision", "empty_frame_accuracy", "val_classification", "val_bbox_regression"):
         print(f"  {k}: {metrics.get(k, 'MISSING')}")
 
+    # Raw predictions down to 0.3 so density_strata.py's 0.30-0.90 table is complete (validate() above
+    # used the baked-in floor). torchvision reads model.score_thresh, transformers DETRs config.score_thresh.
+    m.model.score_thresh = m.config.score_thresh = 0.3
     preds = m.predict_file(csv_file=str(val_csv), root_dir=str(CROPS))
     preds["image_path"] = preds["image_path"].map(lambda p: Path(p).name)
     boxes["image_path"] = boxes["image_path"].map(lambda p: Path(p).name)

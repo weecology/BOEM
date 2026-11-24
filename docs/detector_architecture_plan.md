@@ -87,3 +87,16 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
 - DINOv3 weights: **sat493m** (aerial pretraining, used in E007) vs lvd1689m (web images, maybe better on birds/foam).
 - DETR flavour: **Deformable DETR** (multi-scale, better on small objects than plain DETR); RT-DETR / RF-DETR later.
 - Compute per DINOv3 arm: **2x B200** (E007 setup).
+
+## Reference files for scoring (2026-11-24)
+- Candidates: `/blue/ewhite/b.weinstein/BOEM/architecture_comparison/scores/<label>/` (submit_score_detector.sh):
+  DINOv3 6fc49164 epoch06 / epoch14 = jobs 52645770 / 52645776; Deformable DETR 5b01a721 after 52511275_1.
+- **R50 @1000 retrain (same data/recipe/scale; THE reference)**, e0cb9f95 epoch29, dense-flock job 52653059, in
+  `/blue/ewhite/b.weinstein/BOEM/dense_flock/score_at_size/`: `e0cb9f95_e29_in1000.val_predictions.csv`,
+  `.val.density_strata.csv`, `.train_predictions.csv`, `.train.density_strata.csv`, `threshold_sweep_e0cb9f95_e29_in1000.json`,
+  `.july_summary.csv`. Check its log prints "transform (1000,)/1000".
+- c6ecec12 predicted at 1000 (no retrain): validation `/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/0c_native1000.density_strata.csv`,
+  zero-shot `/blue/ewhite/b.weinstein/BOEM/zero_shot_input_size/threshold_sweep_c6ecec12_e27_in1000.json`, train fit / July
+  `score_at_size/c6ecec12_e27_in1000.{train.density_strata,july_summary}.csv`.
+- c6ecec12 production @800: validation 52344877 predictions next to its checkpoint; zero-shot
+  `/blue/ewhite/b.weinstein/BOEM/yolo26_comparison/threshold_sweep_c6ecec12_e27.json`.

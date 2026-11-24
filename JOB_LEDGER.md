@@ -3433,7 +3433,11 @@ Update (owner now boem-ec, handed over by boem-d5), checked 2026-11-23 ~20:40: R
 Update 2026-11-24 ~10:40: RUNNING 18h39m, at epoch 22, no errors. Best val_cls so far 0.0828 (e20/e21; e22 0.0892) vs
   c6ecec12 best 0.0867 -- not strictly comparable across input sizes. ~49 min/epoch; ReduceLROnPlateau + early stop 5 may end
   it before 30. Scoring (val strata, 0d train fit, zero-shot, July load) scheduled for 2026-11-24 22:30 UTC.
-Result: PENDING (running).
+Result (52502097), checked 2026-11-24: COMPLETED 23h33m, exit 0:0, all 30 epochs (no early stop). Best val_cls epoch29 0.0799
+  (still falling at the end: e27 0.0803, e28 0.0811, e29 0.0799 -> possibly under-trained). "Failed to plot ... valid
+  geometry" lines in the .out are cosmetic (post-fit Comet image logging). Checkpoint stores input_size=1000, but a plain
+  load_from_checkpoint (and detection.load on dense-flock-diagnostics) comes back at 800/1333 -- must set it explicitly.
+  Scored by 52653059 (below).
 
 ## 52502538 — 2026-11-23 — submit_zero_shot_input_size.sh (hpg-b200, 1 GPU, 8 CPU, 4h), branch detector-architecture-comparison @8c536b2
 Why: Ben: input size may be another recall/precision trade-off axis, so run the zero-shot check. Production c6ecec12/epoch27,
@@ -3477,3 +3481,13 @@ Result (52502730), checked 2026-11-23: COMPLETED 1h20m, exit 0:0. 800 reproduces
   its zero-shot matched-precision point (0.55) ~4.6x (8,328 survey frames vs 1,815).
 Recommendation (Ben to decide): keep production inference at 800 for c6ecec12 -- no zero-shot gain, more July foam at 1200. Validation gain
   (small USGS birds) is real but does not transfer. Native-1000 TRAINING (52502097) is the remaining test.
+
+## 52653059 — 2026-11-24 — submit_score_input1000.sh (hpg-b200, 1 GPU, 16 CPU, 10h) — SUBMITTED
+Why: score the native-1000 detector e0cb9f95/epoch29 (52502097) on every dense-flock axis at its own 1000 input
+(min_size = max_size = 1000, as training set it): VALIDATION density strata, 0d TRAINING-tile fit, ZERO-SHOT
+threshold_sweep (same args as 52502538), July reviewer load (same 5,000 frames). Also c6ecec12 at 1000 (min = max) on the 0d
+training sample and July -- 52502730's c6ecec12@1000 July run used max_size 1667, which upscales non-square edge patches
+(13 of 42 per frame) by 1.67x, so it is not like-for-like. scripts/score_detector_at_size.py, worktree .claude/worktrees/dense-flock.
+Comparators: c6ecec12@800 (0c base800, 0d, 52502538 in800, 52502730 in800) and c6ecec12@1000 (0c native1000, 52502538 in1000).
+Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/score_at_size/
+Next: settle train/eval input size for boem-d5's DINOv3/DETR arms; recommend to Ben whether e0cb9f95 is a promotion candidate.

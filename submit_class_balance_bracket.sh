@@ -6,7 +6,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=80GB
+#SBATCH --mem=50GB   # 52121225 (0139af8c) ran at 50GB; 80GB could not fit the group limit
 #SBATCH --time=24:00:00
 #SBATCH --partition=hpg-b200
 #SBATCH --gpus=1

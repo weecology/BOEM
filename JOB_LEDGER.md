@@ -3578,4 +3578,8 @@ Next: score A, B and 0139af8c on the identical val split:
   "more data" is not confused with "more steps".
 Update 2026-11-24 13:45 EST: both still PENDING (QOSGrpMemLimit). The group memory is held by 52511275_0/1
   (240 GB each) and 52502097 (120 GB), which should end around 15:30, 17:00 and 19:30 EST. Gate not yet checkable.
+Update 2026-11-24 16:47 EST: still PENDING. 52511275_0 freed its 240 GB at 15:30, but other ewhite users' odm-georef jobs
+  (3 x 256 GB) took it. The group was at 1,180 of its 1,187.5 GB limit. Lowered both pending jobs 80 -> 50 GB
+  (scontrol; 50 GB is what 52121225 used for 0139af8c) so both fit in the 120 GB that 52502097 frees when it ends
+  (epoch 28 of 30). Script updated to match. Gate not yet checkable.
 Result: PENDING

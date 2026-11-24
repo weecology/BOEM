@@ -41,6 +41,11 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
 - Report the two as separate, labelled numbers. Compare at **matched precision**, at the recall
   ceiling, and at the production gate **0.60** (moved from 0.70 on 2026-11-23 with c6ecec12), not only at a fixed threshold (score calibration differs between architectures).
 - Also: recall by box size (<16, 16-32, >32 px) and inference cost (frames/s on a full flight, since surveys are ~500k frames).
+- **Input size changes validation and zero-shot differently** (dense-flock chat, 52502538 + 52502730, c6ecec12 inference
+  only): validation recall at equal precision 0.97 rises +7 / +11 at 1000 / 1200 px, but zero-shot at ~85.4% precision is
+  flat (800 59.0 / 1000 ~57 / 1200 60.5), because holdout objects are big (median 71 px) and USGS validation birds small
+  (~28 px). July review load at 0.60 per 5,000 frames: 17 / 12 / 28. So an architecture gain on small USGS birds may not
+  transfer to BOEM survey imagery: always report validation and zero-shot separately, and add box-size bins to both.
 - **Equal precision is interpolated** between grid thresholds, not density_strata.py's 0.05-grid pick (mis-buckets
   near the target; fixed in 9bd5e54).
 - **Do not use `flock_dataset/` as a dense-bird set** without dropping `label == "FalsePositive"`: its non-training test

@@ -42,8 +42,8 @@ def main_(ckpt: str, val_csv: Path) -> None:
     boxes = gt[~is_empty(gt)].copy()
     print(f"Validation set {val_csv.name}: {gt.image_path.nunique():,} tiles, "
           f"{boxes.image_path.nunique():,} with boxes, {len(boxes):,} boxes, "
-          f"score_thresh baked into model = {m.model.score_thresh}, "
-          f"input resize {m.model.transform.min_size}/{m.model.transform.max_size}", flush=True)
+          f"score_thresh baked into model = {getattr(m.model, 'score_thresh', m.config.score_thresh)}, "
+          f"input resize {detection.input_size(m)}", flush=True)
 
     metrics = m.trainer.validate(m)[0]
     print("\n=== DeepForest validate() (training-time definition) ===")

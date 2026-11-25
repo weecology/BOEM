@@ -20,6 +20,8 @@ Another checkpoint (e.g. boem-d5's DINOv3): check this file and density_strata.p
 (REPO is the script's own repo, so src.detection, threshold_sweep and the venv all come from there), then:
     uv run python scripts/input_size_sweep.py task 800 <checkpoint> <label>    -> OUT/<label>/in800/
     uv run python scripts/input_size_sweep.py aggregate <label>
+Cross-model ZERO-SHOT test (CPU): every sweep vs the first, frame-paired bootstrap at matched precision 80/85.4/90%:
+    uv run python scripts/input_size_sweep.py paired <ref_base> <base> ...   # base = sweep path without ".json"
 """
 import importlib.util
 import json
@@ -222,6 +224,42 @@ def box_sizes(ts) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def paired(bases: list[str], precisions=(0.80, ZS_PRECISION, 0.90), n_boot: int = 2000) -> pd.DataFrame:
+    """Frame-paired bootstrap of ZERO-SHOT recall, every sweep vs the FIRST, at matched precision.
+
+    bases: threshold_sweep outputs without ".json" (each needs <base>.json and <base>_labelled_boxes.csv).
+    Each model is cut at its own interpolated threshold for each precision, then the same resampled frames
+    are scored for both. Per-frame counts are checked against the JSON's TP/FP at 0.70 first.
+    """
+    ts = module("threshold_sweep")
+    gt = ts.load_ground_truth(ts.HOLDOUT)
+    counts = {}
+    for base in bases:
+        sw = pd.DataFrame(json.load(open(f"{base}.json"))["recall"]).sort_values("threshold")
+        lab = pd.read_csv(f"{base}_labelled_boxes.csv")
+        chk, ref = frame_counts(lab, ts, gt, 0.70), sw.set_index("threshold").loc[0.70]
+        assert (chk.tp.sum(), chk.fp.sum()) == (ref.tp, ref.fp), (base, chk.tp.sum(), chk.fp.sum(), ref.tp, ref.fp)
+        ok = sw[sw.box_precision.notna()]
+        counts[base] = {q: frame_counts(lab, ts, gt, float(np.interp(q, ok.box_precision, ok.threshold)))
+                        for q in precisions}
+    ref = bases[0]
+    frames = counts[ref][precisions[0]].index
+    idx = np.random.default_rng(0).integers(0, len(frames), size=(n_boot, len(frames)))
+    rows = []
+    for base in bases[1:]:
+        row = {"model": Path(base).name, "vs": Path(ref).name}
+        for q in precisions:
+            a, b = counts[base][q].loc[frames], counts[ref][q].loc[frames]
+            d = a.tp.values[idx].sum(1) / a.n_gt.values[idx].sum(1) - b.tp.values[idx].sum(1) / b.n_gt.values[idx].sum(1)
+            lo, hi = np.percentile(d, [2.5, 97.5]) * 100
+            row[f"P{q}"] = f"{(a.tp.sum() - b.tp.sum()) / b.n_gt.sum() * 100:+.1f} [{lo:+.1f},{hi:+.1f}]"
+        rows.append(row)
+    out = pd.DataFrame(rows)
+    print("ZERO-SHOT recall difference vs", Path(ref).name, "at matched precision, frame-paired bootstrap 95% CI")
+    print(out.to_string(index=False))
+    return out
+
+
 def aggregate() -> None:
     pd.set_option("display.width", 200)
     ts = module("threshold_sweep")
@@ -266,10 +304,13 @@ if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
     cmd, rest = sys.argv[1], sys.argv[2:]
     size = int(rest.pop(0)) if cmd == "task" else None
-    if rest:  # optional <checkpoint> <label> (task) or <label> (aggregate); default is c6ecec12 in OUT/in<size>
+    if rest and cmd != "paired":  # optional <checkpoint> <label> (task) or <label> (aggregate); default is c6ecec12 in OUT/in<size>
         if cmd == "task":
             CKPT, LABEL = rest[0], rest[1]
         else:
             LABEL = rest[0]
         OUT = OUT / LABEL
+    if cmd == "paired":  # paired <reference base> <base> ...  (threshold_sweep outputs without .json)
+        paired(rest)
+        sys.exit()
     task(size) if cmd == "task" else aggregate()

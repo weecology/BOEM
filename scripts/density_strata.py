@@ -89,7 +89,9 @@ def matched_precision(table: pd.DataFrame, target: float) -> tuple[float, pd.Dat
     rows = [{"dens": d, "threshold": t, "n_gt": g.n_gt.iloc[0],
              "recall": np.interp(t, g.threshold, g.recall), "precision": np.interp(t, g.threshold, g.precision)}
             for d, g in ((d, g.sort_values("threshold")) for d, g in table.groupby("dens", sort=False))]
-    return t, pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out["tp"] = (out.recall * out.n_gt).round()  # interpolated, so approximate; report() prints it
+    return t, out
 
 
 def report(table: pd.DataFrame, target: float = DEFAULT_TARGET_PRECISION) -> None:

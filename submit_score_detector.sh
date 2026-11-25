@@ -26,7 +26,8 @@ mkdir -p $OUT
 TRAIN0D=/blue/ewhite/b.weinstein/BOEM/dense_flock/phase0/0d_train_sample.csv
 STEM=${CKPT%.ckpt}
 
-echo "=== [1] VALIDATION $LABEL ==="; $PY -u scripts/eval_detection_checkpoint.py $CKPT | tee $OUT/validation.txt
+# SKIP_VAL=1 reuses step 1's predictions CSV (e.g. after a step-2 crash) instead of re-predicting.
+[ -z "${SKIP_VAL:-}" ] && { echo "=== [1] VALIDATION $LABEL ==="; $PY -u scripts/eval_detection_checkpoint.py $CKPT | tee $OUT/validation.txt; }
 echo "=== [2] VALIDATION density strata ==="
 $PY scripts/density_strata.py $STEM.test_max_empty_0_25_predictions.csv --target-precision 0.97 | tee $OUT/validation_strata.txt
 echo "=== [3] TRAINING-tile fit (0d sample) ==="; $PY -u scripts/eval_detection_checkpoint.py $CKPT $TRAIN0D | tee $OUT/train0d.txt

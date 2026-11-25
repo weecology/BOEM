@@ -3491,3 +3491,16 @@ training sample and July -- 52502730's c6ecec12@1000 July run used max_size 1667
 Comparators: c6ecec12@800 (0c base800, 0d, 52502538 in800, 52502730 in800) and c6ecec12@1000 (0c native1000, 52502538 in1000).
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/score_at_size/
 Next: settle train/eval input size for boem-d5's DINOv3/DETR arms; recommend to Ben whether e0cb9f95 is a promotion candidate.
+Partial result (52653059), checked 2026-11-24 ~21:35 (RUNNING 43 min; val, 0d, zero-shot written, July in progress). Log confirms
+  "transform (1000,)/1000" for both models. R50 retrain@1000 = e0cb9f95/epoch29.
+  VALIDATION recall at interpolated overall precision 0.97:   all   1     3-5   6-10  11-20 21-50 >50
+    c6ecec12 @800 (0c)                                       55.4  70.0  52.9  45.1  39.0  34.8  14.5
+    c6ecec12 @1000 (0c, predict-only)                        62.4  77.4  61.0  51.6  44.2  41.3  18.6
+    R50 retrain @1000                                        62.3  77.8  61.4  51.5  43.2  37.7  13.7
+  0d TRAINING-tile recall @0.70 (1 / 11-20 / 21-50 / >50): c6ecec12@800 61.0/28.8/23.8/15.9, c6ecec12@1000 70.9/35.4/29.4/21.5,
+    retrain@1000 68.6/34.8/26.3/14.7 -> training at 1000 does not fit flocks better; the flock underfit persists at native scale.
+  ZERO-SHOT recall at matched precision 85.4% (interpolated threshold): c6ecec12@800 59.0 (0.70), @1000 56.4 (0.72), @1200 60.4
+    (0.55), retrain@1000 55.6 (0.68). @0.70: retrain 54.5 / 86.2 vs c6ecec12@800 59.0 / 85.4.
+  => Retraining at 1000 adds nothing over predicting at 1000 (validation 62.3 vs 62.4), is slightly worse in dense strata, and
+     is 3.4 pts worse zero-shot than production. All of the validation resolution gain is an inference-time effect, and it does
+     not transfer to zero-shot. Not a promotion candidate. July load pending.

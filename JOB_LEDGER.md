@@ -3504,3 +3504,18 @@ Partial result (52653059), checked 2026-11-24 ~21:35 (RUNNING 43 min; val, 0d, z
   => Retraining at 1000 adds nothing over predicting at 1000 (validation 62.3 vs 62.4), is slightly worse in dense strata, and
      is 3.4 pts worse zero-shot than production. All of the validation resolution gain is an inference-time effect, and it does
      not transfer to zero-shot. Not a promotion candidate. July load pending.
+
+## 52694865 — 2026-11-25 — submit_input_size_sweep.sh array 0-5%3 (hpg-b200, 1 GPU, 16 CPU, 16h each) — SUBMITTED
+Why: Ben (via boem-d5): validation, zero-shot and July review load are co-equal ("it's all real imagery"); push the inference
+input size until the curve bends. My earlier "stay at 800" over-weighted zero-shot (unpaired, untested). c6ecec12/epoch27,
+inference only (retrain@1000 added nothing, 52653059). Sizes 800 (production 800/1333) / 1000 / 1200 / 1400 / 1600 / 2000
+(min = max); tiles are 1000 px, so > 1000 is pure upsampling. scripts/input_size_sweep.py, worktree .claude/worktrees/dense-flock.
+Per task: VALIDATION predictions (floor 0.3) + wall time + peak GPU mem; ZERO-SHOT threshold_sweep (same args as 52502538);
+July reviewer load (5,000-frame seed-0 sample). Aggregate (CPU): val recall at interpolated precision 0.97 by birds/tile AND by
+GT box size (<16/16-32/32-64/>64 px); zero-shot at matched precision 85.4% with a PAIRED frame bootstrap vs 800 (per-frame
+counts verified to reproduce threshold_sweep's TP/FP exactly at 0.70 for 800/1000/1200); July review frames at 0.60/0.70 +
+contact sheets of >= 0.60 boxes new vs 800 (foam check); GT box-size distribution July survey vs validation vs holdout.
+Preview on existing 52502538 files: ZERO-SHOT recall diff vs 800 at matched precision, paired bootstrap 95% CI:
+  1000 -2.3 [-3.7, -1.1] (a real loss, not noise); 1200 +1.3 [-1.7, +4.5] (inconclusive).
+Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/size_sweep/
+Next: aggregate, send the table to boem-d5 (it will run the same sizes on DINOv3 epoch06), report to Ben.

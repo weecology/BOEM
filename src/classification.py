@@ -212,13 +212,17 @@ def write_crops(model, boxes, root_dir, images, labels, savedir):
     for index, box in enumerate(boxes):
         label = labels[index]
         image = images[index]
+        image_basename = os.path.splitext(os.path.basename(image))[0]
+        img_path = os.path.join(savedir, label, f"{image_basename}_{index}.png")
+        # Names are deterministic for a given annotation frame, so a crop dir reused via
+        # classification_model.crop_dir_id only needs its missing crops written.
+        if os.path.exists(img_path):
+            continue
         with rasterio.open(os.path.join(root_dir, image)) as src:
             square_box = model.expand_bbox_to_square(box, src.width, src.height)
             xmin, ymin, xmax, ymax = [int(v) for v in square_box]
             img = src.read(window=((ymin, ymax), (xmin, xmax)))
             img = np.rollaxis(img, 0, 3)  # (C, H, W) -> (H, W, C), RGB
-            image_basename = os.path.splitext(os.path.basename(image))[0]
-            img_path = os.path.join(savedir, label, f"{image_basename}_{index}.png")
             Image.fromarray(img).save(img_path)
 
 

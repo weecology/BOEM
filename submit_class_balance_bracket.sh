@@ -16,8 +16,11 @@
 # Class-balance cap bracket against 0139af8c (job 52121225). Same code (branch
 # flat-drop-genus-sp @ cdc49fe for every file the classifier reads), same unchanged
 # crop pool, same split seed, so the val split must come out identical to 0139af8c's.
-# Usage: sbatch submit_class_balance_bracket.sh <factor>   (4.0 = noise-control rerun, null = no cap)
-FACTOR=${1:?usage: sbatch submit_class_balance_bracket.sh <factor|null>}
+# Usage: sbatch submit_class_balance_bracket.sh <factor> [crop_dir_id]
+#   factor: 4.0 = noise-control rerun, null = no cap
+#   crop_dir_id: reuse that run's crop dir and write only missing crops (keeps the GPU idle less)
+FACTOR=${1:?usage: sbatch submit_class_balance_bracket.sh <factor|null> [crop_dir_id]}
+CROP_ARG=${2:+"+classification_model.crop_dir_id=$2"}
 ulimit -c 0
 cd /blue/ewhite/b.weinstein/src/BOEM/.claude/worktrees/class-balance-bracket
 
@@ -25,4 +28,4 @@ cd /blue/ewhite/b.weinstein/src/BOEM/.claude/worktrees/class-balance-bracket
 export UV_PROJECT_ENVIRONMENT=/blue/ewhite/b.weinstein/src/BOEM/.venv-classification
 uv run --no-sync python -u scripts/USGS_classification.py \
     classification_model.use_metadata=False \
-    classification_model.class_balance_factor=$FACTOR
+    classification_model.class_balance_factor=$FACTOR $CROP_ARG

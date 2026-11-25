@@ -364,13 +364,17 @@ def main(cfg: DictConfig):
     comet_logger.experiment.log_parameter("classification_bbox_expand_pixels", expand_pixels)
 
     # Output dirs are buffer-specific: .../buffer_0/, .../buffer_30/, .../buffer_200/, etc.
+    # crop_dir_id reuses another run's crop dir (same split => same deterministic crop names);
+    # write_crops then writes only the missing crops. Defaults to this run's own Comet id.
+    crop_dir_id = cfg.classification_model.get("crop_dir_id") or comet_id
+    comet_logger.experiment.log_parameter("crop_dir_id", crop_dir_id)
     train_crop_image_dir = os.path.join(
-        cfg.classification_model.train_crop_image_dir, buffer_suffix, comet_id
+        cfg.classification_model.train_crop_image_dir, buffer_suffix, crop_dir_id
     )
     os.makedirs(train_crop_image_dir, exist_ok=True)
 
     val_crop_image_dir = os.path.join(
-        cfg.classification_model.val_crop_image_dir, buffer_suffix, comet_id
+        cfg.classification_model.val_crop_image_dir, buffer_suffix, crop_dir_id
     )
     os.makedirs(val_crop_image_dir, exist_ok=True)
 

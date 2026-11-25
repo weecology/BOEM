@@ -3590,4 +3590,25 @@ Gate (2026-11-24 19:23 EST): PASSED for both. Both started 19:16 at 50 GB.
   - B's train split is identical to 0139af8c's, so B differs from 0139af8c only by training randomness.
   - A's train is a superset of 0139af8c's.
   - Splits are in training/classification/checkpoints/buffer_30/<comet id>/.
+Result (52604504, 4.0 noise control), checked 2026-11-24 23:30 EST: COMPLETED 3h17m, exit 0:0, MaxRSS 5.0 GB (50 GB is ample).
+  Checkpoint buffer_30/74a341c947d746cebfdea3032ce84dee.ckpt.
+  Same val split, same train crops as 0139af8c:
+    micro accuracy   0.7772 vs 0.7822 (-0.5 pts)
+    macro precision  0.6233 vs 0.6411 (-1.8 pts)
+    val_loss         2.552  vs 2.59
+  => RUN-TO-RUN NOISE from training randomness alone is about 0.5 pts micro and about 2 pts macro precision. An A-vs-B gap
+     smaller than that means nothing.
+Result (52604503, null): CANCELLED by root (uid 0) at 20:32:38 EST, 1h16m in, while still writing crops (175,148 of 203,974
+  train, 0 val; training never started). Not out of memory: MaxRSS 5.1 GB of 50. No other job on c0901a-s5 was cancelled.
+  Most likely HiPerGator's idle-GPU policy (the GPU sat at 0% for 76 min of CPU crop writing), but root left no message,
+  so this is unconfirmed.
+Fix (this branch):
+  - write_crops skips crops that already exist. Crop names are {frame}_{row index}.png, deterministic for a given split,
+    and a fresh run's crop dir is empty, so normal runs are unchanged.
+  - New optional +classification_model.crop_dir_id=<comet id> points a run at an existing crop dir.
+  - Deleted the 336 crops written in the last 8 s before the kill (possibly truncated).
+  - Relaunched null with crop_dir_id=f3b5565e as job 52697324, so only about 29k train + 3,985 val crops remain to write
+    (about 15 min of idle GPU).
+  Gate again on start: val split identical to 0139af8c's, "train pool size 203974". Then about 12 h of training.
+Result (52697324, null): PENDING
 Result: PENDING

@@ -3527,3 +3527,18 @@ Preview on existing 52502538 files: ZERO-SHOT recall diff vs 800 at matched prec
   1000 -2.3 [-3.7, -1.1] (a real loss, not noise); 1200 +1.3 [-1.7, +4.5] (inconclusive).
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/size_sweep/
 Next: aggregate, send the table to boem-d5 (it will run the same sizes on DINOv3 epoch06), report to Ben.
+
+## (no job) — 2026-11-25 — paired zero-shot bootstrap: DINOv3 (boem-d5) vs R50 references (CPU, local)
+Why: boem-d5's DINOv3 e06/e14 @1000 zero-shot was unpaired; Ben weighs validation, zero-shot and July equally. Frame-paired
+bootstrap (2,000 resamples of the 648 labelled holdout frames, seed 0) on saved *_labelled_boxes.csv, using threshold_sweep's
+own matcher (per-frame TP/FP reproduce each JSON exactly at 0.70). ZERO-SHOT recall diff at matched precision 80/85.4/90%:
+  vs c6ecec12@800   DINOv3 e14 +0.7 [-1.0,+2.4] / -1.2 [-2.9,+0.3] / -2.8 [-4.8,-1.3]
+                    DINOv3 e06 +0.2 [-1.2,+1.5] / -1.9 [-3.4,-0.5] / -3.1 [-5.3,-1.3]
+                    c6ecec12@1000 -1.1 [-2.3,-0.1] / -2.3 [-3.7,-1.1] / -5.0 [-7.2,-3.1]
+                    e0cb9f95@1000 -2.3 [-3.5,-1.1] / -3.3 [-4.6,-2.1] / -5.5 [-7.5,-3.7]
+  vs e0cb9f95@1000  DINOv3 e14 +2.9 [+1.6,+4.5] / +2.0 [+0.6,+3.5] / +2.6 [+1.1,+4.2]
+                    DINOv3 e06 +2.4 [+1.3,+3.6] / +1.4 [+0.1,+2.7] / +2.4 [+0.7,+3.9]
+Reading: DINOv3 significantly beats the same-scale R50; vs production@800 it ties at 80% and the 85.4% gate, loses at 90%.
+Every model's 1000px penalty grows with precision -> DINOv3@800 is the next test. boem-d5's 0d train fit (DINOv3 higher
+11-50 recall at equal precision) says capacity, not just generalisation. input_size_sweep.py now takes <checkpoint> <label>
+(37732b5) for boem-d5 to run DINOv3 from its own worktree.

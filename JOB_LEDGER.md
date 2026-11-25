@@ -3491,7 +3491,7 @@ training sample and July -- 52502730's c6ecec12@1000 July run used max_size 1667
 Comparators: c6ecec12@800 (0c base800, 0d, 52502538 in800, 52502730 in800) and c6ecec12@1000 (0c native1000, 52502538 in1000).
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/score_at_size/
 Next: settle train/eval input size for boem-d5's DINOv3/DETR arms; recommend to Ben whether e0cb9f95 is a promotion candidate.
-Partial result (52653059), checked 2026-11-24 ~21:35 (RUNNING 43 min; val, 0d, zero-shot written, July in progress). Log confirms
+Result (52653059), checked 2026-11-25: COMPLETED 1h24m, exit 0:0. Log confirms
   "transform (1000,)/1000" for both models. R50 retrain@1000 = e0cb9f95/epoch29.
   VALIDATION recall at interpolated overall precision 0.97:   all   1     3-5   6-10  11-20 21-50 >50
     c6ecec12 @800 (0c)                                       55.4  70.0  52.9  45.1  39.0  34.8  14.5
@@ -3503,7 +3503,15 @@ Partial result (52653059), checked 2026-11-24 ~21:35 (RUNNING 43 min; val, 0d, z
     (0.55), retrain@1000 55.6 (0.68). @0.70: retrain 54.5 / 86.2 vs c6ecec12@800 59.0 / 85.4.
   => Retraining at 1000 adds nothing over predicting at 1000 (validation 62.3 vs 62.4), is slightly worse in dense strata, and
      is 3.4 pts worse zero-shot than production. All of the validation resolution gain is an inference-time effect, and it does
-     not transfer to zero-shot. Not a promotion candidate. July load pending.
+     not transfer to zero-shot. Not a promotion candidate.
+  JULY review frames / boxes in the 5,000-frame sample (survey x106.8):
+                          @0.60          @0.70
+    c6ecec12 @800 (52502730)  17 / 20 (1,815)   8 / 10 (854)
+    c6ecec12 @1000 min=max    12 / 14 (1,281)   7 /  9 (747)   -- identical to 52502730's max_size-1667 run: the edge-patch
+                                                                   difference did not matter here
+    retrain @1000             7 /  9   (747)   4 /  4 (427)
+  The retrain flags fewer July frames, consistent with it scoring lower everywhere (zero-shot @0.60 58.3/82.8 vs 61.0/83.1),
+  not with better foam rejection; counts this small carry ~+-40% sampling error. July does not change the conclusion.
 
 ## 52694865 — 2026-11-25 — submit_input_size_sweep.sh array 0-5%3 (hpg-b200, 1 GPU, 16 CPU, 16h each) — SUBMITTED
 Why: Ben (via boem-d5): validation, zero-shot and July review load are co-equal ("it's all real imagery"); push the inference

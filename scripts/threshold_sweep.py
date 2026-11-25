@@ -105,7 +105,7 @@ def predict(checkpoint, image_paths, patch_size, patch_overlap, batch_size, work
     m = detection.load(checkpoint)
     if input_size:  # override the checkpoint's own (recorded or 800/1333 default) resize
         detection.set_input_size(m, input_size)
-    print(f"      input resize {m.model.transform.min_size}/{m.model.transform.max_size}", flush=True)
+    print(f"      input resize {detection.input_size(m)}", flush=True)
     # Let every box through; the sweep does the thresholding offline. Without
     # this the model's own score_thresh silently truncates the low end of the
     # curve and every recall number below it is wrong.

@@ -3610,5 +3610,15 @@ Fix (this branch):
   - Relaunched null with crop_dir_id=f3b5565e as job 52697324, so only about 29k train + 3,985 val crops remain to write
     (about 15 min of idle GPU).
   Gate again on start: val split identical to 0139af8c's, "train pool size 203974". Then about 12 h of training.
+Check (52697324), 2026-11-25 01:30 EST: RUNNING since 23:48, not killed.
+  Gate PASSED: Comet 384b8bb20ffe425d907ca4e17af80be9; "train pool size 203974"; saved val split identical to 0139af8c's
+  (3,985 rows); train is a superset of 0139af8c's.
+  Crop reuse worked: 29,162 train crops plus 3,985 val written 23:53-00:06 (13 min of idle GPU). The dir now holds 203,974 train
+  and 3,985 val crops. Training began about 00:06.
+  The .out shows nothing per epoch (the progress bar writes only its final line), so epoch times come from Comet:
+  epochs 0-3 ended 00:24, 00:43, 01:04, 01:22, about 19.3 min/epoch (50,994 steps). 45 epochs puts the end at about 14:35 EST
+  11-25, inside the 24 h limit (23:48).
+  Early val (same split), A vs B at epoch 3: micro 0.738 vs 0.745, macro precision 0.594 vs 0.582. Inside the noise band;
+  not a result.
 Result (52697324, null): PENDING
 Result: PENDING

@@ -3582,4 +3582,12 @@ Update 2026-11-24 16:47 EST: still PENDING. 52511275_0 freed its 240 GB at 15:30
   (3 x 256 GB) took it. The group was at 1,180 of its 1,187.5 GB limit. Lowered both pending jobs 80 -> 50 GB
   (scontrol; 50 GB is what 52121225 used for 0139af8c) so both fit in the 120 GB that 52502097 frees when it ends
   (epoch 28 of 30). Script updated to match. Gate not yet checkable.
+Gate (2026-11-24 19:23 EST): PASSED for both. Both started 19:16 at 50 GB.
+  - 52604503 (null), Comet f3b5565e903a4c6c8fc31d13fab92e66: "[class balance] no downsampling ... train pool size 203974".
+  - 52604504 (4.0), Comet 74a341c947d746cebfdea3032ce84dee: "train downsampled 203974 -> 47600".
+  - Pool 225,959 crops, 79 classes, the same as 52121225.
+  - Saved usgs_val_split.csv: 3,985 rows, identical to 0139af8c's on image_path + box + label, for both runs.
+  - B's train split is identical to 0139af8c's, so B differs from 0139af8c only by training randomness.
+  - A's train is a superset of 0139af8c's.
+  - Splits are in training/classification/checkpoints/buffer_30/<comet id>/.
 Result: PENDING

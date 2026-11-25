@@ -100,3 +100,10 @@ Densest validation tile has 158 boxes, so DETR's 300 queries do not cap.
   `score_at_size/c6ecec12_e27_in1000.{train.density_strata,july_summary}.csv`.
 - c6ecec12 production @800: validation 52344877 predictions next to its checkpoint; zero-shot
   `/blue/ewhite/b.weinstein/BOEM/yolo26_comparison/threshold_sweep_c6ecec12_e27.json`.
+
+## Interim result, DINOv3 epoch06 (2026-11-24, VALIDATION only, one seed)
+Recall at interpolated overall precision 0.97, vs the STRONGER R50@1000 per stratum (max of e0cb9f95 retrain@1000 and
+c6ecec12 predict-only@1000): all 66.5 vs 62.4 (+4.1), 1 bird +4.8, 6-10 +4.5, **11-20 53.4 vs 44.2 (+9.2)**, 21-50 +2.5,
+>50 noise (6 tiles). Call only 11-20 (2,096 GT); +2-5 is within unmeasured full-run seed variance.
+Pending: 0d training-tile fit (decisive: R50@1000 @0.70 11-20 / 21-50 = 34.8 / 26.3, c6ecec12@1000 35.4 / 29.4) and
+ZERO-SHOT (production gate: beat 59.0% at 85.4% precision).

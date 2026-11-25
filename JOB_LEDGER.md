@@ -3527,6 +3527,7 @@ Preview on existing 52502538 files: ZERO-SHOT recall diff vs 800 at matched prec
   1000 -2.3 [-3.7, -1.1] (a real loss, not noise); 1200 +1.3 [-1.7, +4.5] (inconclusive).
 Outputs: /blue/ewhite/b.weinstein/BOEM/dense_flock/size_sweep/
 Next: aggregate, send the table to boem-d5 (it will run the same sizes on DINOv3 epoch06), report to Ben.
+Result (52694865), checked 2026-11-25: all 6 tasks COMPLETED, exit 0:0 (800 38m ... 2000 4h13m). Aggregated by 52739946.
 
 ## (no job) — 2026-11-25 — paired zero-shot bootstrap: DINOv3 (boem-d5) vs R50 references (CPU, local)
 Why: boem-d5's DINOv3 e06/e14 @1000 zero-shot was unpaired; Ben weighs validation, zero-shot and July equally. Frame-paired
@@ -3550,3 +3551,29 @@ at interpolated precision 0.97, zero-shot at matched precision with frame-paired
 Status of 52694865 at queue time (11:03 UTC): tasks 0-4 (800-1600) COMPLETED 38m-2h04m; task 5 (2000) RUNNING 3h16m, zero-shot
 done, July in progress.
 Next: fill 52694865 Result, eyeball foam sheets, send table to boem-d5, report to Ben.
+Result (52739946), checked 2026-11-25: COMPLETED 55m, exit 0:0. c6ecec12/epoch27, inference only; 800 = production 800/1333.
+  VALIDATION recall at interpolated overall precision 0.97:      800   1000  1200  1400  1600  2000
+    all                                                          55.4  62.4  66.7  62.8  56.6  43.5
+    1 / 11-20 / 21-50 birds per tile        800 70.0/39.0/34.8  1000 77.4/44.2/41.3  1200 81.5/49.2/44.5
+                                           1400 78.4/43.8/41.0  1600 72.2/40.1/34.8  2000 57.7/31.7/25.5
+    by GT box size <16 / 16-32 / 32-64 / >64 px: 800 25.8/48.1/74.0/79.5  1200 33.7/72.2/72.9/77.3  2000 42.2/45.3/40.1/46.5
+    -> the whole validation gain is 16-32 px birds (48 -> 72 at 1200); birds > 32 px only lose as upsampling grows.
+  ZERO-SHOT recall at matched precision 85.4%, frame-paired bootstrap vs 800 (95% CI):
+    1000 56.7 (-2.3 [-3.7,-1.1])  1200 60.3 (+1.3 [-1.7,+4.5])  1400 52.7 (-6.3 [-10.4,-2.0])
+    1600 45.9 (-13.1 [-18.3,-8.2])  2000 31.2 (-27.8 [-34.3,-22.2]); 800 59.0.
+  JULY review frames / boxes (5,000-frame sample) @0.60: 800 17/20, 1000 12/14, 1200 28/31, 1400 52/67, 1600 139/274,
+    2000 653/3237; @0.70: 8, 7, 3, 11, 22, 127 frames. >= 0.60 boxes new vs 800: 3, 32, 90, 340, 3,747.
+  FOAM CHECK (contact sheets july_new_vs_800_in{1200,1600}.png): the new boxes are NOT mainly foam. Two kinds: (a) large faint
+    elongated shapes, mostly labelled Tursiops by the classifier, several plausibly submerged dolphins/sharks; (b) single boxes
+    in groups of bright round white objects that 800 also leaves unboxed -- rafting birds or bright foam, not decidable at
+    160 px. So part of the extra July load at 1200-1600 may be real animals 800 misses. Needs human review, not eyeballing.
+  COST (one B200): val throughput 126 / 109 / 94 / 78 / 73 / 52 img/s (14,692 tiles / val_seconds; the aggregate's
+    val_img_per_s column divides tiles-with-predictions and understates it); peak GPU 6.4 / 10.1 / 14.0 / 18.6 / 23.8 / 37.5 GB;
+    July 5,000 frames 20 / 24 / 31 / 41 / 55 / 158 min. Zero-shot wall times are noisy (node contention), not used.
+  GT BOX SIZE (sqrt area px): July survey annotations median 75 (65% > 64 px, 8% 16-32), ZERO-SHOT holdout median 75 (59% > 64),
+    VALIDATION median 28 (45% 16-32, 16% < 16). Production survey birds look like the holdout, not validation.
+  Reading: the curve bends at 1200 on every axis. Above 1200 everything is worse; validation and zero-shot fall, July load
+    climbs. 1200 is the only size that ties or beats 800 on all three: +11 val (small birds), zero-shot tie (+1.3, CI spans 0),
+    July +65% review frames at 0.60 (17 -> 28; small counts, +-40%) of which some may be real. 1000 is strictly worse than
+    800 zero-shot. A size-dependent effect, not a resolution one: upsampling helps 16-32 px birds and hurts > 32 px birds,
+    and survey birds are ~75 px.

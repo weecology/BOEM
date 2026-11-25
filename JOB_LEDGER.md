@@ -3542,3 +3542,11 @@ Reading: DINOv3 significantly beats the same-scale R50; vs production@800 it tie
 Every model's 1000px penalty grows with precision -> DINOv3@800 is the next test. boem-d5's 0d train fit (DINOv3 higher
 11-50 recall at equal precision) says capacity, not just generalisation. input_size_sweep.py now takes <checkpoint> <label>
 (37732b5) for boem-d5 to run DINOv3 from its own worktree.
+
+## 52739946 — 2026-11-25 — submit_input_size_aggregate.sh (hpg-default, CPU, 3h), afterok:52694865_5 — SUBMITTED
+Why: aggregate the c6ecec12 input-size sweep (52694865) as soon as its last task (2000 px) finishes: val strata + box-size bins
+at interpolated precision 0.97, zero-shot at matched precision with frame-paired bootstrap vs 800, July review frames at
+0.60/0.70 + foam contact sheets, cost per size, GT box-size distributions. Log /home/b.weinstein/logs/size_sweep_aggregate_52739946.out.
+Status of 52694865 at queue time (11:03 UTC): tasks 0-4 (800-1600) COMPLETED 38m-2h04m; task 5 (2000) RUNNING 3h16m, zero-shot
+done, July in progress.
+Next: fill 52694865 Result, eyeball foam sheets, send table to boem-d5, report to Ben.

@@ -194,3 +194,31 @@ Outputs are in `/blue/ewhite/b.weinstein/BOEM/geo_priors/`: `frame_index.csv` (6
   examples. It can learn little range information from that, which strengthens the case
   for E2 and E4. A cheap side experiment: **cap per region × class rather than per class**,
   so dense Gulf flocks are not downsampled away.
+
+### E0 correction and E1/E2 (2026-11-25; jobs 52788893 + CPU scripts)
+
+**E0's 16,336-box Gulf evaluation set is mostly invalid.** In `training/crops/<frame>.csv`,
+15,338 of those Gulf rows (94%) have `(0,0,0,0)` boxes with a species label (25 flights, e.g.
+`C1_L10_F13152_T20260201_172851_628.csv`). The real coordinates are in
+`annotations/train/<flight>/<date>.csv`, on the full `.jpg` frame. Cropping a zero box gives a
+corner of the tile, so 0139af8c scores 4% on them. About 8% of the Atlantic held-out boxes are
+also zero (SouthAtlantic 304 of 315). **Not yet checked:** whether the 1,005 Gulf train/val
+crops, or other training crops, came from zero rows (19,042 zero rows vs 2,667 real in the
+frames behind those crops). Check before trusting any Gulf number or the 0139af8c training set.
+
+Valid boxes only (`scripts/geo_priors_e1_e2.py`, report in `geo_priors/e1_e2_report_0139af8c.txt`;
+baseline 0139af8c, logits from `scripts/geo_priors_eval_logits.py`, GBIF counts from
+`scripts/geo_priors_gbif.py`). Held-out frames, human labels, no unverified boxes, so the
+human-verified vs unverified split in E1 is not possible here.
+
+- **E1:** accuracy GulfWest 62% (824 boxes), GulfEast 60% (174), AtlanticNorth 80%, MidAtlantic 89%.
+  Out-of-range predictions (fewer than 20 GBIF records of the predicted class in the sub-region)
+  are 7.5% of GulfEast and 2.8% of GulfWest boxes, and zero in the Atlantic. Absorbers: *Melanitta
+  fusca* and *Somateria mollissima* (Gulf), grey seal, puffin. Only 36 boxes (0.13%) are errors a
+  prior could fix.
+- **E2:** a coarse GBIF prior does not help. Tuned on one flight half and scored on the other,
+  macro accuracy moves +0.012 and -0.005. In the Gulf it hurts (box 0.619 to 0.485 at the best
+  setting). Atlantic gains 0.4 points box, 2 points macro. Caveat: only 998 valid Gulf boxes.
+- **Reading:** on real birds the classifier rarely names an out-of-range species. The eider
+  failure was foam (detection), which a prior cannot fix. A GBIF prior at region grain has no
+  headroom here; do not spend E3/E4 GPU time until the zero-box question is resolved.

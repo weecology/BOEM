@@ -3074,3 +3074,15 @@ classifier_confusion_a3dc30a0_predictions.csv (116 val crops touching either cla
 confusion_qc_a3dc30a0). LS 197 live: 511 -> 576 tasks, 65 unlabeled, all preannotated.
 Next: when annotated, download + backup_annotations.py; compare human labels vs USGS labels on the 56 tiles (label noise?)
 and vs a3dc30a0 calls; then decide whether the pelican/egret fix is labels or more crops.
+
+## 52784486 — 2026-11-25 — submit_geo_priors_eval.sh (0139af8c) — SUBMITTED
+Why: E1/E2 of SPECIES_GEO_PRIORS_PLAN.md need logits on human-labelled boxes from frames outside 0139af8c's train split, with coordinates. All Gulf boxes plus ~30k Atlantic boxes (by frame) as control.
+Output: /blue/ewhite/b.weinstein/BOEM/geo_priors/eval_{boxes,logits,classes}_0139af8c.*
+Next: build GBIF prior, sweep λ/resolution on cached logits (E2), out-of-range audit (E1).
+
+## 52784486 → 52788893 — 2026-11-25 — geo_eval resubmit
+52784486 sat PENDING 20+ min on QOSGrpMemLimit (60GB request) and was cancelled before running. Resubmitted as 52788893 with --mem=24GB, --time=00:45:00; otherwise identical.
+
+## 52788893 — 2026-11-25 — geo_eval (0139af8c) — COMPLETED (22 min)
+Result: 46,313 held-out labelled boxes scored, but 18,143 (15,338 Gulf) have zero-area (0,0,0,0) boxes in training/crops CSVs, so those crops are tile corners (Gulf acc 4%). On the 28,170 valid boxes: Gulf 62%, Atlantic 82%; GBIF prior gives no gain (see SPECIES_GEO_PRIORS_PLAN.md, "E0 correction and E1/E2").
+Next: find why Gulf frame CSVs have zero boxes and whether training crops were built from them.

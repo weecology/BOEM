@@ -15,6 +15,11 @@ so push the size curve until it bends. Tiles stay 1000 px, so sizes above 1000 a
 
     uv run python scripts/input_size_sweep.py task 1400
     uv run python scripts/input_size_sweep.py aggregate
+
+Another checkpoint (e.g. boem-d5's DINOv3): check this file and density_strata.py out INTO that branch's scripts/
+(REPO is the script's own repo, so src.detection, threshold_sweep and the venv all come from there), then:
+    uv run python scripts/input_size_sweep.py task 800 <checkpoint> <label>    -> OUT/<label>/in800/
+    uv run python scripts/input_size_sweep.py aggregate <label>
 """
 import importlib.util
 import json
@@ -43,6 +48,7 @@ OUT = Path("/blue/ewhite/b.weinstein/BOEM/dense_flock/size_sweep")
 SIZES = [800, 1000, 1200, 1400, 1600, 2000]
 SIZE_BINS, SIZE_LABELS = [0, 16, 32, 64, np.inf], ["<16", "16-32", "32-64", ">64"]
 ZS_PRECISION, VAL_PRECISION = 0.854, 0.97
+LABEL = "c6ecec12_e27"
 _load = detection.load
 
 
@@ -66,6 +72,7 @@ def use_size(size: int) -> None:
 # ------------------------------------------------------------------ GPU task, one size
 def task(size: int) -> None:
     out = OUT / f"in{size}"
+    print(f"checkpoint {CKPT}\noutputs {out}", flush=True)
     out.mkdir(parents=True, exist_ok=True)
     use_size(size)
     m = detection.load(checkpoint=CKPT, score_thresh=0.3)
@@ -83,7 +90,7 @@ def task(size: int) -> None:
     torch.cuda.empty_cache()
 
     t0 = time.time()
-    sys.argv = ["threshold_sweep.py", "--checkpoint", CKPT, "--label", f"c6ecec12_e27_in{size}",
+    sys.argv = ["threshold_sweep.py", "--checkpoint", CKPT, "--label", f"{LABEL}_in{size}",
                 "--out", str(out / "zero_shot.json"), "--queue-sample", "2000", "--batch-size", "1", "--workers", "5"]
     runpy.run_path(str(REPO / "scripts/threshold_sweep.py"), run_name="__main__")
     cost["zero_shot_seconds"] = time.time() - t0
@@ -257,7 +264,12 @@ def aggregate() -> None:
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("high")
-    if sys.argv[1] == "task":
-        task(int(sys.argv[2]))
-    else:
-        aggregate()
+    cmd, rest = sys.argv[1], sys.argv[2:]
+    size = int(rest.pop(0)) if cmd == "task" else None
+    if rest:  # optional <checkpoint> <label> (task) or <label> (aggregate); default is c6ecec12 in OUT/in<size>
+        if cmd == "task":
+            CKPT, LABEL = rest[0], rest[1]
+        else:
+            LABEL = rest[0]
+        OUT = OUT / LABEL
+    task(size) if cmd == "task" else aggregate()

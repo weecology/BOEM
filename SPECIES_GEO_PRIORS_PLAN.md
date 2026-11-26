@@ -202,11 +202,13 @@ Outputs are in `/blue/ewhite/b.weinstein/BOEM/geo_priors/`: `frame_index.csv` (6
 `C1_L10_F13152_T20260201_172851_628.csv`). The real coordinates are in
 `annotations/train/<flight>/<date>.csv`, on the full `.jpg` frame. Cropping a zero box gives a
 corner of the tile, so 0139af8c scores 4% on them. About 8% of the Atlantic held-out boxes are
-also zero (SouthAtlantic 304 of 315). **Not yet checked:** whether the 1,005 Gulf train/val
-crops, or other training crops, came from zero rows (19,042 zero rows vs 2,667 real in the
-frames behind those crops). Check before trusting any Gulf number or the 0139af8c training set.
+also zero (SouthAtlantic 304 of 315). **Training is unaffected.** The zero boxes are detection-eval markers. `USGS_classification.py`
+(line 309), `USGS_hierarchical.py` and `src/classification.py` already drop any row with a
+zero coordinate before the split, so 0139af8c's train and val crops, and the 1,005 Gulf crops,
+come from real boxes. E0's crop-coverage table stands. Only E0's 16,336-box "evaluation set"
+was wrong. The eval scripts now drop zero-area boxes at load.
 
-Valid boxes only (`scripts/geo_priors_e1_e2.py`, report in `geo_priors/e1_e2_report_0139af8c.txt`;
+Valid boxes only, 28,170 held-out (`scripts/geo_priors_e1_e2.py`, report in `geo_priors/e1_e2_report_0139af8c.txt`;
 baseline 0139af8c, logits from `scripts/geo_priors_eval_logits.py`, GBIF counts from
 `scripts/geo_priors_gbif.py`). Held-out frames, human labels, no unverified boxes, so the
 human-verified vs unverified split in E1 is not possible here.

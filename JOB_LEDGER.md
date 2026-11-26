@@ -3085,4 +3085,4 @@ Next: build GBIF prior, sweep λ/resolution on cached logits (E2), out-of-range 
 
 ## 52788893 — 2026-11-25 — geo_eval (0139af8c) — COMPLETED (22 min)
 Result: 46,313 held-out labelled boxes scored, but 18,143 (15,338 Gulf) have zero-area (0,0,0,0) boxes in training/crops CSVs, so those crops are tile corners (Gulf acc 4%). On the 28,170 valid boxes: Gulf 62%, Atlantic 82%; GBIF prior gives no gain (see SPECIES_GEO_PRIORS_PLAN.md, "E0 correction and E1/E2").
-Next: find why Gulf frame CSVs have zero boxes and whether training crops were built from them.
+Next: none; zero boxes are detection-eval markers and the classifier scripts already drop them.

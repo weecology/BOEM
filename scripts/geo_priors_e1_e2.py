@@ -14,11 +14,6 @@ import pandas as pd
 D = Path("/blue/ewhite/b.weinstein/BOEM/geo_priors")
 boxes = pd.read_csv(D / "eval_boxes_0139af8c.csv", parse_dates=["date"])
 logits = np.load(D / "eval_logits_0139af8c.npy")
-# Many frame CSVs in training/crops carry (0,0,0,0) boxes with a species label (see ledger);
-# those crops are a corner of the tile, not the animal, so they cannot be scored.
-real = ((boxes.xmax - boxes.xmin) > 0).to_numpy()
-print(f"dropping {(~real).sum():,} zero-area boxes of {len(real):,}")
-boxes, logits = boxes[real].reset_index(drop=True), logits[real]
 classes = (D / "eval_classes_0139af8c.txt").read_text().split("\n")
 gbif = pd.read_csv(D / "gbif_counts.csv")
 cidx = {c: i for i, c in enumerate(classes)}

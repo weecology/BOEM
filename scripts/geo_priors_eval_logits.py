@@ -49,7 +49,8 @@ for f in frames:
         parts.append(pd.read_csv(path, usecols=["xmin", "ymin", "xmax", "ymax", "label", "image_path"]))
 boxes = pd.concat(parts, ignore_index=True)
 boxes["label"] = boxes.label.map(normalize_label)
-boxes = boxes[boxes.label.isin(m.label_dict)].drop_duplicates().reset_index(drop=True)
+# (0,0,0,0) rows are detection-eval markers, not classifier data; USGS_classification drops them too.
+boxes = boxes[(boxes.xmax > boxes.xmin) & boxes.label.isin(m.label_dict)].drop_duplicates().reset_index(drop=True)
 boxes["basename"] = boxes.image_path.map(stem)
 boxes = boxes.join(index[["lat", "lon", "date", "flight", "asset", "region", "subregion"]], on="basename")
 
